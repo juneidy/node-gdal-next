@@ -406,6 +406,8 @@ Local<Value> FeatureFields::get(OGRFeature *f, int field_index)
 
 	if(!f->IsFieldSet(field_index)) return scope.Escape(Nan::Null());
 
+	if(f->IsFieldNull(field_index)) return scope.Escape(Nan::Null());
+
 	OGRFieldDefn *field_def = f->GetFieldDefnRef(field_index);
 	switch(field_def->GetType()) {
 		case OFTInteger:
