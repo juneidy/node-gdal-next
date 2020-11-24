@@ -1,12 +1,12 @@
 /******************************************************************************
- * $Id: ogr_osm.h b57a7641313c473fb84a961e73d3b05727b70cdc 2017-12-19 14:24:54Z Kurt Schwehr $
+ * $Id: ogr_osm.h f2db151194e327903a0b8f7bbfa01633cefa542f 2020-05-24 07:49:09 +0200 Kai Pastor $
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions for OGR/OpenStreeMap driver.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2012-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2012-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,6 +36,7 @@
 #include "ogrsf_frmts.h"
 #include "cpl_string.h"
 
+#include <array>
 #include <set>
 #include <unordered_set>
 #include <map>
@@ -78,7 +79,7 @@ class OGROSMComputedAttribute
 
 class OGROSMDataSource;
 
-class OGROSMLayer : public OGRLayer
+class OGROSMLayer final: public OGRLayer
 {
     friend class OGROSMDataSource;
 
@@ -282,7 +283,7 @@ typedef struct
 } CollisionBucket;
 #endif
 
-class OGROSMDataSource : public OGRDataSource
+class OGROSMDataSource final: public OGRDataSource
 {
     friend class OGROSMLayer;
 
@@ -327,7 +328,9 @@ class OGROSMDataSource : public OGRDataSource
     int                 nMinSizeKeysInSetClosedWaysArePolygons;
     int                 nMaxSizeKeysInSetClosedWaysArePolygons;
 
-    LonLat             *pasLonLatCache;
+    std::vector<LonLat> m_asLonLatCache{};
+
+    std::array<const char*, 7>  m_ignoredKeys;
 
     bool                bReportAllNodes;
     bool                bReportAllWays;
@@ -352,7 +355,7 @@ class OGROSMDataSource : public OGRDataSource
 
     bool                bAttributeNameLaundering;
 
-    GByte              *pabyWayBuffer;
+    std::vector<GByte>  m_abyWayBuffer{};
 
     int                 nWaysProcessed;
     int                 nRelationsProcessed;
@@ -408,12 +411,13 @@ class OGROSMDataSource : public OGRDataSource
     static const GIntBig FILESIZE_INVALID = -1;
     GIntBig             m_nFileSize;
 
-    int                 CompressWay (bool bIsArea, unsigned int nTags, IndexedKVP* pasTags,
+    void                CompressWay (bool bIsArea, unsigned int nTags, IndexedKVP* pasTags,
                                      int nPoints, LonLat* pasLonLatPairs,
                                      OSMInfo* psInfo,
-                                     GByte* pabyCompressedWay);
-    int                 UncompressWay( int nBytes, GByte* pabyCompressedWay,
-                                       bool *pbIsArea, LonLat* pasCoords,
+                                     std::vector<GByte> &abyCompressedWay);
+    void                UncompressWay( int nBytes, const GByte* pabyCompressedWay,
+                                       bool *pbIsArea,
+                                       std::vector<LonLat>& asCoords,
                                        unsigned int* pnTags, OSMTag* pasTags,
                                        OSMInfo* psInfo );
 

@@ -31,7 +31,7 @@
 
 #include "ogrdxf_polyline_smooth.h"
 
-CPL_CVSID("$Id: ogrdwglayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrdwglayer.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                            OGRDWGLayer()                             */
@@ -76,7 +76,7 @@ OGRDWGLayer::OGRDWGLayer( OGRDWGDataSource *poDSIn )
             m_poBlock = nullptr;
     }
 
-    ResetReading();
+    OGRDWGLayer::ResetReading();
 }
 
 /************************************************************************/
@@ -692,7 +692,7 @@ OGRFeature *OGRDWGLayer::TranslateLWPOLYLINE( OdDbEntityPtr poEntity )
         oSmoothPolyline.Close();
 
     poFeature->SetGeometryDirectly(
-        oSmoothPolyline.Tesselate() );
+        oSmoothPolyline.Tessellate() );
 
     PrepareLineStyle( poFeature );
 
@@ -1080,6 +1080,8 @@ public:
 
     OGRSpatialReference *GetSourceCS() override { return nullptr; }
     OGRSpatialReference *GetTargetCS() override { return nullptr; }
+
+    OGRCoordinateTransformation* Clone() const override { return new GeometryInsertTransformer(*this); }
 
     int Transform( int nCount,
                      double *x, double *y, double *z = nullptr,

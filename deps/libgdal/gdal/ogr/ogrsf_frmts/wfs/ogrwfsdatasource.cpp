@@ -2,10 +2,10 @@
  *
  * Project:  WFS Translator
  * Purpose:  Implements OGRWFSDataSource class
- * Author:   Even Rouault, even dot rouault at mines dash paris dot org
+ * Author:   Even Rouault, even dot rouault at spatialys.com
  *
  ******************************************************************************
- * Copyright (c) 2010-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -33,12 +33,12 @@
 #include "cpl_http.h"
 #include "gmlutils.h"
 #include "parsexsd.h"
-#include "swq.h"
+#include "ogr_swq.h"
 #include "ogr_p.h"
 
 #include <algorithm>
 
-CPL_CVSID("$Id: ogrwfsdatasource.cpp 39380a6be4086d4bec50dcb6c58eac748304afde 2020-01-05 20:20:19 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrwfsdatasource.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 constexpr int DEFAULT_BASE_START_INDEX = 0;
 constexpr int DEFAULT_PAGE_SIZE = 100;
@@ -104,7 +104,7 @@ CPLXMLNode* WFSFindNode( CPLXMLNode* psXML, const char* pszRootName )
 /*                       OGRWFSWrappedResultLayer                       */
 /************************************************************************/
 
-class OGRWFSWrappedResultLayer : public OGRLayer
+class OGRWFSWrappedResultLayer final: public OGRLayer
 {
     GDALDataset *poDS;
     OGRLayer    *poLayer;
@@ -1024,8 +1024,6 @@ int OGRWFSDataSource::Open( const char * pszFilename, int bUpdateIn,
         if (psWFSCapabilities == nullptr)
         {
             CPLHTTPResult* psResult = SendGetCapabilities(pszBaseURL, strOriginalTypeName);
-            osTypeName = WFS_DecodeURL(strOriginalTypeName);
-
             if (psResult == nullptr)
             {
                 CPLDestroyXMLNode( psXML );

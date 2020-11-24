@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2012-2018, Martin Landa <landa.martin gmail.com>
- * Copyright (c) 2012-2018, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2012-2018, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -41,7 +41,7 @@
 
 #include "ogr_geometry.h"
 
-CPL_CVSID("$Id: vfkreadersqlite.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: vfkreadersqlite.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /*!
   \brief VFKReaderSQLite constructor
@@ -134,15 +134,14 @@ VFKReaderSQLite::VFKReaderSQLite( const GDALOpenInfo* poOpenInfo ) :
                  sqlite3_errmsg(m_poDB));
     }
 
-    int nRowCount = 0;
-    int nColCount = 0;
     CPLString osCommand;
     if( m_bDbSource )
     {
         /* check if it is really VFK DB datasource */
         char* pszErrMsg = nullptr;
         char** papszResult = nullptr;
-        nRowCount = nColCount = 0;
+        int nRowCount = 0;
+        int nColCount = 0;
 
         osCommand.Printf("SELECT * FROM sqlite_master WHERE type='table' AND name='%s'",
                          VFK_DB_TABLE);
@@ -166,7 +165,9 @@ VFKReaderSQLite::VFKReaderSQLite( const GDALOpenInfo* poOpenInfo ) :
         /* check if DB is up-to-date datasource */
         char* pszErrMsg = nullptr;
         char** papszResult = nullptr;
-        nRowCount = nColCount = 0;
+        int nRowCount = 0;
+        int nColCount = 0;
+
         osCommand.Printf("SELECT * FROM %s LIMIT 1", VFK_DB_TABLE);
         sqlite3_get_table(m_poDB,
                           osCommand.c_str(),

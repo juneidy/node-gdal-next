@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1998, 2002, Frank Warmerdam
- * Copyright (c) 2007-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -34,7 +34,7 @@
 #include "commonutils.h"
 #include "gdal_utils_priv.h"
 
-CPL_CVSID("$Id: gdal_translate_bin.cpp 743d0ce0d7ea6bdc710b6b2950d1e8c34243797f 2019-04-23 08:10:30 -0400 fechen123 $")
+CPL_CVSID("$Id: gdal_translate_bin.cpp c3800f4cf2092dc8cefe57697b5071170663e392 2020-10-12 12:29:50 +0200 Even Rouault $")
 
 /*  ******************************************************************* */
 /*                               Usage()                                */
@@ -48,7 +48,8 @@ static void Usage(const char* pszErrorMsg, int bShort)
     printf( "Usage: gdal_translate [--help-general] [--long-usage]\n"
             "       [-ot {Byte/Int16/UInt16/UInt32/Int32/Float32/Float64/\n"
             "             CInt16/CInt32/CFloat32/CFloat64}] [-strict]\n"
-            "       [-of format] [-b band] [-mask band] [-expand {gray|rgb|rgba}]\n"
+            "       [-if format]* [-of format]\n"
+            "       [-b band] [-mask band] [-expand {gray|rgb|rgba}]\n"
             "       [-outsize xsize[%%]|0 ysize[%%]|0] [-tr xres yres]\n"
             "       [-r {nearest,bilinear,cubic,cubicspline,lanczos,average,mode}]\n"
             "       [-unscale] [-scale[_bn] [src_min src_max [dst_min dst_max]]]* [-exponent[_bn] exp_val]*\n"
@@ -60,7 +61,7 @@ static void Usage(const char* pszErrorMsg, int bShort)
             "       |-colorinterp{_bn} {red|green|blue|alpha|gray|undefined}]\n"
             "       |-colorinterp {red|green|blue|alpha|gray|undefined},...]\n"
             "       [-mo \"META-TAG=VALUE\"]* [-q] [-sds]\n"
-            "       [-co \"NAME=VALUE\"]* [-stats] [-norat]\n"
+            "       [-co \"NAME=VALUE\"]* [-stats] [-norat] [-noxmp]\n"
             "       [-oo NAME=VALUE]*\n"
             "       src_dataset dst_dataset\n" );
 
@@ -112,6 +113,7 @@ static void GDALTranslateOptionsForBinaryFree( GDALTranslateOptionsForBinary* ps
     CPLFree(psOptionsForBinary->pszDest);
     CSLDestroy(psOptionsForBinary->papszOpenOptions);
     CPLFree(psOptionsForBinary->pszFormat);
+    CSLDestroy(psOptionsForBinary->papszAllowInputDrivers);
     CPLFree(psOptionsForBinary);
 }
 
@@ -240,7 +242,8 @@ MAIN_START(argc, argv)
 
     GDALDatasetH hDataset =
         GDALOpenEx(psOptionsForBinary->pszSource,
-                   GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR, nullptr,
+                   GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR,
+                   psOptionsForBinary->papszAllowInputDrivers,
                    psOptionsForBinary->papszOpenOptions, nullptr);
 
     if( hDataset == nullptr )
@@ -351,7 +354,7 @@ MAIN_START(argc, argv)
         GDALTranslateOptionsFree(psOptions);
         GDALTranslateOptionsForBinaryFree(psOptionsForBinary);
 
-        GDALDestroyDriverManager();
+        GDALDestroy();
         return 0;
     }
 
@@ -369,7 +372,7 @@ MAIN_START(argc, argv)
     GDALTranslateOptionsFree(psOptions);
     GDALTranslateOptionsForBinaryFree(psOptionsForBinary);
 
-    GDALDestroyDriverManager();
+    GDALDestroy();
 
     return nRetCode;
 }

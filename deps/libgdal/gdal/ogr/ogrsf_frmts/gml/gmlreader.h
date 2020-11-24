@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gmlreader.h 6c215be4458b32ab4278c9f64ed7e31099a5021c 2018-06-23 13:09:29 +0200 Even Rouault $
+ * $Id: gmlreader.h a3aad911aa32cb3fe61804ba96ca44eedbdd9071 2020-10-22 11:42:59 +0200 Even Rouault $
  *
  * Project:  GML Reader
  * Purpose:  Public Declarations for OGR free GML Reader code.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -34,6 +34,7 @@
 #include "cpl_port.h"
 #include "cpl_vsi.h"
 #include "cpl_minixml.h"
+#include "ogr_core.h"
 #include "gmlutils.h"
 
 #include <map>
@@ -58,7 +59,10 @@ typedef enum {
     GMLPT_Short = 12,
     GMLPT_Float = 13,
     GMLPT_Integer64 = 14,
-    GMLPT_Integer64List = 15
+    GMLPT_Integer64List = 15,
+    GMLPT_DateTime = 16,
+    GMLPT_Date = 17,
+    GMLPT_Time = 18,
 } GMLPropertyType;
 
 /************************************************************************/
@@ -82,10 +86,11 @@ class CPL_DLL GMLPropertyDefn
     size_t            m_nSrcElementLen;
     char             *m_pszCondition;
     bool              m_bNullable;
+    bool              m_bUnique = false;
 
 public:
 
-        GMLPropertyDefn( const char *pszName, const char *pszSrcElement=nullptr );
+        explicit GMLPropertyDefn( const char *pszName, const char *pszSrcElement=nullptr );
        ~GMLPropertyDefn();
 
     const char *GetName() const { return m_pszName; }
@@ -105,6 +110,9 @@ public:
 
     void        SetNullable( bool bNullable ) { m_bNullable = bNullable; }
     bool        IsNullable() const { return m_bNullable; }
+
+    void        SetUnique( bool bUnique ) { m_bUnique = bUnique; }
+    bool        IsUnique() const { return m_bUnique; }
 
     void        AnalysePropertyValue( const GMLProperty* psGMLProperty,
                                       bool bSetWidth = true );
@@ -311,7 +319,6 @@ class CPL_DLL IGMLReader
                                    int iSqliteCacheMB ) = 0;
 
     virtual bool PrescanForSchema( bool bGetExtents = true,
-                                  bool bAnalyzeSRSPerFeature = true,
                                   bool bOnlyDetectSRS = false ) = 0;
     virtual bool PrescanForTemplate() = 0;
 
@@ -332,5 +339,7 @@ IGMLReader *CreateGMLReader(bool bUseExpatParserPreferably,
                             bool bConsiderEPSGAsURN,
                             GMLSwapCoordinatesEnum eSwapCoordinates,
                             bool bGetSecondaryGeometryOption);
+
+OGRFieldType GML_GetOGRFieldType(GMLPropertyType eType, OGRFieldSubType& eSubType);
 
 #endif /* GMLREADER_H_INCLUDED */

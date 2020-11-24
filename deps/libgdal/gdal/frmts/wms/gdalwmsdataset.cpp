@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Adam Nowacki
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2017, Dmitry Baryshnikov, <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS, <info@nextgis.com>
  *
@@ -46,7 +46,7 @@
 
 #include <algorithm>
 
-CPL_CVSID("$Id: gdalwmsdataset.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: gdalwmsdataset.cpp 3bd09ca50b5110b7a65d618ec7a5da135cce8c51 2020-09-09 12:05:44 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                           GDALWMSDataset()                           */
@@ -156,6 +156,9 @@ CPLErr GDALWMSDataset::Initialize(CPLXMLNode *config, char **l_papszOpenOptions)
 
     if (ret == CE_None) {
         const char *max_conn = CPLGetXMLValue(config, "MaxConnections", "");
+        if (max_conn[0] == '\0') {
+            max_conn = CPLGetConfigOption("GDAL_MAX_CONNECTIONS", "");
+        }
         if (max_conn[0] != '\0') {
             m_http_max_conn = atoi(max_conn);
         }

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogr_feature.h b1bcc1fb9ead43f093fa78f7126e332a51d2701a 2019-01-11 15:55:15 +0100 Even Rouault $
+ * $Id: ogr_feature.h 4fb0702109acae09624f7ff9436ddcd456cb09e3 2020-07-01 19:14:52 +1000 Nyall Dawson $
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Class for representing a whole feature, and layer schemas.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1999,  Les Technologies SoftMap Inc.
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -79,11 +79,13 @@ class OGRStyleTable;
  * Definition of an attribute of an OGRFeatureDefn. A field is described by :
  * <ul>
  * <li>a name. See SetName() / GetNameRef()</li>
+ * <li>an alternative name (optional): alternative descriptive name for the field (sometimes referred to as an "alias"). See SetAlternativeName() / GetAlternativeNameRef()</li>
  * <li>a type: OFTString, OFTInteger, OFTReal, ... See SetType() / GetType()</li>
  * <li>a subtype (optional): OFSTBoolean, ... See SetSubType() / GetSubType()</li>
  * <li>a width (optional): maximal number of characters. See SetWidth() / GetWidth()</li>
  * <li>a precision (optional): number of digits after decimal point. See SetPrecision() / GetPrecision()</li>
  * <li>a NOT NULL constraint (optional). See SetNullable() / IsNullable()</li>
+ * <li>a UNIQUE constraint (optional). See SetUnique() / IsUnique()</li>
  * <li>a default value (optional).  See SetDefault() / GetDefault()</li>
  * <li>a boolean to indicate whether it should be ignored when retrieving features.  See SetIgnored() / IsIgnored()</li>
  * </ul>
@@ -93,6 +95,7 @@ class CPL_DLL OGRFieldDefn
 {
   private:
     char                *pszName;
+    char                *pszAlternativeName;
     OGRFieldType        eType;
     OGRJustification    eJustify;
     int                 nWidth;  // Zero is variable.
@@ -103,6 +106,7 @@ class CPL_DLL OGRFieldDefn
     OGRFieldSubType     eSubType;
 
     int                 bNullable;
+    int                 bUnique;
 
   public:
                         OGRFieldDefn( const char *, OGRFieldType );
@@ -111,6 +115,9 @@ class CPL_DLL OGRFieldDefn
 
     void                SetName( const char * );
     const char         *GetNameRef() const { return pszName; }
+
+    void                SetAlternativeName( const char * );
+    const char         *GetAlternativeNameRef() const { return pszAlternativeName; }
 
     OGRFieldType        GetType() const { return eType; }
     void                SetType( OGRFieldType eTypeIn );
@@ -143,6 +150,9 @@ class CPL_DLL OGRFieldDefn
 
     int                 IsNullable() const { return bNullable; }
     void                SetNullable( int bNullableIn ) { bNullable = bNullableIn; }
+
+    int                 IsUnique() const { return bUnique; }
+    void                SetUnique( int bUniqueIn ) { bUnique = bUniqueIn; }
 
     int                 IsSame( const OGRFieldDefn * ) const;
 

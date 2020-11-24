@@ -6,10 +6,7 @@
 #include <node_object_wrap.h>
 
 // nan
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
-#pragma GCC diagnostic pop
+#include "../nan-wrapper.h"
 
 // gdal
 #include <gdal_priv.h>
@@ -19,37 +16,41 @@ using namespace node;
 
 namespace node_gdal {
 
-class FeatureFields: public Nan::ObjectWrap {
-public:
-	static Nan::Persistent<FunctionTemplate> constructor;
+class FeatureFields : public Nan::ObjectWrap {
+    public:
+  static Nan::Persistent<FunctionTemplate> constructor;
 
-	static void Initialize(Local<Object> target);
-	static NAN_METHOD(New);
-	static Local<Value> New(Local<Value> layer_obj);
-	static NAN_METHOD(toString);
-	static NAN_METHOD(toArray);
-	static NAN_METHOD(toObject);
+  static void Initialize(Local<Object> target);
+  static NAN_METHOD(New);
+  static Local<Value> New(Local<Value> layer_obj);
+  static NAN_METHOD(toString);
+  static NAN_METHOD(toArray);
+  static NAN_METHOD(toObject);
 
-	static NAN_METHOD(get);
-	static NAN_METHOD(getNames);
-	static NAN_METHOD(set);
-	static NAN_METHOD(reset);
-	static NAN_METHOD(count);
-	static NAN_METHOD(indexOf);
+  static NAN_METHOD(get);
+  static NAN_METHOD(getNames);
+  static NAN_METHOD(set);
+  static NAN_METHOD(reset);
+  static NAN_METHOD(count);
+  static NAN_METHOD(indexOf);
 
-	static Local<Value> get(OGRFeature *f, int field_index);
-	static Local<Value> getFieldAsIntegerList(OGRFeature* feature, int field_index);
-	static Local<Value> getFieldAsDoubleList(OGRFeature* feature, int field_index);
-	static Local<Value> getFieldAsStringList(OGRFeature* feature, int field_index);
-	static Local<Value> getFieldAsBinary(OGRFeature* feature, int field_index);
-	static Local<Value> getFieldAsDateTime(OGRFeature* feature, int field_index);
+  static Local<Value> get(OGRFeature *f, int field_index);
+  static Local<Value> getFieldAsIntegerList(OGRFeature *feature, int field_index);
+#if defined(GDAL_VERSION_MAJOR) && (GDAL_VERSION_MAJOR >= 2)
+  static Local<Value> getFieldAsInteger64List(OGRFeature *feature, int field_index);
+#endif
+  static Local<Value> getFieldAsDoubleList(OGRFeature *feature, int field_index);
+  static Local<Value> getFieldAsStringList(OGRFeature *feature, int field_index);
+  static Local<Value> getFieldAsBinary(OGRFeature *feature, int field_index);
+  static Local<Value> getFieldAsDateTime(OGRFeature *feature, int field_index);
 
-	static NAN_GETTER(featureGetter);
+  static NAN_GETTER(featureGetter);
 
-	FeatureFields();
-private:
-	~FeatureFields();
+  FeatureFields();
+
+    private:
+  ~FeatureFields();
 };
 
-}
+} // namespace node_gdal
 #endif

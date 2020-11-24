@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogr_gmt.h b73bd61268d34090f6dbccd2e4297c23ec84a7f2 2018-03-31 13:55:05 +0200 Even Rouault $
+ * $Id: ogr_gmt.h bc3d9f5351962c422f3e57a9ab1a251d91659192 2020-05-09 21:07:14 +0200 Even Rouault $
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions within the OGR GMT driver.
@@ -38,7 +38,7 @@
 /*                             OGRGmtLayer                              */
 /************************************************************************/
 
-class OGRGmtLayer : public OGRLayer
+class OGRGmtLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGRGmtLayer>
 {
     OGRSpatialReference *poSRS;
     OGRFeatureDefn     *poFeatureDefn;
@@ -73,7 +73,7 @@ class OGRGmtLayer : public OGRLayer
                         virtual ~OGRGmtLayer();
 
     void                ResetReading() override;
-    OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRGmtLayer)
 
     OGRFeatureDefn *    GetLayerDefn() override { return poFeatureDefn; }
 
@@ -93,7 +93,7 @@ class OGRGmtLayer : public OGRLayer
 /*                           OGRGmtDataSource                           */
 /************************************************************************/
 
-class OGRGmtDataSource : public OGRDataSource
+class OGRGmtDataSource final: public OGRDataSource
 {
     OGRGmtLayer       **papoLayers;
     int                 nLayers;

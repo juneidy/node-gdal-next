@@ -34,7 +34,7 @@
 #include "cpl_string.h"
 #include "cpl_minixml.h"
 
-CPL_CVSID("$Id: georaster_wrapper.cpp 19d847c8519919fcd1e7e7247644d28771034317 2019-03-29 20:17:06 +0100 Even Rouault $")
+CPL_CVSID("$Id: georaster_wrapper.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 //  ---------------------------------------------------------------------------
 //                                                           GeoRasterWrapper()
@@ -1597,11 +1597,9 @@ void GeoRasterWrapper::GetColorMap( int nBand, GDALColorTable* poCT )
 
         CPLXMLNode* psColors = CPLGetXMLNode( psLayers, "colorMap.colors.cell" );
 
-        int iColor = 0;
-
         for(  ; psColors; psColors = psColors->psNext )
         {
-            iColor    = (short) atoi( CPLGetXMLValue( psColors, "value","0"));
+            const int iColor    = (short) atoi( CPLGetXMLValue( psColors, "value","0"));
             oEntry.c1 = (short) atoi( CPLGetXMLValue( psColors, "red",  "0"));
             oEntry.c2 = (short) atoi( CPLGetXMLValue( psColors, "green","0"));
             oEntry.c3 = (short) atoi( CPLGetXMLValue( psColors, "blue", "0"));
@@ -2280,7 +2278,8 @@ CPLList* AddToNoDataList( CPLXMLNode* phNode, int nNumber, CPLList* poList )
 
 void GeoRasterWrapper::LoadNoDataValues( void )
 {
-    CPLListDestroy( psNoDataList );
+    if( psNoDataList )
+        return;
 
     CPLXMLNode* phLayerInfo = CPLGetXMLNode( phMetadata, "layerInfo" );
 

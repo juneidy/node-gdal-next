@@ -1,5 +1,5 @@
 /**********************************************************************
- * $Id: cpl_multiproc.h 34937419dd05bd6c2a760f06f9de82db85eed7bf 2019-09-03 21:55:02 +0200 Even Rouault $
+ * $Id: cpl_multiproc.h 5bf28e3bebd1032c4c8f50564d077f95cdf897d3 2020-09-30 14:07:46 +0200 Even Rouault $
  *
  * Project:  CPL - Common Portability Library
  * Purpose:  CPL Multi-Threading, and process handling portability functions.
@@ -7,7 +7,7 @@
  *
  **********************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -85,6 +85,13 @@ void  CPL_DLL CPLCleanupMasterMutex( void );
 
 CPLCond  CPL_DLL *CPLCreateCond( void );
 void  CPL_DLL  CPLCondWait( CPLCond *hCond, CPLMutex* hMutex );
+typedef enum
+{
+    COND_TIMED_WAIT_COND,
+    COND_TIMED_WAIT_TIME_OUT,
+    COND_TIMED_WAIT_OTHER
+} CPLCondTimedWaitReason;
+CPLCondTimedWaitReason CPL_DLL CPLCondTimedWait( CPLCond *hCond, CPLMutex* hMutex, double dfWaitInSeconds );
 void  CPL_DLL  CPLCondSignal( CPLCond *hCond );
 void  CPL_DLL  CPLCondBroadcast( CPLCond *hCond );
 void  CPL_DLL  CPLDestroyCond( CPLCond *hCond );
@@ -220,6 +227,8 @@ class CPL_DLL CPLLockHolder
 #define CTLS_VSIERRORCONTEXT            16         /* cpl_vsi_error.cpp */
 #define CTLS_ERRORHANDLERACTIVEDATA     17         /* cpl_error.cpp */
 #define CTLS_PROJCONTEXTHOLDER          18         /* ogr_proj_p.cpp */
+#define CTLS_GDALDEFAULTOVR_ANTIREC     19         /* gdaldefaultoverviews.cpp */
+#define CTLS_HTTPFETCHCALLBACK          20         /* cpl_http.cpp */
 
 #define CTLS_MAX                        32
 

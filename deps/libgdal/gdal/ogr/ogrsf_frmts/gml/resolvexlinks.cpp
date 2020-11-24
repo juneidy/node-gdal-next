@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, Chaitanya kumar CH
- * Copyright (c) 2010-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -40,7 +40,7 @@
 #include "cpl_minixml.h"
 #include "cpl_string.h"
 
-CPL_CVSID("$Id: resolvexlinks.cpp 002b050d9a9ef403a732c1210784736ef97216d4 2018-04-09 21:34:55 +0200 Even Rouault $")
+CPL_CVSID("$Id: resolvexlinks.cpp d9bbdfb6719682ac867fc00d6b708ca8e4405436 2020-09-29 11:53:53 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                              GetID()                                 */
@@ -590,7 +590,8 @@ bool GMLReader::ResolveXlinks( const char *pszFile,
         bool bTryWithTempFile = false;
         if( STARTS_WITH_CI(pszFile, "/vsitar/") ||
             STARTS_WITH_CI(pszFile, "/vsigzip/") ||
-            STARTS_WITH_CI(pszFile, "/vsizip/") )
+            STARTS_WITH_CI(pszFile, "/vsizip/") ||
+            STARTS_WITH_CI(pszFile, "/vsicurl") )
         {
             bTryWithTempFile = true;
         }

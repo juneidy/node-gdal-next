@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gtiff.h c4b4dfe1b5b03622575bd88104977ea52d08ddb7 2018-11-10 16:21:34 +0100 Even Rouault $
+ * $Id: gtiff.h 7e9a593460d00a8e3ad3dd06bec239be55c85f20 2020-10-05 11:18:58 +0200 Thomas Bonfort $
  *
  * Project:  GeoTIFF Driver
  * Purpose:  GDAL GeoTIFF support.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1998, 2002, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2010-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,8 +43,9 @@ void CPL_DLL LibgeotiffOneTimeInit();
 CPL_C_END
 
 void    GTIFFSetInExternalOvr( bool b );
-void    GTIFFGetOverviewBlockSize( int* pnBlockXSize, int* pnBlockYSize );
+void    GTIFFGetOverviewBlockSize( GDALRasterBandH hBand, int* pnBlockXSize, int* pnBlockYSize );
 void    GTIFFSetJpegQuality( GDALDatasetH hGTIFFDS, int nJpegQuality );
+void    GTIFFSetWebPLevel( GDALDatasetH hGTIFFDS, int nWebPLevel );
 void    GTIFFSetJpegTablesMode( GDALDatasetH hGTIFFDS, int nJpegTablesMode );
 int     GTIFFGetCompressionMethod( const char* pszValue,
                                    const char* pszVariableName );
@@ -65,6 +66,17 @@ constexpr uint16 DEFAULT_ALPHA_TYPE = EXTRASAMPLE_UNASSALPHA;
 
 uint16 GTiffGetAlphaValue(const char* pszValue, uint16 nDefault);
 
+CPLString CPL_DLL GTiffGetCompressValues(bool& bHasLZW,
+                                 bool& bHasDEFLATE,
+                                 bool& bHasLZMA,
+                                 bool& bHasZSTD,
+                                 bool& bHasJPEG,
+                                 bool& bHasWebP,
+                                 bool bForCOG);
+
+#if !defined(TIFFTAG_GDAL_METADATA)
+// The following 5 tags are now defined in tiff.h of libtiff > 4.1.0
+
 #define TIFFTAG_GDAL_METADATA  42112
 #define TIFFTAG_GDAL_NODATA    42113
 #define TIFFTAG_RPCCOEFFICIENT 50844
@@ -75,13 +87,6 @@ uint16 GTiffGetAlphaValue(const char* pszValue, uint16 nDefault);
 /* https://www.awaresystems.be/imaging/tiff/tifftags/geo_metadata.html */
 #define TIFFTAG_GEO_METADATA   50909
 
-#if defined(TIFFLIB_VERSION) && TIFFLIB_VERSION >= 20081217 && defined(BIGTIFF_SUPPORT)
-#  define HAVE_UNSETFIELD
-#endif
-
-#if defined(TIFFLIB_VERSION) && TIFFLIB_VERSION > 20041016
-/* We need at least TIFF 3.7.0 for TIFFGetSizeProc and TIFFClientdata */
-#  define HAVE_TIFFGETSIZEPROC
 #endif
 
 #if !defined(PREDICTOR_NONE)

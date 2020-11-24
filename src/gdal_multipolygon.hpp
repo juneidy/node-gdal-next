@@ -6,10 +6,7 @@
 #include <node_object_wrap.h>
 
 // nan
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
-#pragma GCC diagnostic pop
+#include "nan-wrapper.h"
 
 // ogr
 #include <ogrsf_frmts.h>
@@ -19,34 +16,34 @@ using namespace node;
 
 namespace node_gdal {
 
-class MultiPolygon: public Nan::ObjectWrap {
+class MultiPolygon : public Nan::ObjectWrap {
 
-public:
-	static Nan::Persistent<FunctionTemplate> constructor;
+    public:
+  static Nan::Persistent<FunctionTemplate> constructor;
 
-	static void Initialize(Local<Object> target);
-	static NAN_METHOD(New);
-	static Local<Value> New(OGRMultiPolygon *geom);
-	static Local<Value> New(OGRMultiPolygon *geom, bool owned);
-	static NAN_METHOD(toString);
-	static NAN_METHOD(unionCascaded);
-	static NAN_METHOD(getArea);
+  static void Initialize(Local<Object> target);
+  static NAN_METHOD(New);
+  static Local<Value> New(OGRMultiPolygon *geom);
+  static Local<Value> New(OGRMultiPolygon *geom, bool owned);
+  static NAN_METHOD(toString);
+  static NAN_METHOD(unionCascaded);
+  static NAN_METHOD(getArea);
 
-	MultiPolygon();
-	MultiPolygon(OGRMultiPolygon *geom);
-	inline OGRMultiPolygon *get() {
-		return this_;
-	}
-	inline bool isAlive(){
-		return this_;
-	}
+  MultiPolygon();
+  MultiPolygon(OGRMultiPolygon *geom);
+  inline OGRMultiPolygon *get() {
+    return this_;
+  }
+  inline bool isAlive() {
+    return this_;
+  }
 
-private:
-	~MultiPolygon();
-	OGRMultiPolygon *this_;
-	bool owned_;
-	int size_;
+    private:
+  ~MultiPolygon();
+  OGRMultiPolygon *this_;
+  bool owned_;
+  int size_;
 };
 
-}
+} // namespace node_gdal
 #endif

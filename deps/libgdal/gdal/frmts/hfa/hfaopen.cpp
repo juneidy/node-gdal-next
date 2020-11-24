@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1999, Intergraph Corporation
- * Copyright (c) 2007-2011, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2011, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -61,7 +61,7 @@
 #include "gdal_priv.h"
 #include "hfa.h"
 
-CPL_CVSID("$Id: hfaopen.cpp 888cb0ca8f7e4f4d7e8ef27535f9c52929da104d 2019-02-18 15:49:48 +0100 Even Rouault $")
+CPL_CVSID("$Id: hfaopen.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 static const char * const apszAuxMetadataItems[] = {
 // node/entry            field_name                  metadata_key       type
@@ -1320,7 +1320,14 @@ const Eprj_ProParameters *HFAGetProParameters( HFAHandle hHFA )
         CPLCalloc(sizeof(Eprj_ProParameters), 1));
 
     // Fetch the fields.
-    psProParms->proType = (Eprj_ProType)poMIEntry->GetIntField("proType");
+    const int proType = poMIEntry->GetIntField("proType");
+    if( proType != EPRJ_INTERNAL && proType != EPRJ_EXTERNAL )
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Wrong value for proType");
+        CPLFree(psProParms);
+        return nullptr;
+    }
+    psProParms->proType = static_cast<Eprj_ProType>(proType);
     psProParms->proNumber = poMIEntry->GetIntField("proNumber");
     psProParms->proExeName = CPLStrdup(poMIEntry->GetStringField("proExeName"));
     psProParms->proName = CPLStrdup(poMIEntry->GetStringField("proName"));
@@ -2751,7 +2758,7 @@ CPLErr HFASetMetadata( HFAHandle hHFA, int nBand, char **papszMD )
                         else
                         {
                             // Histogram were written as doubles, as is now the
-                            // default behaviour.
+                            // default behavior.
                             bRet &= VSIFSeekL(hHFA->fp, nOffset + 8 * nBin,
                                               SEEK_SET) >= 0;
                             double nValue = CPLAtof(pszWork);

@@ -8,7 +8,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -38,7 +38,7 @@
 #include "vrtdataset.h"
 #include <map>
 
-CPL_CVSID("$Id: dimapdataset.cpp 3189229c71a9620126f6b349f4f80399baeaf528 2019-04-20 20:33:36 +0200 Even Rouault $")
+CPL_CVSID("$Id: dimapdataset.cpp 13194b4d4129201bf822fe57887fd92e4cb3c2fa 2020-10-02 23:12:11 +0200 Thomas Bonfort $")
 
 /************************************************************************/
 /* ==================================================================== */
@@ -46,7 +46,7 @@ CPL_CVSID("$Id: dimapdataset.cpp 3189229c71a9620126f6b349f4f80399baeaf528 2019-0
 /* ==================================================================== */
 /************************************************************************/
 
-class DIMAPDataset : public GDALPamDataset
+class DIMAPDataset final: public GDALPamDataset
 {
     CPLXMLNode *psProduct;
 
@@ -143,11 +143,11 @@ DIMAPDataset::DIMAPDataset() :
 DIMAPDataset::~DIMAPDataset()
 
 {
-    FlushCache();
+    DIMAPDataset::FlushCache();
 
     CPLDestroyXMLNode( psProduct );
 
-    if( psProductDim != nullptr )
+    if( psProductDim != nullptr && psProductDim != psProduct )
         CPLDestroyXMLNode( psProductDim );
     if( psProductStrip != nullptr )
         CPLDestroyXMLNode( psProductStrip );
@@ -160,7 +160,7 @@ DIMAPDataset::~DIMAPDataset()
 
     CSLDestroy(papszXMLDimapMetadata);
 
-    CloseDependentDatasets();
+    DIMAPDataset::CloseDependentDatasets();
 }
 
 /************************************************************************/
@@ -268,7 +268,7 @@ char **DIMAPDataset::GetFileList()
 /* ==================================================================== */
 /************************************************************************/
 
-class DIMAPRasterBand : public GDALPamRasterBand
+class DIMAPRasterBand final: public GDALPamRasterBand
 {
     friend class DIMAPDataset;
 
@@ -566,72 +566,76 @@ GDALDataset *DIMAPDataset::Open( GDALOpenInfo * poOpenInfo )
     }
     else  // DIMAP2.
     {
-        // Verify the presence of the DIMAP product file.
-        CPLXMLNode *psDatasetComponents =
-            CPLGetXMLNode(psDoc, "Dataset_Content.Dataset_Components");
-
-        if( psDatasetComponents == nullptr )
-        {
-            CPLError( CE_Failure, CPLE_OpenFailed,
-                      "Failed to find <Dataset_Components> in document." );
-            CPLDestroyXMLNode(psProduct);
-            return nullptr;
-        }
-
+        //Verify if the opened file is not already a product dimap
         if( CPLGetXMLNode(psDoc, "Raster_Data") )
         {
+            psProductDim = psProduct;
             osDIMAPFilename = osMDFilename;
         }
+        else {
+            // Verify the presence of the DIMAP product file.
+            CPLXMLNode *psDatasetComponents =
+                CPLGetXMLNode(psDoc, "Dataset_Content.Dataset_Components");
 
-        for( CPLXMLNode *psDatasetComponent = psDatasetComponents->psChild;
-             osDIMAPFilename.empty() && psDatasetComponent != nullptr;
-             psDatasetComponent = psDatasetComponent->psNext )
-        {
-            const char* pszComponentType =
-                CPLGetXMLValue(psDatasetComponent, "COMPONENT_TYPE","");
-            if( strcmp(pszComponentType, "DIMAP") == 0 )
+            if( psDatasetComponents == nullptr )
             {
-                const char *pszHref = CPLGetXMLValue(
-                        psDatasetComponent, "COMPONENT_PATH.href", "" );
+                CPLError( CE_Failure, CPLE_OpenFailed,
+                        "Failed to find <Dataset_Components> in document." );
+                CPLDestroyXMLNode(psProduct);
+                return nullptr;
+            }
 
-                if( strlen(pszHref) > 0 )  // DIMAP product found.
+
+            for( CPLXMLNode *psDatasetComponent = psDatasetComponents->psChild;
+                osDIMAPFilename.empty() && psDatasetComponent != nullptr;
+                psDatasetComponent = psDatasetComponent->psNext )
+            {
+                const char* pszComponentType =
+                    CPLGetXMLValue(psDatasetComponent, "COMPONENT_TYPE","");
+                if( strcmp(pszComponentType, "DIMAP") == 0 )
                 {
-                    if( poOpenInfo->bIsDirectory )
-                    {
-                        osDIMAPFilename =
-                            CPLFormCIFilename( poOpenInfo->pszFilename,
-                                               pszHref, nullptr );
-                    }
-                    else
-                    {
-                        CPLString osPath = CPLGetPath(osMDFilename);
-                        osDIMAPFilename =
-                            CPLFormFilename( osPath, pszHref, nullptr );
-                    }
+                    const char *pszHref = CPLGetXMLValue(
+                            psDatasetComponent, "COMPONENT_PATH.href", "" );
 
-                    // Data file might be specified there.
-                    const char *pszDataFileHref = CPLGetXMLValue(
-                        psDatasetComponent,
-                        "Data_Files.Data_File.DATA_FILE_PATH.href",
-                        "" );
-
-                    if( strlen(pszDataFileHref) > 0 )
+                    if( strlen(pszHref) > 0 )  // DIMAP product found.
                     {
-                        CPLString osPath = CPLGetPath(osMDFilename);
-                        osImageDSFilename =
-                            CPLFormFilename( osPath, pszDataFileHref, nullptr );
-                    }
+                        if( poOpenInfo->bIsDirectory )
+                        {
+                            osDIMAPFilename =
+                                CPLFormCIFilename( poOpenInfo->pszFilename,
+                                                pszHref, nullptr );
+                        }
+                        else
+                        {
+                            CPLString osPath = CPLGetPath(osMDFilename);
+                            osDIMAPFilename =
+                                CPLFormFilename( osPath, pszHref, nullptr );
+                        }
 
-                    break;
+                        // Data file might be specified there.
+                        const char *pszDataFileHref = CPLGetXMLValue(
+                            psDatasetComponent,
+                            "Data_Files.Data_File.DATA_FILE_PATH.href",
+                            "" );
+
+                        if( strlen(pszDataFileHref) > 0 )
+                        {
+                            CPLString osPath = CPLGetPath(osMDFilename);
+                            osImageDSFilename =
+                                CPLFormFilename( osPath, pszDataFileHref, nullptr );
+                        }
+
+                        break;
+                    }
                 }
             }
-        }
 
-        psProductDim = CPLParseXMLFile( osDIMAPFilename );
-        if( psProductDim == nullptr )
-        {
-            CPLDestroyXMLNode(psProduct);
-            return nullptr;
+            psProductDim = CPLParseXMLFile( osDIMAPFilename );
+            if( psProductDim == nullptr )
+            {
+                CPLDestroyXMLNode(psProduct);
+                return nullptr;
+            }
         }
 
         // We need the {STRIP|RPC}_<product_id>.XML file for a few metadata.
@@ -659,16 +663,19 @@ GDALDataset *DIMAPDataset::Open( GDALOpenInfo * poOpenInfo )
 
                     if( strlen(pszHref) > 0 )  // STRIP product found.
                     {
+                        VSIStatBufL sStat;
                         CPLString osPath = CPLGetPath(osDIMAPFilename);
                         osSTRIPFilename =
                             CPLFormCIFilename( osPath, pszHref, nullptr );
-
-                        break;
+                        if (VSIStatL(osSTRIPFilename, &sStat) == 0)
+                        {
+                            psProductStrip = CPLParseXMLFile(osSTRIPFilename);
+                            break;
+                        }
                     }
                 }
             }
 
-            psProductStrip = CPLParseXMLFile( osSTRIPFilename );
         }
 
         CPLXMLNode *psDatasetRFMComponents =
@@ -1091,6 +1098,7 @@ int DIMAPDataset::ReadImageInformation2()
          </Data_Files>
     */
     std::map< std::pair<int,int>, CPLString > oMapRowColumnToName;
+    int nImageDSRow=1, nImageDSCol=1;
     if( psDataFiles )
     {
         int nRows = 1;
@@ -1110,9 +1118,12 @@ int DIMAPDataset::ReadImageInformation2()
                 {
                     int nRow = atoi(pszR);
                     int nCol = atoi(pszC);
-                    if( nRow == 1 && nCol == 1 )
+                    if( (nRow == 1 && nCol == 1) || osImageDSFilename.empty() ) {
                         osImageDSFilename =
                             CPLFormCIFilename( osPath, pszHref, nullptr );
+                            nImageDSRow = nRow;
+                            nImageDSCol = nCol;
+                    }
                     if( nRow > nRows ) nRows = nRow;
                     if( nCol > nCols ) nCols = nCol;
                     oMapRowColumnToName[ std::pair<int,int>(nRow, nCol) ] =
@@ -1294,7 +1305,12 @@ int DIMAPDataset::ReadImageInformation2()
         if( poImageDS->GetGeoTransform(adfGeoTransform) == CE_None &&
             !(adfGeoTransform[0] <= 1.5 && fabs(adfGeoTransform[3]) <= 1.5) )
         {
-            bHaveGeoTransform = TRUE;
+                bHaveGeoTransform = TRUE;
+                //fix up the origin if we did not get the geotransform from the top-left tile
+                adfGeoTransform[0] -= (nImageDSCol-1) * adfGeoTransform[1] * nTileWidth +
+                    (nImageDSRow-1) * adfGeoTransform[2] * nTileHeight;
+                adfGeoTransform[3] -= (nImageDSCol-1) * adfGeoTransform[4] * nTileWidth +
+                    (nImageDSRow-1) * adfGeoTransform[5] * nTileHeight;
         }
     }
 
@@ -1604,7 +1620,7 @@ void GDALRegister_DIMAP()
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "SPOT DIMAP" );
     poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC,
-                               "frmt_various.html#DIMAP" );
+                               "drivers/raster/dimap.html" );
     poDriver->SetMetadataItem( GDAL_DCAP_VIRTUALIO, "YES" );
 
     poDriver->pfnOpen = DIMAPDataset::Open;

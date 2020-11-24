@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2007-2010, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2010, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -40,7 +40,7 @@
 #include "ogrsf_frmts.h"
 #include "commonutils.h"
 
-CPL_CVSID("$Id: ogrtindex.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrtindex.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 typedef enum
 {
@@ -623,7 +623,7 @@ MAIN_START(nArgc, papszArgv)
                     {
                         fprintf(
                             stderr, "Note : you can override this "
-                            "behaviour with -accept_different_schemas option\n"
+                            "behavior with -accept_different_schemas option\n"
                             "but this may result in a tileindex incompatible "
                             "with MapServer\n");
                         bFirstWarningForNonMatchingAttributes = false;
@@ -657,7 +657,7 @@ MAIN_START(nArgc, papszArgv)
                         {
                             fprintf(
                                 stderr, "Note : you can override this "
-                                "behaviour with -accept_different_schemas "
+                                "behavior with -accept_different_schemas "
                                 "option,\nbut this may result in a tileindex "
                                 "incompatible with MapServer\n");
                             bFirstWarningForNonMatchingAttributes = false;

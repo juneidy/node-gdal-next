@@ -76,7 +76,8 @@ struct ESRIParamMapping {
     const char *esri_name;
     const char *wkt2_name;
     int epsg_code;
-    float fixed_value;
+    const char *fixed_value;
+    bool is_fixed_value;
 };
 
 struct ESRIMethodMapping {
@@ -274,6 +275,7 @@ class PROJBasedOperation : public SingleOperation {
     create(const util::PropertyMap &properties,
            const io::IPROJStringExportableNNPtr &projExportable, bool inverse,
            const crs::CRSNNPtr &sourceCRS, const crs::CRSNNPtr &targetCRS,
+           const crs::CRSPtr &interpolationCRS,
            const std::vector<metadata::PositionalAccuracyNNPtr> &accuracies,
            bool hasRoughTransformation);
 

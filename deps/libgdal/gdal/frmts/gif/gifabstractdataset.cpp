@@ -2,10 +2,10 @@
  *
  * Project:  GIF Driver
  * Purpose:  GIF Abstract Dataset
- * Author:   Even Rouault <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault <even dot rouault at spatialys.com>
  *
  ****************************************************************************
- * Copyright (c) 2011-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -28,7 +28,7 @@
 
 #include "gifabstractdataset.h"
 
-CPL_CVSID("$Id: gifabstractdataset.cpp 3189229c71a9620126f6b349f4f80399baeaf528 2019-04-20 20:33:36 +0200 Even Rouault $")
+CPL_CVSID("$Id: gifabstractdataset.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 constexpr int InterlacedOffset[] = { 0, 4, 2, 1 };
 constexpr int InterlacedJumps[] = { 8, 8, 4, 2 };
@@ -453,7 +453,7 @@ GifRecordType GIFAbstractDataset::FindFirstImage( GifFileType* hGifFile )
 GIFAbstractRasterBand::GIFAbstractRasterBand(
     GIFAbstractDataset *poDSIn, int nBandIn,
     SavedImage *psSavedImage, int nBackground,
-    int bAdvertizeInterlacedMDI ) :
+    int bAdvertiseInterlacedMDI ) :
     psImage(psSavedImage),
     panInterlaceMap(nullptr),
     poColorTable(nullptr),
@@ -478,7 +478,7 @@ GIFAbstractRasterBand::GIFAbstractRasterBand(
     {
         int iLine = 0;
 
-        if( bAdvertizeInterlacedMDI )
+        if( bAdvertiseInterlacedMDI )
             poDS->SetMetadataItem( "INTERLACED", "YES", "IMAGE_STRUCTURE" );
 
         panInterlaceMap = (int *) CPLCalloc(poDSIn->nRasterYSize,sizeof(int));
@@ -491,7 +491,7 @@ GIFAbstractRasterBand::GIFAbstractRasterBand(
                 panInterlaceMap[j] = iLine++;
         }
     }
-    else if( bAdvertizeInterlacedMDI )
+    else if( bAdvertiseInterlacedMDI )
     {
         poDS->SetMetadataItem( "INTERLACED", "NO", "IMAGE_STRUCTURE" );
     }

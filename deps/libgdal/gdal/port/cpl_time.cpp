@@ -3,7 +3,7 @@
  * Name:     cpl_time.cpp
  * Project:  CPL - Common Portability Library
  * Purpose:  Time functions.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  **********************************************************************
  *
@@ -28,7 +28,7 @@
 
 #include "cpl_error.h"
 
-CPL_CVSID("$Id: cpl_time.cpp 0846c4df38348216396587449b9cef818856b36c 2018-01-10 16:19:40Z Kurt Schwehr $")
+CPL_CVSID("$Id: cpl_time.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 constexpr int SECSPERMIN = 60;
 constexpr int MINSPERHOUR = 60;
@@ -82,8 +82,9 @@ struct tm * CPLUnixTimeToYMDHMS(GIntBig unixTime, struct tm* pRet)
     GIntBig days = unixTime / SECSPERDAY;
     GIntBig rem = unixTime % SECSPERDAY;
 
-    if( unixTime < -static_cast<GIntBig>(10000) * SECSPERDAY * DAYSPERLYEAR ||
-        unixTime > static_cast<GIntBig>(10000) * SECSPERDAY * DAYSPERLYEAR )
+    constexpr GIntBig TEN_THOUSAND_YEARS =
+        static_cast<GIntBig>(10000) * SECSPERDAY * DAYSPERLYEAR;
+    if( unixTime < -TEN_THOUSAND_YEARS || unixTime > TEN_THOUSAND_YEARS )
     {
         CPLError(CE_Failure, CPLE_NotSupported,
                  "Invalid unixTime = " CPL_FRMT_GIB,

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gmlreaderp.h 365a72f2b5a94946e92323060b68f9963cd2dbd5 2018-05-06 22:14:36 +0200 Even Rouault $
+ * $Id: gmlreaderp.h a3aad911aa32cb3fe61804ba96ca44eedbdd9071 2020-10-22 11:42:59 +0200 Even Rouault $
  *
  * Project:  GML Reader
  * Purpose:  Private Declarations for OGR free GML Reader code.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -54,6 +54,8 @@
 class GMLReader;
 
 typedef struct _GeometryNamesStruct GeometryNamesStruct;
+
+bool OGRGMLIsGeometryElement(const char* pszElement);
 
 /************************************************************************/
 /*                        GFSTemplateList                               */
@@ -356,6 +358,7 @@ class GMLReader final: public IGMLReader
     bool          SetupParserExpat();
     GMLFeature   *NextFeatureExpat();
     char         *pabyBuf;
+    CPLString     m_osErrorMessage{};
 #endif
 
     VSILFILE*     fpGML;
@@ -441,7 +444,6 @@ public:
                                        int iSqliteCacheMB ) override;
 
     bool             PrescanForSchema(bool bGetExtents = true,
-                                      bool bAnalyzeSRSPerFeature = true,
                                       bool bOnlyDetectSRS = false ) override;
     bool             PrescanForTemplate() override;
     bool             ReArrangeTemplateClasses( GFSTemplateList *pCC );

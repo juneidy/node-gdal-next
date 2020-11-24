@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, 2011, Martin Lambers <marlam@marlam.de>
- * Copyright (c) 2011-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -91,7 +91,7 @@
 #include "gdal_pam.h"
 #include "gta_headers.h"
 
-CPL_CVSID("$Id: gtadataset.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: gtadataset.cpp 8c3e4ef55212f20eec95aa7e12ba5d48dacfdc47 2020-10-01 21:20:51 +0200 Even Rouault $")
 
 /************************************************************************/
 /* Helper functions                                                     */
@@ -129,7 +129,7 @@ static CPLString PrintDoubles( const double *padfDoubles, int nCount )
 /* ==================================================================== */
 /************************************************************************/
 
-class GTAIO : public gta::custom_io
+class GTAIO final: public gta::custom_io
 {
   private:
     VSILFILE *fp;
@@ -214,7 +214,7 @@ class GTAIO : public gta::custom_io
 
 class GTARasterBand;
 
-class GTADataset : public GDALPamDataset
+class GTADataset final: public GDALPamDataset
 {
     friend class GTARasterBand;
 
@@ -223,16 +223,17 @@ class GTADataset : public GDALPamDataset
     GTAIO       oGTAIO;
     // GTA information
     gta::header oHeader;
-    vsi_l_offset DataOffset;
+    vsi_l_offset DataOffset = 0;
     // Metadata
-    bool        bHaveGeoTransform;
+    bool        bHaveGeoTransform = false;
     double      adfGeoTransform[6];
-    int         nGCPs;
-    char        *pszGCPProjection;
-    GDAL_GCP    *pasGCPs;
+    int         nGCPs = 0;
+    char        *pszGCPProjection = nullptr;
+    GDAL_GCP    *pasGCPs = nullptr;
     // Cached data block for block-based input/output
-    int         nLastBlockXOff, nLastBlockYOff;
-    void        *pBlock;
+    int         nLastBlockXOff = -1;
+    int         nLastBlockYOff = -1;
+    void        *pBlock = nullptr;
 
     // Block-based input/output of all bands at once. This is used
     // by the GTARasterBand input/output functions.
@@ -278,7 +279,7 @@ class GTADataset : public GDALPamDataset
 /* ==================================================================== */
 /************************************************************************/
 
-class GTARasterBand : public GDALPamRasterBand
+class GTARasterBand final: public GDALPamRasterBand
 {
     friend class GTADataset;
   private:
@@ -779,16 +780,6 @@ CPLErr GTARasterBand::IWriteBlock( int nBlockXOff, int nBlockYOff,
 GTADataset::GTADataset()
 
 {
-    // Initialize Metadata
-    bHaveGeoTransform = false;
-    nGCPs = 0;
-    pszGCPProjection = nullptr;
-    pasGCPs = nullptr;
-    // Initialize block-based input/output
-    nLastBlockXOff = -1;
-    nLastBlockYOff = -1;
-    pBlock = nullptr;
-    DataOffset = 0;
     memset( adfGeoTransform, 0, sizeof(adfGeoTransform) );
 }
 
@@ -1704,7 +1695,7 @@ void GDALRegister_GTA()
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "Generic Tagged Arrays (.gta)" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_gta.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/gta.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "gta" );
     poDriver->SetMetadataItem( GDAL_DMD_CREATIONDATATYPES,
                                "Byte UInt16 Int16 UInt32 Int32 Float32 Float64 "

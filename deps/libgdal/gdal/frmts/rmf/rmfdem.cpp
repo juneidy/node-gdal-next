@@ -31,7 +31,7 @@
 
 #include "rmfdataset.h"
 
-CPL_CVSID("$Id: rmfdem.cpp 67f9577cc94b44560968be2c09cef9da1d534c2c 2018-07-05 00:59:11 +0400 drons $")
+CPL_CVSID("$Id: rmfdem.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /*
  * The encoded data stream is a series of records.
@@ -95,7 +95,7 @@ GInt32 INV_INT4  = 0xFFFFFFF0L;
 GInt32 INV_INT12 = 0xFFFFF000L;
 GInt32 INV_INT24 = 0xFF000000L;
 
-// Not sure which behaviour we wish for int32 overflow, so just do the
+// Not sure which behavior we wish for int32 overflow, so just do the
 // addition as uint32 to workaround -ftrapv
 CPL_NOSANITIZE_UNSIGNED_INT_OVERFLOW
 static GInt32 AddInt32( GInt32& nTarget, GInt32 nVal )
@@ -670,7 +670,7 @@ size_t RMFDataset::DEMCompress(const GByte* pabyIn, GUInt32 nSizeIn,
         if(nRecordSize == 1)
         {
             eRecordType = eCurrType;
-            nRecordElementSize = anDeltaTypeSize[eCurrType >> 5];
+            //nRecordElementSize = anDeltaTypeSize[eCurrType >> 5];
             continue;
         }
 
@@ -710,9 +710,9 @@ size_t RMFDataset::DEMCompress(const GByte* pabyIn, GUInt32 nSizeIn,
 
         nLessCount++;
 
-        GUInt32 nElementDeltaSize(nRecordElementSize -
-                                  anDeltaTypeSize[eCurrType >> 5]);
-        if( nElementDeltaSize * nLessCount < 16)
+        GUInt32 nDeltaSize(anDeltaTypeSize[eCurrType >> 5]);
+        if(nRecordElementSize < nDeltaSize ||
+           (nRecordElementSize - nDeltaSize) * nLessCount < 16)
         {
             continue;
         }

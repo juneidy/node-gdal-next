@@ -50,7 +50,7 @@ constexpr double DEG_TO_RAD = M_PI / 180.0;
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 constexpr double CONTIGUITY_TOLERANCE = 1e10; // Arbitrary high value
 
-CPL_CVSID("$Id: ogrdgnv8layer.cpp 0fe977e272dc43f48341e446d539dea902b39c29 2019-02-02 14:22:00 -0800 Lucian Plesea $")
+CPL_CVSID("$Id: ogrdgnv8layer.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 static CPLString ToUTF8(const OdString& str)
 {
@@ -174,7 +174,7 @@ OGRDGNV8Layer::OGRDGNV8Layer( OGRDGNV8DataSource* poDS,
     oField.SetPrecision( 0 );
     m_poFeatureDefn->AddFieldDefn( &oField );
     
-    ResetReading();
+    OGRDGNV8Layer::ResetReading();
 }
 
 /************************************************************************/
@@ -583,6 +583,7 @@ static void ProcessCurve(OGRFeature* poFeature, const CPLString& osPen,
         double dfParam = dfStartParam + i *
                 (dfEndParam - dfStartParam) / (nPoints - 1);
         eRes = curveElement->getPointAtParam(dfParam, point);
+        CPL_IGNORE_RET_VAL(eRes);
         CPLAssert(eRes == eOk );
         ProcessCurveTraits<CurveElementPtr>::setPoint(poSC, i, point);
     }

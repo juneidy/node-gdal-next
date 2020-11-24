@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogr_pg.h e57c8627b2925254b5d0b35d42d987891eb3bcd0 2018-11-21 20:25:46 +0100 Even Rouault $
+ * $Id: ogr_pg.h c91c85854631084021f9a75fe6797fea2ac071c4 2020-09-21 15:20:58 +0200 Alessandro Pasotti $
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Private definitions for OGR/PostgreSQL driver.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2000, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -37,6 +37,8 @@
 
 #include "ogrpgutility.h"
 #include "ogr_pgdump.h"
+
+#include <vector>
 
 /* These are the OIDs for some builtin types, as returned by PQftype(). */
 /* They were copied from pg_type.h in src/include/catalog/pg_type.h */
@@ -137,7 +139,7 @@ class OGRPGGeomFieldDefn final: public OGRGeomFieldDefn
 /*                          OGRPGFeatureDefn                            */
 /************************************************************************/
 
-class OGRPGFeatureDefn: public OGRFeatureDefn
+class OGRPGFeatureDefn CPL_NON_FINAL: public OGRFeatureDefn
 {
     public:
         explicit OGRPGFeatureDefn( const char * pszName = nullptr ) :
@@ -162,7 +164,7 @@ class OGRPGFeatureDefn: public OGRFeatureDefn
 /*                            OGRPGLayer                                */
 /************************************************************************/
 
-class OGRPGLayer : public OGRLayer
+class OGRPGLayer CPL_NON_FINAL: public OGRLayer
 {
   protected:
     OGRPGFeatureDefn   *poFeatureDefn;
@@ -308,6 +310,8 @@ class OGRPGTableLayer final: public OGRPGLayer
     int                 iFIDAsRegularColumnIndex;
 
     CPLString           m_osFirstGeometryFieldName;
+
+    std::vector<bool>   m_abGeneratedColumns{};
 
     virtual CPLString   GetFromClauseForGetExtent() override { return pszSqlTableName; }
 
@@ -457,7 +461,6 @@ class OGRPGDataSource final: public OGRDataSource
     int                 nLayers;
 
     char               *pszName;
-    char               *pszDBName;
 
     int                 bDSUpdate;
     int                 bHavePostGIS;
@@ -561,6 +564,7 @@ class OGRPGDataSource final: public OGRDataSource
     virtual OGRLayer *  ExecuteSQL( const char *pszSQLCommand,
                                     OGRGeometry *poSpatialFilter,
                                     const char *pszDialect ) override;
+    virtual OGRErr      AbortSQL() override;
     virtual void        ReleaseResultSet( OGRLayer * poLayer ) override;
 
     virtual const char* GetMetadataItem(const char* pszKey,

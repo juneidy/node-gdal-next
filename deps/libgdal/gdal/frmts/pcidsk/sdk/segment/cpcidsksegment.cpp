@@ -34,6 +34,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <vector>
 #include <string>
 
@@ -88,7 +89,7 @@ void CPCIDSKSegment::SetMetadataValue( const std::string &key, const std::string
 }
 
 /************************************************************************/
-/*                           GetMetdataKeys()                           */
+/*                           GetMetadataKeys()                           */
 /************************************************************************/
 std::vector<std::string> CPCIDSKSegment::GetMetadataKeys() const
 {
@@ -105,9 +106,26 @@ void CPCIDSKSegment::LoadSegmentPointer( const char *segment_pointer )
     PCIDSKBuffer segptr( segment_pointer, 32 );
 
     segment_flag = segptr.buffer[0];
-    segment_type = (eSegType) (atoi(segptr.Get(1,3)));
-    data_offset = (atouint64(segptr.Get(12,11))-1) * 512;
-    data_size = atouint64(segptr.Get(23,9)) * 512;
+    const int segment_type_int = atoi(segptr.Get(1,3));
+    segment_type = SegmentTypeName(segment_type_int) == "UNKNOWN" ?
+        SEG_UNKNOWN : static_cast<eSegType>(segment_type_int);
+    data_offset = atouint64(segptr.Get(12,11));
+    if( data_offset == 0 )
+        data_offset = 0; // throw exception maybe ?
+    else
+    {
+        if( data_offset-1 > std::numeric_limits<uint64>::max() / 512 )
+        {
+            return ThrowPCIDSKException("too large data_offset");
+        }
+        data_offset = (data_offset-1) * 512;
+    }
+    data_size = atouint64(segptr.Get(23,9));
+    if( data_size > std::numeric_limits<uint64>::max() / 512 )
+    {
+        return ThrowPCIDSKException("too large data_size");
+    }
+    data_size *= 512;
 
     segptr.Get(4,8,segment_name);
 }
@@ -220,6 +238,7 @@ void CPCIDSKSegment::WriteToFile( const void *buffer, uint64 offset, uint64 size
         data_size += blocks_to_add * 512;
     }
 
+    assert(file); // avoid CLang Static Analyzer false positive
     file->WriteToFile( buffer, offset + data_offset + 1024, size );
 }
 

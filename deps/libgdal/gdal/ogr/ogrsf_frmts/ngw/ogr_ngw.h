@@ -31,13 +31,13 @@
 
 // gdal headers
 #include "ogrsf_frmts.h"
-#include "swq.h"
+#include "ogr_swq.h"
 
 #include <map>
 #include <set>
 
 namespace NGWAPI {
-    std::string GetPermisions(const std::string &osUrl, const std::string &osResourceId);
+    std::string GetPermissions(const std::string &osUrl, const std::string &osResourceId);
     std::string GetResource(const std::string &osUrl, const std::string &osResourceId);
     std::string GetChildren(const std::string &osUrl, const std::string &osResourceId);
     std::string GetFeature(const std::string &osUrl, const std::string &osResourceId);
@@ -112,7 +112,7 @@ namespace NGWAPI {
 
 class OGRNGWDataset;
 
-class OGRNGWLayer : public OGRLayer
+class OGRNGWLayer final: public OGRLayer
 {
     std::string osResourceId;
     OGRNGWDataset *poDS;

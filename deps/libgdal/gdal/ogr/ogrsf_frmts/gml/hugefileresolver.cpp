@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2011, Alessandro Furieri
- * Copyright (c) 2011-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -55,7 +55,7 @@
 
 #endif
 
-CPL_CVSID("$Id: hugefileresolver.cpp 98dfb4b4012c5ae4621e246e8eb393b3c05a3f48 2018-04-02 22:09:55 +0200 Even Rouault $")
+CPL_CVSID("$Id: hugefileresolver.cpp 1388337fc9b2302672125dd7cc4940b52ed50565 2020-06-01 16:12:38 +0200 Even Rouault $")
 
 /****************************************************/
 /*      SQLite is absolutely required in order to   */
@@ -997,7 +997,7 @@ static void gmlHugeFileHrefReset( huge_helper *helper )
     helper->pLastHref = nullptr;
 }
 
-static int gmlHugeFileHrefCheck( huge_helper *helper )
+static bool gmlHugeFileHrefCheck( huge_helper *helper )
 {
     // Testing for unresolved items.
     bool bError = false;
@@ -1541,7 +1541,7 @@ static struct huge_parent *gmlHugeFindParent( huge_helper *helper,
     return pItem;
 }
 
-static int gmlHugeSetChild( struct huge_parent *pParent,
+static bool gmlHugeSetChild( struct huge_parent *pParent,
                             struct huge_href *pItem )
 {
     // Setting a Child Node to be rewritten.
@@ -1558,7 +1558,7 @@ static int gmlHugeSetChild( struct huge_parent *pParent,
     return false;
 }
 
-static int gmlHugeResolveEdges( CPL_UNUSED huge_helper *helper,
+static bool gmlHugeResolveEdges( CPL_UNUSED huge_helper *helper,
                                 CPL_UNUSED CPLXMLNode *psNode,
                                 sqlite3 *hDB )
 {
@@ -1732,6 +1732,7 @@ static bool gmlHugeFileWriteResolved( huge_helper *helper,
 
     VSIFPrintfL(fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
     VSIFPrintfL(fp, "<ResolvedTopoFeatureCollection  "
+                    "xmlns:xlink=\"http://www.w3.org/1999/xlink\" "
                     "xmlns:gml=\"http://www.opengis.net/gml\">\n");
     VSIFPrintfL(fp, "  <ResolvedTopoFeatureMembers>\n");
 

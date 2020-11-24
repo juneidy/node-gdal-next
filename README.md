@@ -7,6 +7,7 @@ This project is a fork of https://github.com/naturalatlas/node-gdal that:
 - Adds support for more formats
   - GPKG, sqlite, OSM, MBTiles, MVT
 - Adds `Geometry.fromGeoJson` to parse GeoJSON easily
+- Adds async support for raster data + opening/parsing files
 
 See the [ROADMAP](ROADMAP.md) for more info about the future of this fork. All thanks and credit goes to the original maintainers!
 
@@ -22,13 +23,13 @@ longitude second. If you don't want to make large code changes, you can replace 
 [![Build Status](https://travis-ci.org/contra/node-gdal-next.svg)](https://travis-ci.org/contra/node-gdal-next)
 [<img src="https://ci.appveyor.com/api/projects/status/8u9qlfu2cjor4idi?svg=true" height="20" alt="" />](https://ci.appveyor.com/project/contra/node-gdal-next)
 
-Read and write raster and vector geospatial datasets straight from [Node.js](http://nodejs.org) with this native [GDAL](http://www.gdal.org/) binding. GDAL [3.0.2](https://trac.osgeo.org/gdal/wiki/Release/3.0.2-News) ([GEOS](http://trac.osgeo.org/geos/) [3.8.0](https://github.com/libgeos/geos/releases/tag/3.8.0), [Proj](http://trac.osgeo.org/proj/) [7.0.0](https://github.com/OSGeo/PROJ/releases/tag/7.0.0)) comes bundled, so node-gdal will work straight out of the box. To get started, browse the [**API Documentation**](https://contra.io/node-gdal-next/classes/gdal.html) or [examples](examples/).
+Read and write raster and vector geospatial datasets straight from [Node.js](http://nodejs.org) with this native [GDAL](http://www.gdal.org/) binding. To get started, browse the [**API Documentation**](https://contra.io/node-gdal-next/classes/gdal.html) or [examples](examples/).
 
 ```sh
 $ npm install gdal-next --save
 ```
 
-To link against shared libgdal, install using:
+By default all dependencies are the latest versions and bundled out of the box, but if you would like to link against a pre-installed gdal you can use these flags when installing:
 
 ```sh
 # requires libgdal-dev (debian: sudo apt-get install libgdal-dev)
@@ -65,7 +66,7 @@ console.log("srs: " + (layer.srs ? layer.srs.toWKT() : 'null'))
 
 ## Notes
 
-- This binding is *not* async, so it will block node's event loop. Be very careful (or avoid) using it in server code. We recommended using tools like [worker-farm](https://www.npmjs.com/package/worker-farm) to push expensive operations to a seperate process.
+- Currently only raster operations are async, everything else will block Node's event loop. The module is not worker-thread compatible so we recommend using [worker-farm](https://www.npmjs.com/package/worker-farm) to push expensive operations to a seperate process.
 
 ## Bundled Drivers
 

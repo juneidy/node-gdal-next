@@ -6,10 +6,7 @@
 #include <node.h>
 
 // nan
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
-#pragma GCC diagnostic pop
+#include "../nan-wrapper.h"
 
 using namespace v8;
 
@@ -24,20 +21,21 @@ namespace node_gdal {
 // ["key=value", ...]
 
 class StringList {
-public:
-	int parse(Local<Value> value);
+    public:
+  int parse(Local<Value> value);
 
-	StringList();
-	~StringList();
+  StringList();
+  ~StringList();
 
-	inline char **get() {
-		return list;
-	}
-private:
-	char** list;
-	std::string* strlist;
+  inline char **get() {
+    return list;
+  }
+
+    private:
+  char **list;
+  std::string *strlist;
 };
 
-}
+} // namespace node_gdal
 
 #endif

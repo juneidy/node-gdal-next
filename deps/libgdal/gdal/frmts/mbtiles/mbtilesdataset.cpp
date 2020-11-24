@@ -48,7 +48,7 @@
 #include <memory>
 #include <vector>
 
-CPL_CVSID("$Id: mbtilesdataset.cpp 2bd6bbffd0448037745dc5c7acdff09f4109ca3e 2019-05-02 11:32:48 +0200 Even Rouault $")
+CPL_CVSID("$Id: mbtilesdataset.cpp deff5f9197cbec2b0f66aa34ce85a2cafcc59d7a 2020-05-07 23:38:12 +0200 Even Rouault $")
 
 static const char * const apszAllowedDrivers[] = {"JPEG", "PNG", nullptr};
 
@@ -1932,7 +1932,7 @@ void MBTilesDataset::InitVector(double dfMinX, double dfMinY,
     {
         CPLJSONObject oId = oVectorLayers[i].GetObj("id");
         if( oId.IsValid() && oId.GetType() ==
-                CPLJSONObject::String )
+                CPLJSONObject::Type::String )
         {
             OGRwkbGeometryType eGeomType = wkbUnknown;
             if( oTileStatLayers.IsValid() )
@@ -3543,7 +3543,7 @@ void GDALRegister_MBTiles()
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DCAP_VECTOR, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "MBTiles" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_mbtiles.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/mbtiles.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "mbtiles" );
     poDriver->SetMetadataItem( GDAL_DMD_CREATIONDATATYPES, "Byte" );
 

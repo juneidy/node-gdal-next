@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: pcidskdataset2.h 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $
+ * $Id: pcidskdataset2.h 3b89063b95a18cfefb8dcf527a472987c52e6e3c 2020-05-27 19:53:42 +0200 Even Rouault $
  *
  * Project:  PCIDSK Database File
  * Purpose:  Read/write PCIDSK Database File used by the PCI software, using
@@ -8,7 +8,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2009, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2009-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -165,14 +165,14 @@ class PCIDSK2Band final: public GDALPamRasterBand
 /*                             OGRPCIDSKLayer                              */
 /************************************************************************/
 
-class OGRPCIDSKLayer final: public OGRLayer
+class OGRPCIDSKLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGRPCIDSKLayer>
 {
     PCIDSK::PCIDSKVectorSegment *poVecSeg;
     PCIDSK::PCIDSKSegment       *poSeg;
 
     OGRFeatureDefn     *poFeatureDefn;
 
-    OGRFeature *        GetNextUnfilteredFeature();
+    OGRFeature *        GetNextRawFeature();
 
     int                 iRingStartField;
     PCIDSK::ShapeId     hLastShapeId;
@@ -182,13 +182,15 @@ class OGRPCIDSKLayer final: public OGRLayer
     OGRSpatialReference *poSRS;
 
     std::unordered_map<std::string, int> m_oMapFieldNameToIdx{};
+    bool                m_bEOF = false;
 
   public:
     OGRPCIDSKLayer( PCIDSK::PCIDSKSegment*, PCIDSK::PCIDSKVectorSegment *, bool bUpdate );
     virtual ~OGRPCIDSKLayer();
 
     void                ResetReading() override;
-    OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRPCIDSKLayer)
+
     OGRFeature         *GetFeature( GIntBig nFeatureId ) override;
     virtual OGRErr      ISetFeature( OGRFeature *poFeature ) override;
 

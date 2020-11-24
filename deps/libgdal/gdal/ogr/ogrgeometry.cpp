@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1999, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -57,7 +57,7 @@
 #define UNUSED_IF_NO_GEOS
 #endif
 
-CPL_CVSID("$Id: ogrgeometry.cpp 40c401fbce5f562c8910a4c6a268ede769c04a9d 2019-05-02 10:43:09 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrgeometry.cpp 2d686cadda65aebe1463aa2b7aaf7bfbcf992cdc 2020-10-03 17:16:57 -0400 Dylan Sutton $")
 
 //! @cond Doxygen_Suppress
 int OGRGeometry::bGenerate_DB2_V72_BYTE_ORDER = FALSE;
@@ -82,6 +82,20 @@ static void OGRGEOSWarningHandler(const char *fmt, ...)
     va_end(args);
 }
 #endif
+
+/************************************************************************/
+/*                            OGRWktOptions()                             */
+/************************************************************************/
+
+int OGRWktOptions::getDefaultPrecision()
+{
+    return atoi(CPLGetConfigOption("OGR_WKT_PRECISION", "15"));
+}
+
+bool OGRWktOptions::getDefaultRound()
+{
+    return CPLTestBool(CPLGetConfigOption("OGR_WKT_ROUND", "TRUE"));
+}
 
 /************************************************************************/
 /*                            OGRGeometry()                             */
@@ -345,22 +359,25 @@ void OGRGeometry::dumpReadable( FILE * fp, const char * pszPrefix,
     }
     else if( pszDisplayGeometry != nullptr && EQUAL(pszDisplayGeometry, "WKT") )
     {
-        char *pszWkt = nullptr;
-        if( exportToWkt( &pszWkt ) == OGRERR_NONE )
+        OGRErr err(OGRERR_NONE);
+        std::string wkt = exportToWkt(OGRWktOptions(), &err);
+        if( err == OGRERR_NONE )
         {
-            fprintf( fp, "%s%s\n", pszPrefix, pszWkt );
-            CPLFree( pszWkt );
+            fprintf( fp, "%s%s\n", pszPrefix, wkt.data() );
         }
     }
     else if( pszDisplayGeometry == nullptr ||
              CPLTestBool(pszDisplayGeometry) ||
              EQUAL(pszDisplayGeometry, "ISO_WKT") )
     {
-        char *pszWkt = nullptr;
-        if( exportToWkt( &pszWkt, wkbVariantIso ) == OGRERR_NONE )
+        OGRErr err(OGRERR_NONE);
+        OGRWktOptions opts;
+        
+        opts.variant = wkbVariantIso;
+        std::string wkt = exportToWkt(opts, &err);
+        if( err == OGRERR_NONE )
         {
-            fprintf( fp, "%s%s\n", pszPrefix, pszWkt );
-            CPLFree( pszWkt );
+            fprintf( fp, "%s%s\n", pszPrefix, wkt.data() );
         }
     }
 }
@@ -772,6 +789,10 @@ OGRwkbGeometryType OGRGeometry::getIsoGeometryType() const
  *
  * \brief Modify the geometry such it has no segment longer then the
  * given distance.
+ *
+ * This method modifies the geometry to add intermediate vertices if necessary
+ * so that the maximum length between 2 consecutive vertices is lower than
+ * dfMaxLength.
  *
  * Interpolated points will have Z and M values (if needed) set to 0.
  * Distance computation is performed in 2d only
@@ -1719,9 +1740,37 @@ OGRErr OGRGeometry::importPreambleFromWkt( const char ** ppszInput,
 }
 //! @endcond
 
+/************************************************************************/
+/*                           wktTypeString()                            */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+/** Get a type string for WKT, padded with a space at the end.
+ *
+ * @param variant  OGR type variant
+ * @return  "Z " for 3D, "M " for measured, "ZM " for both, or the empty string.
+ */
+std::string OGRGeometry::wktTypeString(OGRwkbVariant variant) const
+{
+    std::string s(" ");
+
+    if (variant == wkbVariantIso)
+    {
+        if (flags & OGR_G_3D)
+            s += "Z";
+        if (flags & OGR_G_MEASURED)
+            s += "M";
+    }
+    if (s.size() > 1)
+        s += " ";
+    return s;
+}
+//! @endcond
+
+
 /**
  * \fn OGRErr OGRGeometry::exportToWkt( char ** ppszDstText,
- * OGRwkbVariant eWkbVariant = wkbVariantOldOgc ) const;
+ * OGRwkbVariant variant = wkbVariantOldOgc ) const;
  *
  * \brief Convert a geometry into well known text format.
  *
@@ -1732,13 +1781,24 @@ OGRErr OGRGeometry::importPreambleFromWkt( const char ** ppszInput,
  * @param ppszDstText a text buffer is allocated by the program, and assigned
  *                    to the passed pointer. After use, *ppszDstText should be
  *                    freed with CPLFree().
- * @param eWkbVariant the specification that must be conformed too :
- *                    - wbkVariantOgc for old-style 99-402 extended
+ * @param variant the specification that must be conformed too :
+ *                    - wkbVariantOgc for old-style 99-402 extended
  *                      dimension (Z) WKB types
- *                    - wbkVariantIso for SFSQL 1.2 and ISO SQL/MM Part 3
+ *                    - wkbVariantIso for SFSQL 1.2 and ISO SQL/MM Part 3
  *
  * @return Currently OGRERR_NONE is always returned.
  */
+OGRErr OGRGeometry::exportToWkt(char ** ppszDstText,
+                                OGRwkbVariant variant) const
+{
+    OGRWktOptions opts;
+    opts.variant = variant;
+    OGRErr err(OGRERR_NONE);
+
+    std::string wkt = exportToWkt(opts, &err);
+    *ppszDstText = CPLStrdup(wkt.data());
+    return err;
+}
 
 /************************************************************************/
 /*                         OGR_G_ExportToWkt()                          */
@@ -1904,7 +1964,7 @@ const char *OGR_G_GetGeometryName( OGRGeometryH hGeom )
  * This function is the same as the CPP method OGRGeometry::clone().
  *
  * @param hGeom handle on the geometry to clone from.
- * @return an handle on the copy of the geometry with the spatial
+ * @return a handle on the copy of the geometry with the spatial
  * reference system as the original.
  */
 
@@ -3411,8 +3471,8 @@ static OGRGeometry* OGRGeometryRebuildCurves( const OGRGeometry* poGeom,
 {
     if( poOGRProduct != nullptr &&
         wkbFlatten(poOGRProduct->getGeometryType()) != wkbPoint &&
-        (poGeom->hasCurveGeometry() ||
-         (poOtherGeom && poOtherGeom->hasCurveGeometry())) )
+        (poGeom->hasCurveGeometry(true) ||
+         (poOtherGeom && poOtherGeom->hasCurveGeometry(true))) )
     {
         OGRGeometry* poCurveGeom = poOGRProduct->getCurveGeometry();
         delete poOGRProduct;
@@ -3520,6 +3580,9 @@ static OGRBoolean OGRGEOSBooleanPredicate(
  * \brief Attempts to make an invalid geometry valid without losing vertices.
  *
  * Already-valid geometries are cloned without further intervention.
+ *
+ * Running OGRGeometryFactory::removeLowerDimensionSubGeoms() as a post-processing
+ * step is often desired.
  *
  * This method is the same as the C function OGR_G_MakeValid().
  *
@@ -4745,7 +4808,10 @@ OGRGeometry::Crosses( UNUSED_PARAMETER const OGRGeometry *poOtherGeom ) const
 
         sfcgal_geometry_t *poOther = OGRGeometry::OGRexportToSFCGAL(poOtherGeom);
         if (poOther == nullptr)
+        {
+            sfcgal_geometry_delete(poThis);
             return FALSE;
+        }
 
         int res = sfcgal_geometry_intersects_3d(poThis, poOther);
 
@@ -5141,7 +5207,7 @@ OGRErr OGRGeometry::Centroid( OGRPoint *poPoint ) const
             return OGRERR_FAILURE;
         }
 
-        if( poCentroidGeom != nullptr && getSpatialReference() != nullptr )
+        if( getSpatialReference() != nullptr )
             poCentroidGeom->assignSpatialReference(getSpatialReference());
 
         OGRPoint *poCentroid = poCentroidGeom->toPoint();
@@ -5284,7 +5350,7 @@ OGRGeometryH OGR_G_PointOnSurface( OGRGeometryH hGeom )
             return nullptr;
         }
 
-        if( poInsidePointGeom != nullptr && poThis->getSpatialReference() != nullptr )
+        if( poThis->getSpatialReference() != nullptr )
             poInsidePointGeom->
                 assignSpatialReference(poThis->getSpatialReference());
 
@@ -6078,18 +6144,6 @@ char* OGRGeometryToHexEWKB( OGRGeometry * poGeometry, int nSRSId,
     return pszTextBuf;
 }
 
-/**
- * \fn void OGRGeometry::segmentize(double dfMaxLength);
- *
- * \brief Add intermediate vertices to a geometry.
- *
- * This method modifies the geometry to add intermediate vertices if necessary
- * so that the maximum length between 2 consecutive vertices is lower than
- * dfMaxLength.
- *
- * @param dfMaxLength maximum length between 2 consecutive vertices.
- */
-
 /************************************************************************/
 /*                       importPreambleFromWkb()                       */
 /************************************************************************/
@@ -6783,7 +6837,7 @@ sfcgal_geometry_t* OGRGeometry::OGRexportToSFCGAL(UNUSED_IF_NO_SFCGAL const OGRG
 {
 #ifdef HAVE_SFCGAL
     sfcgal_init();
-    char *buffer;
+    char *buffer = nullptr;
 
     // special cases - LinearRing, Circular String, Compound Curve, Curve Polygon
 
@@ -6794,11 +6848,14 @@ sfcgal_geometry_t* OGRGeometry::OGRexportToSFCGAL(UNUSED_IF_NO_SFCGAL const OGRG
         if (poLS->exportToWkt(&buffer) == OGRERR_NONE)
         {
             sfcgal_geometry_t *_geometry = sfcgal_io_read_wkt(buffer,strlen(buffer));
-            free(buffer);
+            CPLFree(buffer);
             return _geometry;
         }
         else
+        {
+            CPLFree(buffer);
             return nullptr;
+        }
     }
     else if (EQUAL(poGeom->getGeometryName(), "CIRCULARSTRING") ||
              EQUAL(poGeom->getGeometryName(), "COMPOUNDCURVE") )
@@ -6808,11 +6865,14 @@ sfcgal_geometry_t* OGRGeometry::OGRexportToSFCGAL(UNUSED_IF_NO_SFCGAL const OGRG
         if (poLS->exportToWkt(&buffer) == OGRERR_NONE)
         {
             sfcgal_geometry_t *_geometry = sfcgal_io_read_wkt(buffer,strlen(buffer));
-            free(buffer);
+            CPLFree(buffer);
             return _geometry;
         }
         else
+        {
+            CPLFree(buffer);
             return nullptr;
+        }
     }
     else if (EQUAL(poGeom->getGeometryName(), "CURVEPOLYGON"))
     {
@@ -6821,20 +6881,26 @@ sfcgal_geometry_t* OGRGeometry::OGRexportToSFCGAL(UNUSED_IF_NO_SFCGAL const OGRG
         if (poPolygon->exportToWkt(&buffer) == OGRERR_NONE)
         {
             sfcgal_geometry_t *_geometry = sfcgal_io_read_wkt(buffer,strlen(buffer));
-            free(buffer);
+            CPLFree(buffer);
             return _geometry;
         }
         else
+        {
+            CPLFree(buffer);
             return nullptr;
+        }
     }
     else if (poGeom->exportToWkt(&buffer) == OGRERR_NONE)
     {
         sfcgal_geometry_t *_geometry = sfcgal_io_read_wkt(buffer,strlen(buffer));
-        free(buffer);
+        CPLFree(buffer);
         return _geometry;
     }
     else
+    {
+        CPLFree(buffer);
         return nullptr;
+    }
 #else
     CPLError( CE_Failure, CPLE_NotSupported, "SFCGAL support not enabled." );
     return nullptr;

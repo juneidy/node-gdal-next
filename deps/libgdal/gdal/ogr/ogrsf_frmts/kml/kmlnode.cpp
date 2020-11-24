@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Jens Oberender
- * Copyright (c) 2007-2012, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2012, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -39,7 +39,7 @@
 #include "cpl_error.h"
 #include "ogr_geometry.h"
 
-CPL_CVSID("$Id: kmlnode.cpp 98dfb4b4012c5ae4621e246e8eb393b3c05a3f48 2018-04-02 22:09:55 +0200 Even Rouault $")
+CPL_CVSID("$Id: kmlnode.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                           Help functions                             */
@@ -425,8 +425,7 @@ void KMLNode::addContent(std::string const& text)
 
 void KMLNode::appendContent(std::string const& text)
 {
-    std::string& tmp = pvsContent_->back();
-    tmp += text;
+    pvsContent_->back() += text;
 }
 
 std::string KMLNode::getContent(std::size_t index) const
@@ -459,14 +458,13 @@ int KMLNode::getLayerNumber() const
 
 std::string KMLNode::getNameElement() const
 {
-    kml_nodes_t::size_type subsize = 0;
     const kml_nodes_t::size_type size = pvpoChildren_->size();
 
     for( kml_nodes_t::size_type i = 0; i < size; ++i )
     {
         if( (*pvpoChildren_)[i]->sName_.compare("name") == 0 )
         {
-            subsize = (*pvpoChildren_)[i]->pvsContent_->size();
+            const auto subsize = (*pvpoChildren_)[i]->pvsContent_->size();
             if( subsize > 0 )
             {
                 return (*(*pvpoChildren_)[i]->pvsContent_)[0];
@@ -479,13 +477,12 @@ std::string KMLNode::getNameElement() const
 
 std::string KMLNode::getDescriptionElement() const
 {
-    kml_nodes_t::size_type subsize = 0;
     const kml_nodes_t::size_type size = pvpoChildren_->size();
     for( kml_nodes_t::size_type i = 0; i < size; ++i )
     {
         if( (*pvpoChildren_)[i]->sName_.compare("description") == 0 )
         {
-            subsize = (*pvpoChildren_)[i]->pvsContent_->size();
+            const auto subsize = (*pvpoChildren_)[i]->pvsContent_->size();
             if ( subsize > 0 )
             {
                 return (*(*pvpoChildren_)[i]->pvsContent_)[0];

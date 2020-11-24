@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, Brian Case
- * Copyright (c) 2010-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,7 +35,7 @@
 #include "ogr_p.h"
 #include "cpl_vsi_error.h"
 
-CPL_CVSID("$Id: ogrlibkmldatasource.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrlibkmldatasource.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 using kmlbase::Attributes;
 using kmldom::ContainerPtr;
@@ -92,7 +92,7 @@ OGRLIBKMLDataSource::OGRLIBKMLDataSource( KmlFactory * poKmlFactory ) :
     m_pszName(nullptr),
     papoLayers(nullptr),
     nLayers(0),
-    nAlloced(0),
+    nAllocated(0),
     bUpdate(false),
     bUpdated(false),
     m_papszOptions(nullptr),
@@ -651,7 +651,7 @@ void OGRLIBKMLDataSource::FlushCache()
 OGRLIBKMLDataSource::~OGRLIBKMLDataSource()
 {
     /***** sync the DS to disk *****/
-    FlushCache();
+    OGRLIBKMLDataSource::FlushCache();
 
     CPLFree( m_pszName );
 
@@ -798,11 +798,11 @@ OGRLIBKMLLayer *OGRLIBKMLDataSource::AddLayer(
     }
 
     /***** check to see if we have enough space to store the layer *****/
-    if( nLayers == nAlloced )
+    if( nLayers == nAllocated )
     {
-        nAlloced += nGuess;
+        nAllocated += nGuess;
         papoLayers = static_cast<OGRLIBKMLLayer **>(
-            CPLRealloc( papoLayers, sizeof(OGRLIBKMLLayer *) * nAlloced ) );
+            CPLRealloc( papoLayers, sizeof(OGRLIBKMLLayer *) * nAllocated ) );
     }
 
     /***** create the layer *****/

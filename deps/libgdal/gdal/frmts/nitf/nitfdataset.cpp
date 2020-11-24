@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2007-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Portions Copyright (c) Her majesty the Queen in right of Canada as
  * represented by the Minister of National Defence, 2006.
@@ -61,7 +61,7 @@
 #include "ogr_core.h"
 #include "ogr_srs_api.h"
 
-CPL_CVSID("$Id: nitfdataset.cpp 3189229c71a9620126f6b349f4f80399baeaf528 2019-04-20 20:33:36 +0200 Even Rouault $")
+CPL_CVSID("$Id: nitfdataset.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 static bool NITFPatchImageLength( const char *pszFilename,
                                   GUIntBig nImageOffset,
@@ -753,6 +753,14 @@ GDALDataset *NITFDataset::OpenInternal( GDALOpenInfo * poOpenInfo,
         poDS->nQLevel = poDS->ScanJPEGQLevel( &nJPEGStart, &bError );
 
         CPLString osDSName;
+
+        if( psFile->pasSegmentInfo[iSegment].nSegmentSize <
+                nJPEGStart - psFile->pasSegmentInfo[iSegment].nSegmentStart )
+        {
+            CPLError( CE_Failure, CPLE_AppDefined, "Corrupted segment size" );
+            delete poDS;
+            return nullptr;
+        }
 
         osDSName.Printf( "JPEG_SUBFILE:Q%d," CPL_FRMT_GUIB ","
                          CPL_FRMT_GUIB ",%s",
@@ -3437,7 +3445,7 @@ int NITFDataset::ScanJPEGQLevel( GUIntBig *pnDataStart, bool *pbError )
 /* -------------------------------------------------------------------- */
 /*      Do we have an NITF app tag?  If so, pull out the Q level.       */
 /* -------------------------------------------------------------------- */
-    if( !EQUAL((char *)abyHeader+nOffset+6,"NITF") )
+    if( memcmp(abyHeader+nOffset+6,"NITF\0",5) != 0 )
         return 0;
 
     return abyHeader[22+nOffset];
@@ -3486,6 +3494,9 @@ CPLErr NITFDataset::ScanJPEGBlocks()
 /* -------------------------------------------------------------------- */
     int iNextBlock = 1;
     GIntBig iSegOffset = 2;
+    if( psFile->pasSegmentInfo[psImage->iSegment].nSegmentSize <
+        nJPEGStart - psFile->pasSegmentInfo[psImage->iSegment].nSegmentStart )
+        return CE_Failure;
     GIntBig iSegSize = psFile->pasSegmentInfo[psImage->iSegment].nSegmentSize
         - (nJPEGStart - psFile->pasSegmentInfo[psImage->iSegment].nSegmentStart);
     GByte abyBlock[512];
@@ -4483,6 +4494,7 @@ NITFDataset::NITFCreateCopy(
                     pszGEOPSB += 3; /* GRD */
                     pszGEOPSB += 80; /* GRN */
                     WRITE_STR_NOSZ(pszGEOPSB, "0000"); pszGEOPSB += 4; /* ZNA */
+                    CPL_IGNORE_RET_VAL(pszGEOPSB);
                     CPLAssert(pszGEOPSB == szGEOPSB + 443);
 
                     CPLString osGEOPSB("FILE_TRE=GEOPSB=");
@@ -5876,6 +5888,7 @@ NITFWriteJPEGImage( GDALDataset *poSrcDS, VSILFILE *fp, vsi_l_offset nStartOffse
     nOffset ++;
     abyAPP6[nOffset] = 0;
     nOffset ++;
+    (void)nOffset;
 
     CPLAssert(nOffset == sizeof(abyAPP6));
 
@@ -6150,7 +6163,7 @@ void GDALRegister_NITF()
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "National Imagery Transmission Format" );
 
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_nitf.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/nitf.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "ntf" );
     poDriver->SetMetadataItem( GDAL_DMD_SUBDATASETS, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_CREATIONDATATYPES,

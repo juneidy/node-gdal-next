@@ -32,7 +32,7 @@
 #include "math.h"
 #include "ogrdxf_polyline_smooth.h"
 
-CPL_CVSID("$Id: ogrdxf_polyline_smooth.cpp 98dfb4b4012c5ae4621e246e8eb393b3c05a3f48 2018-04-02 22:09:55 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrdxf_polyline_smooth.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                Local helper functions                                */
@@ -69,12 +69,11 @@ static double GetOGRangle(double angle)
             : -(angle + 180.0);
 }
 
-// TODO: Spelling Tesselate -> Tessellate
 /************************************************************************/
-/*                DXFSmoothPolyline::Tesselate()                        */
+/*                DXFSmoothPolyline::Tessellate()                        */
 /************************************************************************/
 
-OGRGeometry* DXFSmoothPolyline::Tesselate() const
+OGRGeometry* DXFSmoothPolyline::Tessellate() const
 {
     assert(!m_vertices.empty());
 
@@ -169,7 +168,7 @@ void DXFSmoothPolyline::EmitArc(
     const DXFSmoothPolylineVertex& end,
     double radius, double len, double bulge,
     OGRLineString* poLS,
-    double dfZ )
+    double dfZ ) const
 {
     assert(poLS);
 
@@ -267,7 +266,7 @@ void DXFSmoothPolyline::EmitArc(
                 ogrArcCenter.x, ogrArcCenter.y, dfZ,
                 ogrArcRadius, ogrArcRadius, ogrArcRotation,
                 ogrArcStartAngle, ogrArcEndAngle,
-                0.0)->toLineString();
+                0.0, m_bUseMaxGapWhenTessellatingArcs)->toLineString();
 
         poLS->addSubLineString(poArcpoLS);
 

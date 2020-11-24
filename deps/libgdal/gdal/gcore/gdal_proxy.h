@@ -1,12 +1,12 @@
 /******************************************************************************
- * $Id: gdal_proxy.h 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $
+ * $Id: gdal_proxy.h b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $
  *
  * Project:  GDAL Core
  * Purpose:  GDAL Core C++/Private declarations
- * Author:   Even Rouault <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2008-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -252,6 +252,11 @@ class CPL_DLL GDALProxyPoolDataset : public GDALProxyDataset
     ~GDALProxyPoolDataset() override;
 
     void SetOpenOptions( char** papszOpenOptions );
+
+    // If size (nBlockXSize&nBlockYSize) parameters is zero
+    // they will be loaded when RefUnderlyingRasterBand function is called.
+    // But in this case we cannot use them in other non-virtual methods before
+    // RefUnderlyingRasterBand fist call.
     void AddSrcBandDescription( GDALDataType eDataType, int nBlockXSize,
                                 int nBlockYSize );
 
@@ -271,7 +276,7 @@ class CPL_DLL GDALProxyPoolDataset : public GDALProxyDataset
     CPLErr GetGeoTransform( double * ) override;
     CPLErr SetGeoTransform( double * ) override;
 
-    // Special behaviour for the following methods : they return a pointer
+    // Special behavior for the following methods : they return a pointer
     // data type, that must be cached by the proxy, so it doesn't become invalid
     // when the underlying object get closed.
     char **GetMetadata( const char * pszDomain  ) override;
@@ -329,7 +334,7 @@ class CPL_DLL GDALProxyPoolRasterBand : public GDALProxyRasterBand
     void AddSrcMaskBandDescription( GDALDataType eDataType, int nBlockXSize,
                                     int nBlockYSize );
 
-    // Special behaviour for the following methods : they return a pointer
+    // Special behavior for the following methods : they return a pointer
     // data type, that must be cached by the proxy, so it doesn't become invalid
     // when the underlying object get closed.
     char **GetMetadata( const char * pszDomain ) override;

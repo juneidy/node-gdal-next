@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1999, Frank Warmerdam
- * Copyright (c) 2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,7 +35,7 @@
 
 #include <algorithm>
 
-CPL_CVSID("$Id: ntffilereader.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ntffilereader.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 #define DIGIT_ZERO '0'
 
@@ -389,7 +389,7 @@ int NTFFileReader::Open( const char * pszFilenameIn )
     {
         delete poRecord;
         CPLError( CE_Failure, CPLE_AppDefined,
-                  "Cound not find section header record in %s.\n",
+                  "Could not find section header record in %s.\n",
                   pszFilename );
         return FALSE;
     }
@@ -398,7 +398,7 @@ int NTFFileReader::Open( const char * pszFilenameIn )
     {
         delete poRecord;
         CPLError( CE_Failure, CPLE_AppDefined,
-                  "Cound not find product type in %s.\n",
+                  "Could not find product type in %s.\n",
                   pszFilename );
         return FALSE;
     }

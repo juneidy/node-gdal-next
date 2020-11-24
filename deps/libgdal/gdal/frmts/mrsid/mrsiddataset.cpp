@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2003, Andrey Kiselev <dron@ak4719.spb.edu>
- * Copyright (c) 2007-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,7 +43,7 @@
 #include <geo_normalize.h>
 #include <geovalues.h>
 
-CPL_CVSID("$Id: mrsiddataset.cpp 4e012e8df81083ee297a8290a5cc0bd9e092d7f8 2019-04-23 11:06:18 +0200 Even Rouault $")
+CPL_CVSID("$Id: mrsiddataset.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 CPL_C_START
 double GTIFAngleToDD( double dfAngle, int nUOMAngle );
@@ -65,7 +65,7 @@ CPL_C_END
 
 #include "mrsidstream.h"
 
-LT_USE_NAMESPACE(LizardTech)
+using namespace LizardTech;
 
 /* -------------------------------------------------------------------- */
 /*      Various wrapper templates used to force new/delete to happen    */
@@ -87,11 +87,11 @@ template <class T>
 class LTIDLLReader : public T
 {
 public:
-   LTIDLLReader(const LTFileSpec& fileSpec,
+   explicit LTIDLLReader(const LTFileSpec& fileSpec,
                 bool useWorldFile = false) : T(fileSpec, useWorldFile) {}
-   LTIDLLReader(LTIOStreamInf &oStream,
+   explicit LTIDLLReader(LTIOStreamInf &oStream,
                 bool useWorldFile = false) : T(oStream, useWorldFile) {}
-   LTIDLLReader(LTIOStreamInf *poStream,
+   explicit LTIDLLReader(LTIOStreamInf *poStream,
                 LTIOStreamInf *poWorldFile = nullptr) : T(poStream, poWorldFile) {}
    virtual ~LTIDLLReader() {}
 };
@@ -211,7 +211,6 @@ class MrSIDDataset final: public GDALJP2AbstractDataset
     CPLString           osMETFilename;
 
     CPLErr              OpenZoomLevel( lt_int32 iZoom );
-    char                *SerializeMetadataRec( const LTIMetadataRecord* );
     int                 GetMetadataElement( const char *, void *, int=0 );
     void                FetchProjParms();
     void                GetGTIFDefn();
@@ -1022,22 +1021,22 @@ CPLErr MrSIDDataset::IBuildOverviews( const char *, int, int *,
 /*                        SerializeMetadataRec()                        */
 /************************************************************************/
 
-char *MrSIDDataset::SerializeMetadataRec( const LTIMetadataRecord *poMetadataRec )
+static CPLString SerializeMetadataRec( const LTIMetadataRecord *poMetadataRec )
 {
     GUInt32  iNumDims = 0;
     const GUInt32  *paiDims = nullptr;
     const void     *pData = poMetadataRec->getArrayData( iNumDims, paiDims );
-    GUInt32        i, j, k = 0, iLength;
-    char           *pszMetadata = CPLStrdup( "" );
+    CPLString      osMetadata;
+    GUInt32        k = 0;
 
-    for ( i = 0; i < iNumDims; i++ )
+    for ( GUInt32 i = 0; i < iNumDims; i++ )
     {
         // stops on large binary data
         if ( poMetadataRec->getDataType() == LTI_METADATA_DATATYPE_UINT8
              && paiDims[i] > 1024 )
-            return pszMetadata;
+            return CPLString();
 
-        for ( j = 0; j < paiDims[i]; j++ )
+        for ( GUInt32 j = 0; j < paiDims[i]; j++ )
         {
             CPLString osTemp;
 
@@ -1069,20 +1068,16 @@ char *MrSIDDataset::SerializeMetadataRec( const LTIMetadataRecord *poMetadataRec
                     osTemp = ((const char **)pData)[k++];
                     break;
                 default:
-                    osTemp = "";
                     break;
             }
 
-            iLength = static_cast<int>(strlen(pszMetadata) + osTemp.size() + 2);
-
-            pszMetadata = (char *)CPLRealloc( pszMetadata, iLength );
-            if ( !EQUAL( pszMetadata, "" ) )
-                strncat( pszMetadata, ",", 1 );
-            CPLStrlcat( pszMetadata, osTemp, iLength );
+            if( !osMetadata.empty() )
+                osMetadata += ',';
+            osMetadata += osTemp;
         }
     }
 
-    return pszMetadata;
+    return osMetadata;
 }
 
 /************************************************************************/
@@ -1297,8 +1292,9 @@ CPLErr MrSIDDataset::OpenZoomLevel( lt_int32 iZoom )
             int bWGS84 = FALSE;
             int bUnitsMeter = FALSE;
             while ( (pszLine = CPLReadLine2L(fp, 200, nullptr)) != nullptr &&
-                    ++nCountLine < 1000 )
+                    nCountLine < 1000 )
             {
+                ++ nCountLine;
                 if (nCountLine == 1 && strcmp(pszLine, "::MetadataFile") != 0)
                     break;
                 if (STARTS_WITH_CI(pszLine, "Projection UTM "))
@@ -1548,7 +1544,7 @@ GDALDataset *MrSIDDataset::Open( GDALOpenInfo * poOpenInfo, int bIsJP2 )
         const LTIMetadataRecord *poMetadataRec = nullptr;
         if ( LT_SUCCESS(poDS->poMetadata->getDataByIndex(i, poMetadataRec)) )
         {
-            char    *pszElement = poDS->SerializeMetadataRec( poMetadataRec );
+            const auto osElement = SerializeMetadataRec( poMetadataRec );
             char    *pszKey = CPLStrdup( poMetadataRec->getTagName() );
             char    *pszTemp = pszKey;
 
@@ -1561,9 +1557,8 @@ GDALDataset *MrSIDDataset::Open( GDALOpenInfo * poOpenInfo, int bIsJP2 )
             }
             while ( *++pszTemp );
 
-            poDS->SetMetadataItem( pszKey, pszElement );
+            poDS->SetMetadataItem( pszKey, osElement.c_str() );
 
-            CPLFree( pszElement );
             CPLFree( pszKey );
         }
     }
@@ -3551,7 +3546,7 @@ void GDALRegister_MrSID()
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "Multi-resolution Seamless Image Database "
                                "(MrSID)" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_mrsid.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/mrsid.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "sid" );
 
 #ifdef MRSID_ESDK
@@ -3592,7 +3587,7 @@ void GDALRegister_MrSID()
     poDriver->SetDescription( "JP2MrSID" );
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "MrSID JPEG2000" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_jp2mrsid.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/jp2mrsid.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "jp2" );
 
 #ifdef MRSID_ESDK

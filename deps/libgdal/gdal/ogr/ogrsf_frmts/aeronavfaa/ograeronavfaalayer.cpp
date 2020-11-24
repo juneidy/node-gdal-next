@@ -2,10 +2,10 @@
  *
  * Project:  AeronavFAA Translator
  * Purpose:  Implements OGRAeronavFAALayer class.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2011-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -34,7 +34,7 @@
 
 #include <algorithm>
 
-CPL_CVSID("$Id: ograeronavfaalayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ograeronavfaalayer.cpp bc3d9f5351962c422f3e57a9ab1a251d91659192 2020-05-09 21:07:14 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                        OGRAeronavFAALayer()                          */
@@ -80,33 +80,6 @@ void OGRAeronavFAALayer::ResetReading()
     nNextFID = 0;
     bEOF = false;
     VSIFSeekL( fpAeronavFAA, 0, SEEK_SET );
-}
-
-/************************************************************************/
-/*                           GetNextFeature()                           */
-/************************************************************************/
-
-OGRFeature *OGRAeronavFAALayer::GetNextFeature()
-{
-    while( true )
-    {
-        if( bEOF )
-            return nullptr;
-
-        OGRFeature  *poFeature = GetNextRawFeature();
-        if (poFeature == nullptr)
-            return nullptr;
-
-        if((m_poFilterGeom == nullptr
-            || FilterGeometry( poFeature->GetGeometryRef() ) )
-        && (m_poAttrQuery == nullptr
-            || m_poAttrQuery->Evaluate( poFeature )) )
-        {
-            return poFeature;
-        }
-        else
-            delete poFeature;
-    }
 }
 
 /************************************************************************/
@@ -218,6 +191,9 @@ OGRFeature *OGRAeronavFAADOFLayer::GetNextRawFeature()
 {
     char szBuffer[130];
 
+    if( bEOF )
+        return nullptr;
+
     while( true )
     {
         const char* pszLine = CPLReadLine2L(fpAeronavFAA, 130, nullptr);
@@ -320,6 +296,9 @@ OGRFeature *OGRAeronavFAANAVAIDLayer::GetNextRawFeature()
 {
     char szBuffer[134];
 
+    if( bEOF )
+        return nullptr;
+
     while( true )
     {
         const char* pszLine = CPLReadLine2L(fpAeronavFAA, 134, nullptr);
@@ -417,6 +396,9 @@ OGRFeature *OGRAeronavFAARouteLayer::GetNextRawFeature()
 {
     OGRFeature* poFeature = nullptr;
     OGRLineString* poLS = nullptr;
+
+    if( bEOF )
+        return nullptr;
 
     while( true )
     {
@@ -612,6 +594,9 @@ OGRFeature *OGRAeronavFAAIAPLayer::GetNextRawFeature()
 {
     char szBuffer[87];
     int nCountUnderscoreLines = 0;
+
+    if( bEOF )
+        return nullptr;
 
     while( true )
     {

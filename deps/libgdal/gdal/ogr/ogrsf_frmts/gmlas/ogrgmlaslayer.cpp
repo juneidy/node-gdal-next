@@ -33,7 +33,7 @@
 #include "ogr_pgdump.h"
 #include "cpl_minixml.h"
 
-CPL_CVSID("$Id: ogrgmlaslayer.cpp 22f8ae3bf7bc3cccd970992655c63fc5254d3206 2018-04-08 20:13:05 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrgmlaslayer.cpp 6416d089f89c4ae1f04f3a8a6f9706715e44fe31 2020-09-14 09:37:26 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                            OGRGMLASLayer()                           */
@@ -328,15 +328,11 @@ void OGRGMLASLayer::ProcessDataRecordCreateFields(
                 poFieldDescFeature->SetField( szFIELD_INDEX, m_nMaxFieldIndex);
                 poFieldDescFeature->SetField( szFIELD_NAME,
                                                 oFieldDefn.GetNameRef() );
-                if( psChildNode )
-                {
-                    poFieldDescFeature->SetField( szFIELD_TYPE, psChildNode->pszValue );
-                }
+                poFieldDescFeature->SetField( szFIELD_TYPE, psChildNode->pszValue );
                 poFieldDescFeature->SetField( szFIELD_IS_LIST, 0 );
                 poFieldDescFeature->SetField( szFIELD_MIN_OCCURS, 0 );
                 poFieldDescFeature->SetField( szFIELD_MAX_OCCURS, 1 );
                 poFieldDescFeature->SetField( szFIELD_CATEGORY, szSWE_FIELD );
-                if( psChildNode )
                 {
                     CPLXMLNode* psDupTree = CPLCloneXMLTree(psChildNode);
                     CPLXMLNode* psValue = CPLGetXMLNode(psDupTree, "value");
@@ -1465,7 +1461,15 @@ OGRFeatureDefn* OGRGMLASLayer::GetLayerDefn()
             !m_poDS->GetConf().m_oXLinkResolution.m_aoURLSpecificRules.empty() )
         {
             if( m_poReader == nullptr )
+            {
                 InitReader();
+                // Avoid keeping too many file descriptor opened
+                if( m_fpGML != nullptr )
+                    m_poDS->PushUnusedGMLFilePointer(m_fpGML);
+                m_fpGML = nullptr;
+                delete m_poReader;
+                m_poReader = nullptr;
+            }
         }
     }
     return m_poFeatureDefn;

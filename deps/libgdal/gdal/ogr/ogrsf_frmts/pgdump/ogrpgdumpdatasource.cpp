@@ -2,10 +2,10 @@
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Implements OGRPGDumpDataSource class.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2010-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@
 #include "cpl_conv.h"
 #include "cpl_string.h"
 
-CPL_CVSID("$Id: ogrpgdumpdatasource.cpp b9ccbef1b6ac4724a543c2a541140b4d23eaeb34 2019-03-15 03:53:44 +0200 Elias Kunnas $")
+CPL_CVSID("$Id: ogrpgdumpdatasource.cpp 75c37a9a5aba2c07737afe42b81988095e8dcbf2 2020-05-05 14:47:51 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                      OGRPGDumpDataSource()                           */
@@ -366,20 +366,13 @@ OGRPGDumpDataSource::ICreateLayer( const char * pszLayerName,
 /*      Try to get the SRS Id of this spatial reference system,         */
 /*      adding tot the srs table if needed.                             */
 /* -------------------------------------------------------------------- */
-    int nUnknownSRSId = -1;
     const char* pszPostgisVersion =
-        CSLFetchNameValue( papszOptions, "POSTGIS_VERSION" );
-    int nPostGISMajor = 1;
-    int nPostGISMinor = 5;
-    if( pszPostgisVersion != nullptr && atoi(pszPostgisVersion) >= 2 )
-    {
-        nPostGISMajor = atoi(pszPostgisVersion);
-        if( strchr(pszPostgisVersion, '.') )
-            nPostGISMinor = atoi(strchr(pszPostgisVersion, '.')+1);
-        else
-            nPostGISMinor = 0;
-        nUnknownSRSId = 0;
-    }
+        CSLFetchNameValueDef( papszOptions, "POSTGIS_VERSION", "2.2" );
+    const int nPostGISMajor = atoi(pszPostgisVersion);
+    const char* pszPostgisVersionDot = strchr(pszPostgisVersion, '.');
+    const int nPostGISMinor =
+          pszPostgisVersionDot ? atoi(pszPostgisVersionDot+1) : 0;
+    const int nUnknownSRSId = nPostGISMajor >= 2 ? 0 : -1;
 
     int nSRSId = nUnknownSRSId;
     int nForcedSRSId = -2;

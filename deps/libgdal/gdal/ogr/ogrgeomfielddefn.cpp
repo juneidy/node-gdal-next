@@ -2,10 +2,10 @@
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  The OGRGeomFieldDefn class implementation.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -40,7 +40,7 @@
 #include "ogr_srs_api.h"
 #include "ograpispy.h"
 
-CPL_CVSID("$Id: ogrgeomfielddefn.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrgeomfielddefn.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                         OGRGeomFieldDefn()                           */
@@ -613,7 +613,7 @@ int OGR_GFld_IsNullable( OGRGeomFieldDefnH hDefn )
  * By default, fields are nullable, so this method is generally called with
  * FALSE to set a not-null constraint.
  *
- * Drivers that support writing not-null constraint will advertize the
+ * Drivers that support writing not-null constraint will advertise the
  * GDAL_DCAP_NOTNULL_GEOMFIELDS driver metadata item.
  *
  * This method is the same as the C function OGR_GFld_SetNullable().
@@ -632,7 +632,7 @@ int OGR_GFld_IsNullable( OGRGeomFieldDefnH hDefn )
  * By default, fields are nullable, so this method is generally called with
  * FALSE to set a not-null constraint.
  *
- * Drivers that support writing not-null constraint will advertize the
+ * Drivers that support writing not-null constraint will advertise the
  * GDAL_DCAP_NOTNULL_GEOMFIELDS driver metadata item.
  *
  * This method is the same as the C++ method OGRGeomFieldDefn::SetNullable().

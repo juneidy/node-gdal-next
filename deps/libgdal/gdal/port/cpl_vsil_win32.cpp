@@ -6,7 +6,7 @@
  *
  **********************************************************************
  * Copyright (c) 2000, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2008-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,7 +29,7 @@
 
 #include "cpl_vsi_virtual.h"
 
-CPL_CVSID("$Id: cpl_vsil_win32.cpp c39d156816d937c3139360b11786c769aeabd21e 2018-05-05 19:48:08 +0200 Even Rouault $")
+CPL_CVSID("$Id: cpl_vsil_win32.cpp 08c9fb51f640a13b2e3a7d662ab676f08c57001e 2020-10-06 13:05:59 +0200 Even Rouault $")
 
 #if defined(WIN32)
 
@@ -438,16 +438,23 @@ VSIRangeStatus VSIWin32Handle::GetRangeStatus( vsi_l_offset
 /*                          CPLGetWineVersion()                         */
 /************************************************************************/
 
-static const char* CPLGetWineVersion()
+const char* CPLGetWineVersion(); // also used by cpl_aws.cpp
+
+const char* CPLGetWineVersion()
 {
     HMODULE hntdll = GetModuleHandle("ntdll.dll");
     if( hntdll == nullptr )
+    {
+        CPLDebug("CPLGetWineVersion", "Can't get handle to ntdll.dll.");
         return nullptr;
+    }
 
-    static const char * (CDECL *pwine_get_version)(void);
+    const char * (CDECL *pwine_get_version)(void);
     pwine_get_version = reinterpret_cast<const char* (*)(void)>(GetProcAddress(hntdll, "wine_get_version"));
     if( pwine_get_version == nullptr )
+    {
         return nullptr;
+    }
 
     return pwine_get_version();
 }

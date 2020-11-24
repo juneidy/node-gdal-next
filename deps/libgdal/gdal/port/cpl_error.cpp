@@ -7,7 +7,7 @@
  *
  **********************************************************************
  * Copyright (c) 1998, Daniel Morissette
- * Copyright (c) 2007-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -42,6 +42,7 @@
 #include "cpl_multiproc.h"
 #include "cpl_string.h"
 #include "cpl_vsi.h"
+#include "cpl_error_internal.h"
 
 #if !defined(va_copy) && defined(__va_copy)
 #define va_copy __va_copy
@@ -50,7 +51,7 @@
 #define TIMESTAMP_DEBUG
 // #define MEMORY_DEBUG
 
-CPL_CVSID("$Id: cpl_error.cpp e3511844a11959bd81f5956a1e7e2de96900e7ac 2019-04-25 11:53:15 +0200 Even Rouault $")
+CPL_CVSID("$Id: cpl_error.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 static CPLMutex *hErrorMutex = nullptr;
 static void *pErrorHandlerUserData = nullptr;
@@ -258,7 +259,7 @@ static void ApplyErrorHandler( CPLErrorContext *psCtx, CPLErr eErrClass,
                 pfnErrorHandler(eErrClass, err_no, pszMessage);
             }
         }
-        else if( eErrClass == CE_Debug )
+        else /* if( eErrClass == CE_Debug ) */
         {
             // for CPLDebug messages we propagate to the default error handler
             pActiveUserData = nullptr;
@@ -288,7 +289,7 @@ static void ApplyErrorHandler( CPLErrorContext *psCtx, CPLErr eErrClass,
  * CE_Fatal meaning that a fatal error has occurred, and that CPLError()
  * should not return.
  *
- * The default behaviour of CPLError() is to report errors to stderr,
+ * The default behavior of CPLError() is to report errors to stderr,
  * and to abort() after reporting a CE_Fatal error.  It is expected that
  * some applications will want to suppress error reporting, and will want to
  * install a C++ exception, or longjmp() approach to no local fatal error
@@ -652,7 +653,7 @@ void CPLDebug( const char * pszCategory,
         strcat( pszMessage, VSICTime( static_cast<unsigned long>(tv.tv_sec) ) );
 
         // On windows anyway, ctime puts a \n at the end, but I'm not
-        // convinced this is standard behaviour, so we'll get rid of it
+        // convinced this is standard behavior, so we'll get rid of it
         // carefully
 
         if( pszMessage[strlen(pszMessage) -1 ] == '\n' )
@@ -1132,7 +1133,7 @@ CPLSetErrorHandlerEx( CPLErrorHandler pfnErrorHandlerNew, void* pUserData )
  *     void MyErrorHandler(CPLErr eErrClass, int err_no, const char *msg)
  * </pre>
  *
- * Pass NULL to come back to the default behavior.  The default behaviour
+ * Pass NULL to come back to the default behavior.  The default behavior
  * (CPLDefaultErrorHandler()) is to write the message to stderr.
  *
  * The msg will be a partially formatted error message not containing the
@@ -1140,7 +1141,7 @@ CPLSetErrorHandlerEx( CPLErrorHandler pfnErrorHandlerNew, void* pUserData )
  * is handled by CPLError() before calling the handler.  If the error
  * handler function is passed a CE_Fatal class error and returns, then
  * CPLError() will call abort(). Applications wanting to interrupt this
- * fatal behaviour will have to use longjmp(), or a C++ exception to
+ * fatal behavior will have to use longjmp(), or a C++ exception to
  * indirectly exit the function.
  *
  * Another standard error handler is CPLQuietErrorHandler() which doesn't
@@ -1344,4 +1345,29 @@ bool CPLIsDefaultErrorHandlerAndCatchDebug()
     return (psCtx == nullptr || psCtx->psHandlerStack == nullptr) &&
             gbCatchDebug &&
            pfnErrorHandler == CPLDefaultErrorHandler;
+}
+
+/************************************************************************/
+/*                       CPLErrorHandlerAccumulator()                   */
+/************************************************************************/
+
+static
+void CPL_STDCALL CPLErrorHandlerAccumulator( CPLErr eErr, CPLErrorNum no,
+                                              const char* msg )
+{
+    std::vector<CPLErrorHandlerAccumulatorStruct>* paoErrors =
+        static_cast<std::vector<CPLErrorHandlerAccumulatorStruct> *>(
+            CPLGetErrorHandlerUserData());
+    paoErrors->push_back(CPLErrorHandlerAccumulatorStruct(eErr, no, msg));
+}
+
+
+void CPLInstallErrorHandlerAccumulator(std::vector<CPLErrorHandlerAccumulatorStruct>& aoErrors)
+{
+    CPLPushErrorHandlerEx( CPLErrorHandlerAccumulator, &aoErrors );
+}
+
+void CPLUninstallErrorHandlerAccumulator()
+{
+    CPLPopErrorHandler();
 }

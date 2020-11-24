@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: nasreaderp.h 365a72f2b5a94946e92323060b68f9963cd2dbd5 2018-05-06 22:14:36 +0200 Even Rouault $
+ * $Id: nasreaderp.h a3aad911aa32cb3fe61804ba96ca44eedbdd9071 2020-10-22 11:42:59 +0200 Even Rouault $
  *
  * Project:  NAS Reader
  * Purpose:  Private Declarations for OGR NAS Reader code.
@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2008, Frank Warmerdam
- * Copyright (c) 2010-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -99,7 +99,7 @@ public:
         const   XMLCh* const    uri,
         const   XMLCh* const    localname,
         const   XMLCh* const    qname,
-        const   Attributes& attrs
+        const   Attributes&     attrs
     ) override;
     void endElement(
         const   XMLCh* const    uri,
@@ -180,6 +180,7 @@ private:
     void          CleanupParser();
 
     char         *m_pszFilteredClassName;
+    bool          m_bStopParsing = false;
 
 public:
                 NASReader();
@@ -205,7 +206,6 @@ public:
     bool             SaveClasses( const char *pszFile = nullptr ) override;
 
     bool             PrescanForSchema(bool bGetExtents = true,
-                                      bool bAnalyzeSRSPerFeature = true,
                                       bool bOnlyDetectSRS = false) override;
     bool             PrescanForTemplate() override;
     void             ResetReading() override;
@@ -236,9 +236,11 @@ public:
     void        SetFeaturePropertyDirectly( const char *pszElement,
                                     char *pszValue );
 
-    bool        HasStoppedParsing() override { return false; }
+    void        StopParsing() { m_bStopParsing = true; }
+    bool        HasStoppedParsing() override { return m_bStopParsing; }
 
     void        CheckForFID( const Attributes &attrs, char **ppszCurField );
+    void        CheckForRID( const Attributes &attrs, char **ppszCurField );
     void        CheckForRelations( const char *pszElement,
                                    const Attributes &attrs,
                                    char **ppszCurField );

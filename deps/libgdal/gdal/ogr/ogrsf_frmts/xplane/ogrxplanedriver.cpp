@@ -2,10 +2,10 @@
  *
  * Project:  X-Plane aeronautical data reader
  * Purpose:  Implements OGRXPlaneDriver.
- * Author:   Even Rouault, even dot rouault at mines dash paris dot org
+ * Author:   Even Rouault, even dot rouault at spatialys.com
  *
  ******************************************************************************
- * Copyright (c) 2008, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,7 +29,7 @@
 #include "ogr_xplane.h"
 #include "cpl_conv.h"
 
-CPL_CVSID("$Id: ogrxplanedriver.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12-11 19:08:47Z Even Rouault $")
+CPL_CVSID("$Id: ogrxplanedriver.cpp 1761acd90777d5bcc49eddbc13c193098f0ed40b 2020-10-01 12:12:00 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                              GetName()                               */
@@ -91,7 +91,7 @@ void RegisterOGRXPlane()
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "X-Plane/Flightgear aeronautical data" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "dat" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drv_xplane.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/vector/xplane.html" );
     poDriver->SetMetadataItem( GDAL_DCAP_VIRTUALIO, "YES" );
 
     OGRSFDriverRegistrar::GetRegistrar()->RegisterDriver( poDriver );

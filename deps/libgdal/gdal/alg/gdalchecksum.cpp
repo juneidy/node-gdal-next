@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2003, Frank Warmerdam
- * Copyright (c) 2007-2008, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2008, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -39,7 +39,7 @@
 #include "gdal.h"
 
 
-CPL_CVSID("$Id: gdalchecksum.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12-11 19:08:47Z Even Rouault $")
+CPL_CVSID("$Id: gdalchecksum.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                         GDALChecksumImage()                          */
@@ -116,7 +116,7 @@ GDALChecksumImage( GDALRasterBandH hBand,
                 }
                 else
                 {
-                    // Standard behaviour of GDALCopyWords when converting
+                    // Standard behavior of GDALCopyWords when converting
                     // from floating point to Int32.
                     dfVal += 0.5;
 

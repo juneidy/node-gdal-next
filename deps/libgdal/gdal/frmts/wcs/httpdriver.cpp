@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -33,7 +33,7 @@
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
 
-CPL_CVSID("$Id: httpdriver.cpp 3deffce5cdc9f2c96341efbc04f82c7f2afca022 2018-07-25 17:55:54 +0200 Even Rouault $")
+CPL_CVSID("$Id: httpdriver.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /*               HTTPFetchContentDispositionFilename()                 */
@@ -148,7 +148,7 @@ static GDALDataset *HTTPOpen( GDALOpenInfo * poOpenInfo )
     CPLPopErrorHandler();
 
     // The JP2OpenJPEG driver may need to reopen the file, hence this special
-    // behaviour
+    // behavior
     if( poDS != nullptr && poDS->GetDriver() != nullptr &&
         EQUAL(poDS->GetDriver()->GetDescription(), "JP2OpenJPEG") )
     {

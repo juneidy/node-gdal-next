@@ -3,10 +3,10 @@
  * Name:     cpl_virtualmem.cpp
  * Project:  CPL - Common Portability Library
  * Purpose:  Virtual memory
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  **********************************************************************
- * Copyright (c) 2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -48,7 +48,7 @@
 #include "cpl_error.h"
 #include "cpl_multiproc.h"
 
-CPL_CVSID("$Id: cpl_virtualmem.cpp 1ab096be50a6bd1fd2fd4bc075df08b9b808b95a 2019-04-01 18:24:26 +0200 Raul Marin $")
+CPL_CVSID("$Id: cpl_virtualmem.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 #ifdef NDEBUG
 // Non NDEBUG: Ignore the result.
@@ -400,7 +400,10 @@ CPLVirtualMem* CPLVirtualMemNew( size_t nSize,
     CPLVirtualMemVMA* ctxt = static_cast<CPLVirtualMemVMA *>(
         VSI_CALLOC_VERBOSE(1, sizeof(CPLVirtualMemVMA)));
     if( ctxt == nullptr )
+    {
+        munmap(pData, nRoundedMappingSize);
         return nullptr;
+    }
     ctxt->sBase.nRefCount = 1;
     ctxt->sBase.eType = VIRTUAL_MEM_TYPE_VMA;
     ctxt->sBase.eAccessMode = eAccessMode;
@@ -679,6 +682,7 @@ void CPLVirtualMemAddPage( CPLVirtualMemVMA* ctxt, void* target_addr,
         const void * const pRet = mmap(addr, ctxt->sBase.nPageSize, PROT_NONE,
                     MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         IGNORE_OR_ASSERT_IN_DEBUG(pRet == addr);
+        // cppcheck-suppress memleak
     }
     ctxt->panLRUPageIndices[ctxt->iLRUStart] = iPage;
     ctxt->iLRUStart = (ctxt->iLRUStart + 1) % ctxt->nCacheMaxSizeInPages;
@@ -815,6 +819,7 @@ void CPLVirtualMemAddPage( CPLVirtualMemVMA* ctxt, void* target_addr,
         CPLReleaseMutex(ctxt->hMutexThreadArray);
 #endif
     }
+    // cppcheck-suppress memleak
 }
 
 /************************************************************************/

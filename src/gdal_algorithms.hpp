@@ -6,14 +6,11 @@
 #include <node_object_wrap.h>
 
 // nan
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
-#pragma GCC diagnostic pop
+#include "nan-wrapper.h"
 
 // gdal
-#include <gdal_priv.h>
 #include <gdal_alg.h>
+#include <gdal_priv.h>
 
 // ogr
 #include <ogrsf_frmts.h>
@@ -27,14 +24,14 @@ using namespace node;
 namespace node_gdal {
 namespace Algorithms {
 
-	void Initialize(Local<Object> target);
+void Initialize(Local<Object> target);
 
-	NAN_METHOD(fillNodata);
-	NAN_METHOD(contourGenerate);
-	NAN_METHOD(sieveFilter);
-	NAN_METHOD(checksumImage);
-	NAN_METHOD(polygonize);
-}
-}
+NAN_METHOD(fillNodata);
+NAN_METHOD(contourGenerate);
+NAN_METHOD(sieveFilter);
+NAN_METHOD(checksumImage);
+NAN_METHOD(polygonize);
+} // namespace Algorithms
+} // namespace node_gdal
 
 #endif

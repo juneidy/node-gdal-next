@@ -32,9 +32,10 @@
 #include "cpl_vsi.h"
 #include "io_selafin.h"
 
+#include <algorithm>
 #include <ctime>
 
-CPL_CVSID("$Id: ogrselafindatasource.cpp 2b3cb5ac55d9faf0c9c408085c71dd4f3f8d77a3 2019-10-18 18:38:57 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrselafindatasource.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                          Range                                       */
@@ -65,8 +66,6 @@ void Range::setRange(const char *pszStr) {
     }
     const char *pszc=pszStr;
     char *psze = nullptr;
-    int nMin = 0;
-    int nMax = 0;
     SelafinTypeDef eType;
     while (*pszc!=0 && *pszc!=']') {
         pszc++;
@@ -77,9 +76,9 @@ void Range::setRange(const char *pszStr) {
             eType=ELEMENTS;
             pszc++;
         } else eType=ALL;
-        if (*pszc==':') {
-            nMin=0;
-        } else {
+
+        int nMin = 0;
+        if (*pszc!=':') {
             nMin=(int)strtol(pszc,&psze,10);
             if (*psze!=':' && *psze!=',' && *psze!=']') {
                 CPLError( CE_Warning, CPLE_IllegalArg, "Invalid range specified\n");
@@ -89,11 +88,10 @@ void Range::setRange(const char *pszStr) {
             }
             pszc=psze;
         }
+        int nMax = -1;
         if (*pszc==':') {
             ++pszc;
-            if (*pszc==',' || *pszc==']') {
-                nMax=-1;
-            } else {
+            if (*pszc != ',' && *pszc !=']') {
                 nMax=(int)strtol(pszc,&psze,10);
                 if (*psze!=',' && *psze!=']') {
                     CPLError( CE_Warning, CPLE_IllegalArg, "Invalid range specified\n");
@@ -282,7 +280,6 @@ int OGRSelafinDataSource::Open( const char * pszFilename, int bUpdateIn,
     /* For writable /vsizip/, do nothing more */
     if (bCreate && STARTS_WITH(pszName, "/vsizip/")) return TRUE;
     CPLString osFilename(pszName);
-    CPLString osBaseFilename = CPLGetFilename(pszName);
     // Determine what sort of object this is.
     VSIStatBufL sStatBuf;
     if (VSIStatExL( osFilename, &sStatBuf, VSI_STAT_NATURE_FLAG ) != 0) return FALSE;
@@ -436,8 +433,8 @@ int OGRSelafinDataSource::OpenTable(const char * pszFilename) {
                 if (poHeader->panStartDate==nullptr) snprintf(szTemp,29,"%d",i); else {
                     struct tm sDate;
                     memset(&sDate, 0, sizeof(sDate));
-                    sDate.tm_year=poHeader->panStartDate[0]-1900;
-                    sDate.tm_mon=poHeader->panStartDate[1]-1;
+                    sDate.tm_year=std::max(poHeader->panStartDate[0], 0) - 1900;
+                    sDate.tm_mon=std::max(poHeader->panStartDate[1], 1) - 1;
                     sDate.tm_mday=poHeader->panStartDate[2];
                     sDate.tm_hour=poHeader->panStartDate[3];
                     sDate.tm_min=poHeader->panStartDate[4];

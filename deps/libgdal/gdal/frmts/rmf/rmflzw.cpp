@@ -49,7 +49,7 @@
 
 #include "rmfdataset.h"
 
-CPL_CVSID("$Id: rmflzw.cpp ac5c9afc16a3fcb0096e79f1ff4dad8e69a0309e 2018-07-05 08:21:22 +0300 drons $")
+CPL_CVSID("$Id: rmflzw.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 // Code marks that there is no predecessor in the string
 constexpr GUInt32 NO_PRED = 0xFFFF;
@@ -76,7 +76,13 @@ typedef struct
 /*                           LZWUpdateTab()                             */
 /************************************************************************/
 
-static void LZWUpdateTab(LZWStringTab *poCodeTab, GUInt32 iPred, char bFoll)
+CPL_NOSANITIZE_UNSIGNED_INT_OVERFLOW
+static GUInt32 UnsanitizedMul(GUInt32 a, GUInt32 b)
+{
+    return a * b;
+}
+
+static void LZWUpdateTab(LZWStringTab *poCodeTab, GUInt32 iPred, char bFollow)
 {
 /* -------------------------------------------------------------------- */
 /* Hash uses the 'mid-square' algorithm. I.E. for a hash val of n bits  */
@@ -85,8 +91,8 @@ static void LZWUpdateTab(LZWStringTab *poCodeTab, GUInt32 iPred, char bFoll)
 /* It will NOT notice if the table is full. This must be handled        */
 /* elsewhere                                                            */
 /* -------------------------------------------------------------------- */
-    GUInt32 nLocal = (iPred + bFoll) | 0x0800;
-    nLocal = (nLocal*nLocal >> 6) & 0x0FFF;      // middle 12 bits of result
+    GUInt32 nLocal = CPLUnsanitizedAdd<GUInt32>(iPred, bFollow) | 0x0800;
+    nLocal = (UnsanitizedMul(nLocal, nLocal) >> 6) & 0x0FFF;      // middle 12 bits of result
 
     // If string is not used
     GUInt32 nNext = nLocal;
@@ -111,7 +117,7 @@ static void LZWUpdateTab(LZWStringTab *poCodeTab, GUInt32 iPred, char bFoll)
     poCodeTab[nNext].bUsed = true;
     poCodeTab[nNext].iNext = 0;
     poCodeTab[nNext].iPredecessor = iPred;
-    poCodeTab[nNext].iFollower = static_cast<GByte>(bFoll);
+    poCodeTab[nNext].iFollower = static_cast<GByte>(bFollow);
 }
 
 /************************************************************************/
@@ -136,16 +142,16 @@ static LZWStringTab* LZWCreateTab()
 /*                            LZWFindIndex()                            */
 /************************************************************************/
 
-static GUInt32 LZWFindIndex(const LZWStringTab* poCodeTab, GUInt32 iPred, char bFoll)
+static GUInt32 LZWFindIndex(const LZWStringTab* poCodeTab, GUInt32 iPred, char bFollow)
 {
-    GUInt32 nLocal = (iPred + bFoll) | 0x0800;
-    nLocal = (nLocal*nLocal >> 6) & 0x0FFF;      // middle 12 bits of result
+    GUInt32 nLocal = CPLUnsanitizedAdd<GUInt32>(iPred, bFollow) | 0x0800;
+    nLocal = (UnsanitizedMul(nLocal, nLocal) >> 6) & 0x0FFF;      // middle 12 bits of result
 
     do
     {
         CPLAssert(nLocal < TABSIZE);
         if(poCodeTab[nLocal].iPredecessor == iPred &&
-           poCodeTab[nLocal].iFollower == static_cast<GByte>(bFoll))
+           poCodeTab[nLocal].iFollower == static_cast<GByte>(bFollow))
         {
             return nLocal;
         }

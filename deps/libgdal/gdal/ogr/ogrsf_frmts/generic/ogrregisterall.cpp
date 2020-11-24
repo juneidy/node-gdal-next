@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1999,  Les Technologies SoftMap Inc.
- * Copyright (c) 2007-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,7 +29,7 @@
 
 #include "ogrsf_frmts.h"
 
-CPL_CVSID("$Id: ogrregisterall.cpp de39c020a4aa8ff766062676ac17f3be4bbcf0ec 2019-04-24 12:21:16 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrregisterall.cpp bca0a3e9973959f19849febb0281fa9ecf0ad51f 2020-09-02 20:47:32 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                           OGRRegisterAll()                           */
@@ -53,6 +53,9 @@ void OGRRegisterAllInternal()
 #endif
 #ifdef NTF_ENABLED
     RegisterOGRNTF();
+#endif
+#ifdef LVBAG_ENABLED
+    RegisterOGRLVBAG();
 #endif
 #ifdef SDTS_ENABLED
     RegisterOGRSDTS();
@@ -149,9 +152,6 @@ void OGRRegisterAllInternal()
 #ifdef INGRES_ENABLED
     RegisterOGRIngres();
 #endif
-#ifdef SDE_ENABLED
-    RegisterOGRSDE();
-#endif
 /* Register OpenFileGDB before FGDB as it is more capable for read-only */
 #ifdef OPENFILEGDB_ENABLED
     RegisterOGROpenFileGDB();
@@ -176,6 +176,9 @@ void OGRRegisterAllInternal()
 #endif
 #ifdef GRASS_ENABLED
     RegisterOGRGRASS();
+#endif
+#ifdef FLATGEOBUF_ENABLED
+    RegisterOGRFlatGeobuf();
 #endif
 #ifdef FME_ENABLED
     RegisterOGRFME();
@@ -216,7 +219,7 @@ void OGRRegisterAllInternal()
 #endif
 #ifdef WFS_ENABLED
     RegisterOGRWFS();
-    RegisterOGRWFS3();
+    RegisterOGROAPIF();
 #endif
 #ifdef SOSI_ENABLED
     RegisterOGRSOSI();
@@ -232,9 +235,6 @@ void OGRRegisterAllInternal()
 #endif
 #ifdef EDIGEO_ENABLED
     RegisterOGREDIGEO();
-#endif
-#ifdef GFT_ENABLED
-    RegisterOGRGFT();
 #endif
 #ifdef SVG_ENABLED
     RegisterOGRSVG();
@@ -308,6 +308,12 @@ void OGRRegisterAllInternal()
 #ifdef MVT_ENABLED
     RegisterOGRMVT();
 #endif
+#ifdef NGW_ENABLED
+    RegisterOGRNGW();
+#endif // NGW_ENABLED
+#ifdef MAPML_ENABLED
+    RegisterOGRMapML();
+#endif
 
 /* Put TIGER and AVCBIN at end since they need poOpenInfo->GetSiblingFiles() */
 #ifdef TIGER_ENABLED
@@ -318,8 +324,5 @@ void OGRRegisterAllInternal()
     RegisterOGRAVCE00();
 #endif
 
-#ifdef NGW_ENABLED
-    RegisterOGRNGW();
-#endif // NGW_ENABLED
 
 } /* OGRRegisterAll */

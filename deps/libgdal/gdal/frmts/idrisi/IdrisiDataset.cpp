@@ -10,7 +10,7 @@
 *
 ******************************************************************************
 * Copyright( c ) 2006, Ivan Lucena
- * Copyright (c) 2007-2012, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2012, Even Rouault <even dot rouault at spatialys.com>
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files( the "Software" ),
@@ -47,7 +47,7 @@
 
 #include <cmath>
 
-CPL_CVSID( "$Id: IdrisiDataset.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $" )
+CPL_CVSID( "$Id: IdrisiDataset.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $" )
 
 #ifdef WIN32
 #  define PATHDELIM       '\\'
@@ -496,7 +496,7 @@ class IdrisiRasterBand;
 //        Idrisi GDALDataset
 //  ----------------------------------------------------------------------------
 
-class IdrisiDataset : public GDALPamDataset
+class IdrisiDataset final: public GDALPamDataset
 {
     friend class IdrisiRasterBand;
 
@@ -553,7 +553,7 @@ public:
 //        Idrisi GDALPamRasterBand
 //  ----------------------------------------------------------------------------
 
-class IdrisiRasterBand : public GDALPamRasterBand
+class IdrisiRasterBand final: public GDALPamRasterBand
 {
     friend class IdrisiDataset;
 
@@ -2112,7 +2112,7 @@ CPLErr IdrisiRasterBand::SetDefaultRAT( const GDALRasterAttributeTable *poRAT )
     }
 
     // ----------------------------------------------------------
-    // Get field indecies
+    // Get field indices
     // ----------------------------------------------------------
 
     int iValue = -1;
@@ -2202,14 +2202,6 @@ CPLErr IdrisiRasterBand::SetDefaultRAT( const GDALRasterAttributeTable *poRAT )
     }
 
     // ----------------------------------------------------------
-    // Initialization
-    // ----------------------------------------------------------
-
-    double dRed     = 0.0;
-    double dGreen   = 0.0;
-    double dBlue    = 0.0;
-
-    // ----------------------------------------------------------
     // Load values
     // ----------------------------------------------------------
 
@@ -2230,9 +2222,9 @@ CPLErr IdrisiRasterBand::SetDefaultRAT( const GDALRasterAttributeTable *poRAT )
         {
             if( poCT )
             {
-                dRed    = poRAT->GetValueAsDouble( iEntry, iRed );
-                dGreen  = poRAT->GetValueAsDouble( iEntry, iGreen );
-                dBlue   = poRAT->GetValueAsDouble( iEntry, iBlue );
+                const double dRed    = poRAT->GetValueAsDouble( iEntry, iRed );
+                const double dGreen  = poRAT->GetValueAsDouble( iEntry, iGreen );
+                const double dBlue   = poRAT->GetValueAsDouble( iEntry, iBlue );
                 sColor.c1  = (short) ( dRed   * nFact );
                 sColor.c2  = (short) ( dGreen * nFact );
                 sColor.c3  = (short) ( dBlue  * nFact );
@@ -3026,8 +3018,6 @@ CPLErr IdrisiDataset::Wkt2GeoReference( const char *pszProjString,
         }//
 
         //if EPSG code is missing, go to following steps to work with origin
-        double dfLon = 0.0;
-        double dfLat = 0.0;
 
         const char *pszNAD83 = "83";
         const char *pszNAD27 = "27";
@@ -3041,8 +3031,8 @@ CPLErr IdrisiDataset::Wkt2GeoReference( const char *pszProjString,
         if ( (oSRS.FindProjParm("central_meridian",nullptr) != -1) &&
              (oSRS.FindProjParm("latitude_of_origin",nullptr) != -1) )
         {
-            dfLon = oSRS.GetProjParm("central_meridian");
-            dfLat = oSRS.GetProjParm("latitude_of_origin");
+            double dfLon = oSRS.GetProjParm("central_meridian");
+            double dfLat = oSRS.GetProjParm("latitude_of_origin");
             dfLon = (int)(fabs(dfLon) * 100 + 0.5) / 100.0;
             dfLat = (int)(fabs(dfLat) * 100 + 0.5) / 100.0;
             *pszRefSystem = CPLStrdup(GetSpcs(dfLon, dfLat));
@@ -3429,7 +3419,7 @@ void GDALRegister_IDRISI()
     poDriver->SetDescription( "RST" );
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, rstVERSION );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_Idrisi.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/Idrisi.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, extRST );
     poDriver->SetMetadataItem( GDAL_DMD_CREATIONDATATYPES,
                                "Byte Int16 Float32" );

@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, SPADAC Inc. <harsh.govind@spadac.com>
- * Copyright (c) 2010-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -46,7 +46,7 @@
 #include "../vrt/gdal_vrt.h"
 #include "../vrt/vrtdataset.h"
 
-CPL_CVSID("$Id: kmlsuperoverlaydataset.cpp 1af145216bfb0dd79c7af57f90aeb3ef0671ed7c 2019-03-15 12:36:05 +0100 Even Rouault $")
+CPL_CVSID("$Id: kmlsuperoverlaydataset.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 using namespace std;
 
@@ -572,7 +572,7 @@ int KmlSuperOverlayReadDataset::DetectTransparency( int rxsize, int rysize,
 /*                           CreateCopy()                               */
 /************************************************************************/
 
-class KmlSuperOverlayDummyDataset: public GDALDataset
+class KmlSuperOverlayDummyDataset final: public GDALDataset
 {
     public:
         KmlSuperOverlayDummyDataset() {}
@@ -1512,6 +1512,7 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO( GDALRWFlag eRWFlag,
 
             GDALRasterIOExtraArg sExtraArgs;
             INIT_RASTERIO_EXTRA_ARG(sExtraArgs);
+            // cppcheck-suppress redundantAssignment
             sExtraArgs.eResampleAlg = psExtraArg->eResampleAlg;
             CPLErr eErr = poVRTDS->RasterIO( eRWFlag,
                                              nReqXOff,
@@ -1568,6 +1569,7 @@ CPLErr KmlSuperOverlayReadDataset::IRasterIO( GDALRWFlag eRWFlag,
 
         GDALRasterIOExtraArg sExtraArgs;
         INIT_RASTERIO_EXTRA_ARG(sExtraArgs);
+        // cppcheck-suppress redundantAssignment
         sExtraArgs.eResampleAlg = psExtraArg->eResampleAlg;
         sExtraArgs.pfnProgress = GDALScaledProgress;
         sExtraArgs.pProgressData =
@@ -1919,7 +1921,7 @@ class KmlSingleDocRasterDataset final: public GDALDataset
 /*                    KmlSingleDocRasterRasterBand                      */
 /************************************************************************/
 
-class KmlSingleDocRasterRasterBand: public GDALRasterBand
+class KmlSingleDocRasterRasterBand final: public GDALRasterBand
 {
     public:
         KmlSingleDocRasterRasterBand(KmlSingleDocRasterDataset* poDS,
@@ -2424,7 +2426,7 @@ GDALDataset* KmlSingleDocRasterDataset::Open(const char* pszFilename,
 /*                   KmlSingleOverlayRasterDataset                      */
 /************************************************************************/
 
-class KmlSingleOverlayRasterDataset: public VRTDataset
+class KmlSingleOverlayRasterDataset final: public VRTDataset
 {
     public:
                 KmlSingleOverlayRasterDataset(int nXSize, int nYSize) :

@@ -7,7 +7,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Adam Nowacki
- * Copyright (c) 2009-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2009-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -41,13 +41,15 @@
 #include "minidriver_arcgis_server.h"
 #include "minidriver_iip.h"
 #include "minidriver_mrf.h"
+#include "minidriver_ogcapimaps.h"
+#include "minidriver_ogcapicoverage.h"
 
 #include "cpl_json.h"
 
 #include <limits>
 #include <utility>
 
-CPL_CVSID("$Id: wmsdriver.cpp 8fe13fd1bcb21369a4702e7ff1b18999864451da 2019-04-04 21:49:15 +0200 Even Rouault $")
+CPL_CVSID("$Id: wmsdriver.cpp 18df30822243cf782434ddb77b214a8b7dde74f8 2020-10-01 14:55:00 +0200 Even Rouault $")
 
 //
 // A static map holding seen server GetTileService responses, per process
@@ -1057,13 +1059,15 @@ void GDALRegister_WMS()
     RegisterMinidriver(AGS);
     RegisterMinidriver(IIP);
     RegisterMinidriver(MRF);
+    RegisterMinidriver(OGCAPIMaps);
+    RegisterMinidriver(OGCAPICoverage);
 
     GDALDriver *poDriver = new GDALDriver();
 
     poDriver->SetDescription("WMS");
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "OGC Web Map Service" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_wms.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/wms.html" );
     poDriver->SetMetadataItem( GDAL_DCAP_VIRTUALIO, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_SUBDATASETS, "YES" );
 

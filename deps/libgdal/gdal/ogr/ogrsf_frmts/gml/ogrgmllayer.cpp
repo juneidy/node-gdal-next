@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2009-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,7 +35,7 @@
 #include "ogr_p.h"
 #include "ogr_api.h"
 
-CPL_CVSID("$Id: ogrgmllayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrgmllayer.cpp 10a13a410326b31194c7d87874e0d3174bd638b9 2020-08-28 19:34:11 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                           OGRGMLLayer()                              */
@@ -1043,6 +1043,23 @@ OGRErr OGRGMLLayer::ICreateFeature( OGRFeature *poFeature )
                               bRemoveAppPrefix, poFieldDefn,
                               (poFeature->GetFieldAsInteger(iField)) ? "true"
                                                                      : "false");
+            }
+            else if ( eType == OFTDate )
+            {
+                const OGRField* poField = poFeature->GetRawFieldRef(iField);
+                const char* pszXML = CPLSPrintf("%04d-%02d-%02d",
+                                                poField->Date.Year,
+                                                poField->Date.Month,
+                                                poField->Date.Day);
+                GMLWriteField(poDS, fp, bWriteSpaceIndentation, pszPrefix,
+                              bRemoveAppPrefix, poFieldDefn, pszXML);
+            }
+            else if ( eType == OFTDateTime )
+            {
+                char* pszXML = OGRGetXMLDateTime(poFeature->GetRawFieldRef(iField));
+                GMLWriteField(poDS, fp, bWriteSpaceIndentation, pszPrefix,
+                              bRemoveAppPrefix, poFieldDefn, pszXML);
+                CPLFree(pszXML);
             }
             else
             {

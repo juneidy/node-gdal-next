@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2001, Keyhole, Inc.
- * Copyright (c) 2007-2011, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2011, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,7 +36,7 @@
 
 #include <algorithm>
 
-CPL_CVSID("$Id: fitdataset.cpp e95252e59b9c28a7dba655ff759ad45687a21413 2018-05-19 13:38:55 +0200 Even Rouault $")
+CPL_CVSID("$Id: fitdataset.cpp 1067a535e11dffec61af74f0447d131c1281e03d 2020-10-23 20:59:18 +0200 Even Rouault $")
 
 constexpr size_t FIT_PAGE_SIZE = 128;
 
@@ -50,7 +50,7 @@ using namespace gstEndian;
 
 class FITRasterBand;
 
-class FITDataset : public GDALPamDataset
+class FITDataset final: public GDALPamDataset
 {
     friend class FITRasterBand;
 
@@ -77,7 +77,7 @@ static GDALDataset *FITCreateCopy(const char * pszFilename,
 /* ==================================================================== */
 /************************************************************************/
 
-class FITRasterBand : public GDALPamRasterBand
+class FITRasterBand final: public GDALPamRasterBand
 {
     friend class FITDataset;
 
@@ -1020,6 +1020,8 @@ GDALDataset *FITDataset::Open( GDALOpenInfo * poOpenInfo )
 /* -------------------------------------------------------------------- */
 /*      Create band information objects.                                */
 /* -------------------------------------------------------------------- */
+    // Verified by above GDALCheckBandCount()
+    // coverity[tainted_data]
     for( int i = 0; i < (int)head->cSize; i++ )
     {
         FITRasterBand* poBand = new FITRasterBand( poDS, i+1, (int)head->cSize );
@@ -1148,7 +1150,7 @@ static GDALDataset *FITCreateCopy(const char * pszFilename,
         const char *str = CSLFetchNameValue(papszOptions,"PAGESIZE");
         int newBlockX, newBlockY;
         sscanf(str, "%i,%i", &newBlockX, &newBlockY);
-        if (newBlockX && newBlockY) {
+        if (newBlockX > 0 && newBlockY > 0) {
             blockX = newBlockX;
             blockY = newBlockY;
         }
@@ -1194,7 +1196,7 @@ static GDALDataset *FITCreateCopy(const char * pszFilename,
     unsigned long bytesPerPixel = nBands * nDTSize;
 
     size_t pageBytes = blockX * blockY * bytesPerPixel;
-    char *output = (char *) malloc(pageBytes);
+    char *output = (char *) calloc(1, pageBytes);
     if (! output)
     {
         CPLError(CE_Failure, CPLE_OutOfMemory,
@@ -1348,7 +1350,7 @@ void GDALRegister_FIT()
     poDriver->SetDescription( "FIT" );
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "FIT Image" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_various.html#" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/fit.html" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "" );
     poDriver->SetMetadataItem( GDAL_DCAP_VIRTUALIO, "YES" );
 

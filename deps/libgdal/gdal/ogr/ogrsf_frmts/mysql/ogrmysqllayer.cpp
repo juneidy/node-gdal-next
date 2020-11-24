@@ -31,7 +31,7 @@
 #include "cpl_conv.h"
 #include "cpl_string.h"
 
-CPL_CVSID("$Id: ogrmysqllayer.cpp 06803487d7e0d67089b5fc6e58a0dd7ecc831b23 2018-09-08 11:50:50 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrmysqllayer.cpp f890db52002f641b0c01872720a7473aa7c6c0cf 2020-05-27 23:21:17 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                           OGRMySQLLayer()                            */
@@ -97,6 +97,7 @@ void OGRMySQLLayer::ResetReading()
 
         poDS->InterruptLongResult();
     }
+    m_bEOF = false;
 }
 
 /************************************************************************/
@@ -106,6 +107,8 @@ void OGRMySQLLayer::ResetReading()
 OGRFeature *OGRMySQLLayer::GetNextFeature()
 
 {
+    if( m_bEOF )
+        return nullptr;
 
     while( true )
     {
@@ -113,7 +116,10 @@ OGRFeature *OGRMySQLLayer::GetNextFeature()
 
         poFeature = GetNextRawFeature();
         if( poFeature == nullptr )
+        {
+            m_bEOF = true;
             return nullptr;
+        }
 
         if( (m_poFilterGeom == nullptr
             || FilterGeometry( poFeature->GetGeometryRef() ) )
@@ -316,10 +322,20 @@ int OGRMySQLLayer::FetchSRSId()
         mysql_free_result( hResultSet );
     hResultSet = nullptr;
 
-    osCommand.Printf(
-             "SELECT srid FROM geometry_columns "
-             "WHERE f_table_name = '%s'",
-             pszGeomColumnTable );
+    if( poDS->GetMajorVersion() < 8 || poDS->IsMariaDB() )
+    {
+        osCommand.Printf(
+                 "SELECT srid FROM geometry_columns "
+                 "WHERE f_table_name = '%s'",
+                 pszGeomColumnTable );
+    }
+    else
+    {
+        osCommand.Printf(
+                "SELECT SRS_ID FROM INFORMATION_SCHEMA.ST_GEOMETRY_COLUMNS "
+                "WHERE TABLE_NAME = '%s'",
+                pszGeomColumnTable );
+    }
 
     if( !mysql_query( poDS->GetConn(), osCommand ) )
         hResultSet = mysql_store_result( poDS->GetConn() );

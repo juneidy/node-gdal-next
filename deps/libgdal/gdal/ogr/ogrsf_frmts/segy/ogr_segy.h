@@ -1,12 +1,12 @@
 /******************************************************************************
- * $Id: ogr_segy.h 22f8ae3bf7bc3cccd970992655c63fc5254d3206 2018-04-08 20:13:05 +0200 Even Rouault $
+ * $Id: ogr_segy.h bc3d9f5351962c422f3e57a9ab1a251d91659192 2020-05-09 21:07:14 +0200 Even Rouault $
  *
  * Project:  SEG-Y Translator
  * Purpose:  Definition of classes for OGR SEG-Y driver.
- * Author:   Even Rouault, even dot rouault at mines dash paris dot org
+ * Author:   Even Rouault, even dot rouault at spatialys.com
  *
  ******************************************************************************
- * Copyright (c) 2011, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -74,7 +74,7 @@ typedef struct
 /*                          OGRSEGYLayer                                */
 /************************************************************************/
 
-class OGRSEGYLayer final: public OGRLayer
+class OGRSEGYLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGRSEGYLayer>
 {
     OGRFeatureDefn*    poFeatureDefn;
     bool               bEOF;
@@ -92,7 +92,7 @@ class OGRSEGYLayer final: public OGRLayer
                                       SEGYBinaryFileHeader* psBFH );
                         virtual ~OGRSEGYLayer();
 
-    virtual OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRSEGYLayer)
 
     virtual void                ResetReading() override;
 
@@ -105,7 +105,7 @@ class OGRSEGYLayer final: public OGRLayer
 /*                        OGRSEGYHeaderLayer                            */
 /************************************************************************/
 
-class OGRSEGYHeaderLayer final: public OGRLayer
+class OGRSEGYHeaderLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGRSEGYHeaderLayer>
 {
     OGRFeatureDefn*    poFeatureDefn;
     bool               bEOF;
@@ -121,7 +121,7 @@ class OGRSEGYHeaderLayer final: public OGRLayer
                                             const char* pszHeaderText );
                         virtual ~OGRSEGYHeaderLayer();
 
-    virtual OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRSEGYHeaderLayer)
 
     virtual void                ResetReading() override;
 

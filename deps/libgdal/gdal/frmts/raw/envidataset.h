@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: envidataset.h fd88de036f9cce2b0db5573a04cf8a8f50b6afb4 2019-05-10 20:50:18 +0200 Even Rouault $
+ * $Id: envidataset.h a128daac892a6830951c5cbb43e8abf7f615aeeb 2020-07-13 11:54:59 +0200 Even Rouault $
  *
  * Project:  ENVI .hdr Driver
  * Purpose:  Implementation of ENVI .hdr labelled raw raster support.
@@ -8,7 +8,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam
- * Copyright (c) 2007-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -136,6 +136,8 @@ class ENVIDataset final: public RawDataset
     int    GetGCPCount() override;
     const GDAL_GCP *GetGCPs() override;
 
+    bool GetRawBinaryLayout(GDALDataset::RawBinaryLayout&) override;
+
     static GDALDataset *Open( GDALOpenInfo * );
     static GDALDataset *Open( GDALOpenInfo *, bool bFileSizeCheck );
     static GDALDataset *Create( const char *pszFilename,
@@ -161,6 +163,7 @@ class ENVIRasterBand final: public RawRasterBand
     ~ENVIRasterBand() override {}
 
     void SetDescription( const char * ) override;
+    CPLErr SetNoDataValue( double ) override;
 
     CPLErr SetCategoryNames( char ** ) override;
 };

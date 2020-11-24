@@ -1,12 +1,12 @@
 /******************************************************************************
- * $Id: ogr_openair.h 2c3d60220a2d6b41496ded571e231b96435bffa0 2016-11-25 14:09:24Z Even Rouault $
+ * $Id: ogr_openair.h bc3d9f5351962c422f3e57a9ab1a251d91659192 2020-05-09 21:07:14 +0200 Even Rouault $
  *
  * Project:  OpenAir Translator
  * Purpose:  Definition of classes for OGR .sua driver.
- * Author:   Even Rouault, even dot rouault at mines dash paris dot org
+ * Author:   Even Rouault, even dot rouault at spatialys.com
  *
  ******************************************************************************
- * Copyright (c) 2010, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -47,7 +47,7 @@ typedef struct
     int fillB;
 } OpenAirStyle;
 
-class OGROpenAirLayer : public OGRLayer
+class OGROpenAirLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGROpenAirLayer>
 {
     OGRFeatureDefn*    poFeatureDefn;
     OGRSpatialReference *poSRS;
@@ -68,7 +68,7 @@ class OGROpenAirLayer : public OGRLayer
                         virtual ~OGROpenAirLayer();
 
     virtual void                ResetReading() override;
-    virtual OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGROpenAirLayer)
 
     virtual OGRFeatureDefn *    GetLayerDefn() override { return poFeatureDefn; }
 
@@ -79,7 +79,7 @@ class OGROpenAirLayer : public OGRLayer
 /*                       OGROpenAirLabelLayer                           */
 /************************************************************************/
 
-class OGROpenAirLabelLayer : public OGRLayer
+class OGROpenAirLabelLayer final: public OGRLayer, public OGRGetNextFeatureThroughRaw<OGROpenAirLabelLayer>
 {
     OGRFeatureDefn*    poFeatureDefn;
     OGRSpatialReference *poSRS;
@@ -101,7 +101,7 @@ class OGROpenAirLabelLayer : public OGRLayer
                         virtual ~OGROpenAirLabelLayer();
 
     virtual void                ResetReading() override;
-    virtual OGRFeature *        GetNextFeature() override;
+    DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGROpenAirLabelLayer)
 
     virtual OGRFeatureDefn *    GetLayerDefn() override { return poFeatureDefn; }
 
@@ -112,7 +112,7 @@ class OGROpenAirLabelLayer : public OGRLayer
 /*                         OGROpenAirDataSource                         */
 /************************************************************************/
 
-class OGROpenAirDataSource : public OGRDataSource
+class OGROpenAirDataSource final: public OGRDataSource
 {
     char*               pszName;
 

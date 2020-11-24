@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gdal_utils_priv.h 9d450e52444f125a99f6a38c1e6ee820bc9b4ce2 2019-01-14 20:23:45 +0100 Even Rouault $
+ * $Id: gdal_utils_priv.h 1c7b950fc8754f6ba1d027f031886063675d2927 2020-06-02 15:06:07 +0200 Even Rouault $
  *
  * Project:  GDAL Utilities
  * Purpose:  GDAL Utilities Private Declarations.
@@ -49,6 +49,9 @@ struct GDALInfoOptionsForBinary
 
     /* > for reporting on a particular subdataset */
     int nSubdataset;
+
+    /* Allowed input drivers. */
+    char** papszAllowInputDrivers;
 };
 
 struct GDALTranslateOptionsForBinary
@@ -59,6 +62,9 @@ struct GDALTranslateOptionsForBinary
     int bCopySubDatasets;
     char** papszOpenOptions;
     char* pszFormat;
+
+    /* Allowed input drivers. */
+    char** papszAllowInputDrivers;
 };
 
 struct GDALWarpAppOptionsForBinary
@@ -75,6 +81,9 @@ struct GDALWarpAppOptionsForBinary
 
     int bOverwrite;
     int bCreateOutput;
+
+    /* Allowed input drivers. */
+    char** papszAllowInputDrivers;
 };
 
 /* Access modes */
@@ -136,6 +145,24 @@ struct GDALBuildVRTOptionsForBinary
     char* pszDstFilename;
     int bQuiet;
     int bOverwrite;
+};
+
+struct GDALMultiDimInfoOptionsForBinary
+{
+    /* Filename to open. */
+    char* pszFilename;
+
+    /* Open options. */
+    char** papszOpenOptions;
+};
+
+struct GDALMultiDimTranslateOptionsForBinary
+{
+    char* pszSource;
+    char* pszDest;
+    char* pszFormat;
+    int   bQuiet;
+    int   bUpdate;
 };
 
 CPL_C_END

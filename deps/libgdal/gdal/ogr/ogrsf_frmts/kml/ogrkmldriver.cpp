@@ -38,7 +38,7 @@
 #include "gdal.h"
 #include "gdal_priv.h"
 
-CPL_CVSID("$Id: ogrkmldriver.cpp d8a77a7ae5788883e9231e02e52c0ae06c649a4b 2018-02-23 02:34:03Z Kurt Schwehr $")
+CPL_CVSID("$Id: ogrkmldriver.cpp 1761acd90777d5bcc49eddbc13c193098f0ed40b 2020-10-01 12:12:00 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                         OGRKMLDriverIdentify()                       */
@@ -138,15 +138,15 @@ void RegisterOGRKML()
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME,
                                "Keyhole Markup Language (KML)" );
     poDriver->SetMetadataItem( GDAL_DMD_EXTENSION, "kml" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drv_kml.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/vector/kml.html" );
 
     poDriver->SetMetadataItem( GDAL_DMD_CREATIONOPTIONLIST,
 "<CreationOptionList>"
-"  <Option name='DOCUMENT_ID' type='string' description='Id of the root &lt;Document&gt; node' default='root_doc'/>'"
-"  <Option name='GPX_USE_EXTENSIONS' type='boolean' description='Whether to write non-GPX attributes in an <extensions> tag' default='NO'/>"
-"  <Option name='NameField' type='string' description='Field to use to fill the KML <name> element' default='Name'/>"
-"  <Option name='DescriptionField' type='string' description='Field to use to fill the KML <description> element' default='Description'/>"
-"  <Option name='AltitudeMode' type='string-select' description='Value of the <AltitudeMode> element for 3D geometries'>"
+"  <Option name='DOCUMENT_ID' type='string' description='Id of the root &lt;Document&gt; node' default='root_doc'/>"
+"  <Option name='GPX_USE_EXTENSIONS' type='boolean' description='Whether to write non-GPX attributes in an &lt;extensions&gt; tag' default='NO'/>"
+"  <Option name='NameField' type='string' description='Field to use to fill the KML &lt;name&gt; element' default='Name'/>"
+"  <Option name='DescriptionField' type='string' description='Field to use to fill the KML &lt;description&gt; element' default='Description'/>"
+"  <Option name='AltitudeMode' type='string-select' description='Value of the &lt;AltitudeMode&gt; element for 3D geometries'>"
 "    <Value>clampToGround</Value>"
 "    <Value>relativeToGround</Value>"
 "    <Value>absolute</Value>"

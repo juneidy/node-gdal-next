@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, Brian Case
- * Copyright (c) 2010-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -40,7 +40,7 @@
 #include <algorithm>
 #include <set>
 
-CPL_CVSID("$Id: ogrlibkmllayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrlibkmllayer.cpp 302fafdd3a779d0c6c2cc714481b38e964fb45a9 2020-09-29 21:26:18 +0200 Even Rouault $")
 
 using kmldom::CameraPtr;
 using kmldom::ChangePtr;
@@ -384,36 +384,6 @@ OGRLIBKMLLayer::~OGRLIBKMLLayer()
     m_poOgrSRS->Release();
 
     m_poOgrFeatureDefn->Release();
-}
-
-/******************************************************************************
- Method to get the next feature on the layer.
-
- Args:          none
-
- Returns:       The next feature, or NULL if there is no more
-
- This function copied from the sqlite driver.
-******************************************************************************/
-
-OGRFeature *OGRLIBKMLLayer::GetNextFeature()
-{
-    while( true )
-    {
-        OGRFeature *poFeature = GetNextRawFeature();
-        if( poFeature == nullptr )
-            return nullptr;
-
-        if( (m_poFilterGeom == nullptr
-             || FilterGeometry( poFeature->GetGeometryRef() ) )
-            && (m_poAttrQuery == nullptr
-                || m_poAttrQuery->Evaluate( poFeature )) )
-        {
-            return poFeature;
-        }
-
-        delete poFeature;
-    }
 }
 
 /******************************************************************************
@@ -884,7 +854,7 @@ int OGRLIBKMLLayer::TestCapability( const char *pszCap )
     else if( EQUAL( pszCap, OLCSequentialWrite ) )
         result = bUpdate;
     else if( EQUAL( pszCap, OLCRandomWrite ) )
-        result = bUpdate;
+        result = bUpdate && m_poKmlUpdate;
     else if( EQUAL( pszCap, OLCFastFeatureCount ) )
         result = FALSE;
     else if( EQUAL( pszCap, OLCFastSetNextByIndex ) )

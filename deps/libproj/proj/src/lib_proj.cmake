@@ -56,6 +56,7 @@ print_variable(ENABLE_IPO)
 
 set(SRC_LIBPROJ_PROJECTIONS
   projections/aeqd.cpp
+  projections/adams.cpp
   projections/gnom.cpp
   projections/laea.cpp
   projections/mod_ster.cpp
@@ -133,6 +134,7 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/gn_sinu.cpp
   projections/goode.cpp
   projections/igh.cpp
+  projections/igh_o.cpp
   projections/hatano.cpp
   projections/loxim.cpp
   projections/mbt_fps.cpp
@@ -162,6 +164,7 @@ set(SRC_LIBPROJ_PROJECTIONS
   projections/natearth2.cpp
   projections/calcofi.cpp
   projections/eqearth.cpp
+  projections/col_urban.cpp
 )
 
 set(SRC_LIBPROJ_CONVERSIONS
@@ -183,6 +186,8 @@ set(SRC_LIBPROJ_TRANSFORMATIONS
   transformations/molodensky.cpp
   transformations/vgridshift.cpp
   transformations/xyzgridshift.cpp
+  transformations/defmodel.cpp
+  transformations/tinshift.cpp
 )
 
 set(SRC_LIBPROJ_ISO19111
@@ -217,8 +222,7 @@ set(SRC_LIBPROJ_CORE
   fileapi.cpp
   fwd.cpp
   gauss.cpp
-  geocent.cpp
-  geocent.h
+  generic_inverse.cpp
   geodesic.c
   init.cpp
   initcache.cpp
@@ -292,7 +296,7 @@ source_group("Source Files\\Transformations"
 source_group("Source Files\\ISO19111"
   FILES ${SRC_LIBPROJ_ISO19111})
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${PROJ_SOURCE_DIR}/include)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 source_group("CMake Files" FILES CMakeLists.txt)

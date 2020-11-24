@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2005, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2009-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2009-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,13 +36,14 @@
 #if HAVE_FCNTL_H
 #  include <fcntl.h>
 #endif
+#include <limits>
 
 #include "cpl_conv.h"
 #include "cpl_multiproc.h"
 #include "cpl_string.h"
 #include "cpl_vsi_virtual.h"
 
-CPL_CVSID("$Id: cpl_vsil_subfile.cpp 6ef13199b493973da285decbfcd5e2a763954b97 2018-06-07 05:46:42 -0400 luzpaz $")
+CPL_CVSID("$Id: cpl_vsil_subfile.cpp b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 /************************************************************************/
 /* ==================================================================== */
@@ -130,7 +131,11 @@ int VSISubFileHandle::Seek( vsi_l_offset nOffset, int nWhence )
     bAtEOF = false;
 
     if( nWhence == SEEK_SET )
+    {
+        if( nOffset > std::numeric_limits<vsi_l_offset>::max() - nSubregionOffset )
+            return -1;
         nOffset += nSubregionOffset;
+    }
     else if( nWhence == SEEK_CUR )
     {
         // handle normally.
@@ -291,7 +296,7 @@ VSISubFileFilesystemHandler::DecomposePath( const char *pszPath,
         {
             // -1 is sometimes passed to mean that we don't know the file size
             // for example when creating a JPEG2000 datastream in a NITF file
-            // Transform it into 0 for correct behaviour of Read(), Write() and
+            // Transform it into 0 for correct behavior of Read(), Write() and
             // Eof().
             if( pszPath[i + 1] == '-' )
                 nSubFileSize = 0;
@@ -337,7 +342,7 @@ VSISubFileFilesystemHandler::Open( const char *pszFilename,
         errno = ENOENT;
         return nullptr;
     }
-    if( nOff + nSize < nOff )
+    if( nOff > std::numeric_limits<vsi_l_offset>::max() - nSize )
     {
         return nullptr;
     }
@@ -430,8 +435,10 @@ int VSISubFileFilesystemHandler::Stat( const char * pszFilename,
     {
         if( nSize != 0 )
             psStatBuf->st_size = nSize;
-        else
+        else if( static_cast<vsi_l_offset>(psStatBuf->st_size) >= nOff )
             psStatBuf->st_size -= nOff;
+        else
+            psStatBuf->st_size = 0;
     }
 
     return nResult;

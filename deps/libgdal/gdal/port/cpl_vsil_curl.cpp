@@ -31,11 +31,14 @@
 #include "cpl_vsil_curl_class.h"
 
 #include <algorithm>
+#include <array>
 #include <set>
 #include <map>
 #include <memory>
 
 #include "cpl_aws.h"
+#include "cpl_json.h"
+#include "cpl_json_header.h"
 #include "cpl_minixml.h"
 #include "cpl_multiproc.h"
 #include "cpl_string.h"
@@ -45,7 +48,7 @@
 #include "cpl_http.h"
 #include "cpl_mem_cache.h"
 
-CPL_CVSID("$Id: cpl_vsil_curl.cpp 66580a13ceae0e4d3a03063d7f12e30088e76ea9 2019-11-12 15:53:17 +0100 Even Rouault $")
+CPL_CVSID("$Id: cpl_vsil_curl.cpp 2a09de991820b991ea290b426f011fe6cff7256c 2020-10-03 15:20:07 +0200 Even Rouault $")
 
 #ifndef HAVE_CURL
 
@@ -63,6 +66,23 @@ void VSICurlPartialClearCache(const char* )
 {
     // Not supported.
 }
+
+void VSICurlAuthParametersChanged()
+{
+    // Not supported.
+}
+
+void VSINetworkStatsReset( void )
+{
+    // Not supported
+}
+
+char *VSINetworkStatsGetAsSerializedJSON( char** /* papszOptions */ )
+{
+    // Not supported
+    return nullptr;
+}
+
 
 /************************************************************************/
 /*                      VSICurlInstallReadCbk()                         */
@@ -93,10 +113,53 @@ int VSICurlUninstallReadCbk( VSILFILE* /* fp */ )
 #define ENABLE_DEBUG 1
 #define ENABLE_DEBUG_VERBOSE 0
 
-static int N_MAX_REGIONS = 1000;
-static int DOWNLOAD_CHUNK_SIZE = 16384;
+/***********************************************************ù************/
+/*                    VSICurlAuthParametersChanged()                    */
+/************************************************************************/
+
+static unsigned int gnGenerationAuthParameters = 0;
+
+void VSICurlAuthParametersChanged()
+{
+    gnGenerationAuthParameters++;
+}
 
 namespace cpl {
+
+// Do not access those 2 variables directly !
+// Use VSICURLGetDownloadChunkSize() and GetMaxRegions()
+static int N_MAX_REGIONS_DO_NOT_USE_DIRECTLY = 1000;
+static int DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY = 16384;
+
+/************************************************************************/
+/*                    VSICURLReadGlobalEnvVariables()                   */
+/************************************************************************/
+
+static void VSICURLReadGlobalEnvVariables()
+{
+    struct Initializer
+    {
+        Initializer()
+        {
+            DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY = atoi(
+                    CPLGetConfigOption("CPL_VSIL_CURL_CHUNK_SIZE", "16384"));
+            if( DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY < 1024 ||
+                DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY > 10 * 1024* 1024 )
+                DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY = 16384;
+
+            GIntBig nCacheSize = CPLAtoGIntBig(
+                CPLGetConfigOption("CPL_VSIL_CURL_CACHE_SIZE", "16384000"));
+            if( nCacheSize < DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY ||
+                nCacheSize / DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY > INT_MAX )
+            {
+                nCacheSize = 16384000;
+            }
+            N_MAX_REGIONS_DO_NOT_USE_DIRECTLY = std::max(1,
+                static_cast<int>(nCacheSize / DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY));
+        }
+    };
+    static Initializer initializer;
+}
 
 /************************************************************************/
 /*                     VSICURLGetDownloadChunkSize()                    */
@@ -104,8 +167,20 @@ namespace cpl {
 
 int VSICURLGetDownloadChunkSize()
 {
-    return DOWNLOAD_CHUNK_SIZE;
+    VSICURLReadGlobalEnvVariables();
+    return DOWNLOAD_CHUNK_SIZE_DO_NOT_USE_DIRECTLY;
 }
+
+/************************************************************************/
+/*                            GetMaxRegions()                           */
+/************************************************************************/
+
+static int GetMaxRegions()
+{
+    VSICURLReadGlobalEnvVariables();
+    return N_MAX_REGIONS_DO_NOT_USE_DIRECTLY;
+}
+
 
 /************************************************************************/
 /*          VSICurlFindStringSensitiveExceptEscapeSequences()           */
@@ -239,7 +314,7 @@ static CPLString VSICurlGetURLFromFilename(const char* pszFilename,
                 else if( EQUAL(pszKey, "empty_dir") )
                 {
                     /* Undocumented. Used by PLScenes driver */
-                    /* This more or less emulates the behaviour of
+                    /* This more or less emulates the behavior of
                         * GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR */
                     if( pbEmptyDir )
                         *pbEmptyDir = CPLTestBool(pszValue);
@@ -301,14 +376,15 @@ VSICurlHandle::VSICurlHandle( VSICurlFilesystemHandler* poFSIn,
                               const char* pszFilename,
                               const char* pszURLIn ) :
     poFS(poFSIn),
+    m_osFilename(pszFilename),
     m_nMaxRetry(atoi(CPLGetConfigOption("GDAL_HTTP_MAX_RETRY",
                                    CPLSPrintf("%d",CPL_HTTP_MAX_RETRY)))),
+    // coverity[tainted_data]
     m_dfRetryDelay(CPLAtof(CPLGetConfigOption("GDAL_HTTP_RETRY_DELAY",
                                 CPLSPrintf("%f", CPL_HTTP_RETRY_DELAY)))),
     m_bUseHead(CPLTestBool(CPLGetConfigOption("CPL_VSIL_CURL_USE_HEAD",
                                              "YES")))
 {
-    m_osFilename = pszFilename;
     m_papszHTTPOptions = CPLHTTPGetOptionsFromEnv();
     if( pszURLIn )
     {
@@ -404,7 +480,7 @@ int VSICurlHandle::Seek( vsi_l_offset nOffset, int nWhence )
     }
     else
     {
-        curOffset = GetFileSize() + nOffset;
+        curOffset = GetFileSize(false) + nOffset;
     }
     bEOF = false;
     return 0;
@@ -742,13 +818,17 @@ void VSICURLResetHeaderAndWriterFunctions(CURL* hCurlHandle)
 }
 
 /************************************************************************/
-/*                           GetFileSize()                              */
+/*                     GetFileSizeOrHeaders()                           */
 /************************************************************************/
 
-vsi_l_offset VSICurlHandle::GetFileSize( bool bSetError )
+vsi_l_offset VSICurlHandle::GetFileSizeOrHeaders( bool bSetError, bool bGetHeaders )
 {
-    if( oFileProp.bHasComputedFileSize )
+    if( oFileProp.bHasComputedFileSize && !bGetHeaders )
         return oFileProp.fileSize;
+
+    NetworkStatisticsFileSystem oContextFS(poFS->GetFSPrefix());
+    NetworkStatisticsFile oContextFile(m_osFilename);
+    NetworkStatisticsAction oContextAction("GetFileSize");
 
     oFileProp.bHasComputedFileSize = true;
 
@@ -772,13 +852,14 @@ retry:
     CPLString osVerb;
     CPLString osRange; // leave in this scope !
     int nRoundedBufSize = 0;
+    const int knDOWNLOAD_CHUNK_SIZE = VSICURLGetDownloadChunkSize();
     if( UseLimitRangeGetInsteadOfHead() )
     {
         osVerb = "GET";
         const int nBufSize = std::max(1024, std::min(10 * 1024 * 1024,
             atoi(CPLGetConfigOption("GDAL_INGESTED_BYTES_AT_OPEN", "1024"))));
-        nRoundedBufSize = ((nBufSize + DOWNLOAD_CHUNK_SIZE - 1)
-            / DOWNLOAD_CHUNK_SIZE) * DOWNLOAD_CHUNK_SIZE;
+        nRoundedBufSize = ((nBufSize + knDOWNLOAD_CHUNK_SIZE - 1)
+            / knDOWNLOAD_CHUNK_SIZE) * knDOWNLOAD_CHUNK_SIZE;
 
         // so it gets included in Azure signature
         osRange.Printf("Range: bytes=0-%d", nRoundedBufSize-1);
@@ -841,6 +922,11 @@ retry:
 
     long mtime = 0;
     curl_easy_getinfo(hCurlHandle, CURLINFO_FILETIME, &mtime);
+
+    if( osVerb == "GET" )
+        NetworkStatisticsLogger::LogGET(sWriteFuncData.nSize);
+    else
+        NetworkStatisticsLogger::LogHEAD();
 
     if( STARTS_WITH(osURL, "ftp") )
     {
@@ -983,6 +1069,22 @@ retry:
                     oFileProp.ETag.assign(pzETag, pszEndOfETag - pzETag);
                 }
             }
+
+            if( bGetHeaders )
+            {
+                char** papszHeaders = CSLTokenizeString2(sWriteFuncHeaderData.pBuffer, "\r\n", 0);
+                for( int i = 0; papszHeaders[i]; ++i )
+                {
+                    char* pszKey = nullptr;
+                    const char* pszValue = CPLParseNameValue(papszHeaders[i], &pszKey);
+                    if( pszKey && pszValue )
+                    {
+                        m_aosHeaders.SetNameValue(pszKey, pszValue);
+                    }
+                    CPLFree(pszKey);
+                }
+                CSLDestroy(papszHeaders);
+            }
         }
 
         if( UseLimitRangeGetInsteadOfHead() && response_code == 206 )
@@ -1010,12 +1112,12 @@ retry:
                 if( sWriteFuncData.pBuffer != nullptr )
                 {
                     for( size_t nOffset = 0;
-                            nOffset + DOWNLOAD_CHUNK_SIZE <= sWriteFuncData.nSize;
-                            nOffset += DOWNLOAD_CHUNK_SIZE )
+                            nOffset + knDOWNLOAD_CHUNK_SIZE <= sWriteFuncData.nSize;
+                            nOffset += knDOWNLOAD_CHUNK_SIZE )
                     {
                         poFS->AddRegion(m_pszURL,
                                         nOffset,
-                                        DOWNLOAD_CHUNK_SIZE,
+                                        knDOWNLOAD_CHUNK_SIZE,
                                         sWriteFuncData.pBuffer + nOffset);
                     }
                 }
@@ -1076,7 +1178,7 @@ retry:
                 CPLFree(sWriteFuncData.pBuffer);
                 CPLFree(sWriteFuncHeaderData.pBuffer);
                 curl_easy_cleanup(hCurlHandle);
-                return GetFileSize(bSetError);
+                return GetFileSizeOrHeaders(bSetError, bGetHeaders);
             }
 
             // If there was no VSI error thrown in the process,
@@ -1257,7 +1359,7 @@ retry:
     sWriteFuncHeaderData.bIsHTTP = STARTS_WITH(m_pszURL, "http");
     sWriteFuncHeaderData.nStartOffset = startOffset;
     sWriteFuncHeaderData.nEndOffset =
-        startOffset + nBlocks * DOWNLOAD_CHUNK_SIZE - 1;
+        startOffset + nBlocks * VSICURLGetDownloadChunkSize() - 1;
     // Some servers don't like we try to read after end-of-file (#5786).
     if( oFileProp.bHasComputedFileSize &&
         sWriteFuncHeaderData.nEndOffset >= oFileProp.fileSize )
@@ -1298,6 +1400,8 @@ retry:
     VSICURLResetHeaderAndWriterFunctions(hCurlHandle);
 
     curl_slist_free_all(headers);
+
+    NetworkStatisticsLogger::LogGET(sWriteFuncData.nSize);
 
     if( sWriteFuncData.bInterrupted )
     {
@@ -1344,6 +1448,18 @@ retry:
         CPLFree(sWriteFuncHeaderData.pBuffer);
         curl_easy_cleanup(hCurlHandle);
         goto retry;
+    }
+
+    if( response_code == 401 && nRetryCount < m_nMaxRetry )
+    {
+        CPLDebug("VSICURL", "Unauthorized, trying to authenticate");
+        CPLFree(sWriteFuncData.pBuffer);
+        CPLFree(sWriteFuncHeaderData.pBuffer);
+        curl_easy_cleanup(hCurlHandle);
+        nRetryCount++;
+        if( Authenticate() )
+            goto retry;
+        return std::string();
     }
 
     CPLString osEffectiveURL;
@@ -1532,15 +1648,16 @@ void VSICurlHandle::DownloadRegionPostProcess( const vsi_l_offset startOffset,
                                                const char* pBuffer,
                                                size_t nSize )
 {
-    lastDownloadedOffset = startOffset + nBlocks * DOWNLOAD_CHUNK_SIZE;
+    const int knDOWNLOAD_CHUNK_SIZE = VSICURLGetDownloadChunkSize();
+    lastDownloadedOffset = startOffset + nBlocks * knDOWNLOAD_CHUNK_SIZE;
 
-    if( nSize > static_cast<size_t>(nBlocks) * DOWNLOAD_CHUNK_SIZE )
+    if( nSize > static_cast<size_t>(nBlocks) * knDOWNLOAD_CHUNK_SIZE )
     {
         if( ENABLE_DEBUG )
             CPLDebug(
                 "VSICURL", "Got more data than expected : %u instead of %u",
                 static_cast<unsigned int>(nSize),
-                static_cast<unsigned int>(nBlocks * DOWNLOAD_CHUNK_SIZE));
+                static_cast<unsigned int>(nBlocks * knDOWNLOAD_CHUNK_SIZE));
     }
 
     vsi_l_offset l_startOffset = startOffset;
@@ -1553,10 +1670,10 @@ void VSICurlHandle::DownloadRegionPostProcess( const vsi_l_offset startOffset,
                 "Add region %u - %u",
                 static_cast<unsigned int>(startOffset),
                 static_cast<unsigned int>(
-                    std::min(static_cast<size_t>(DOWNLOAD_CHUNK_SIZE), nSize)));
+                    std::min(static_cast<size_t>(knDOWNLOAD_CHUNK_SIZE), nSize)));
 #endif
         const size_t nChunkSize =
-            std::min(static_cast<size_t>(DOWNLOAD_CHUNK_SIZE), nSize);
+            std::min(static_cast<size_t>(knDOWNLOAD_CHUNK_SIZE), nSize);
         poFS->AddRegion(m_pszURL, l_startOffset, nChunkSize, pBuffer);
         l_startOffset += nChunkSize;
         pBuffer += nChunkSize;
@@ -1572,6 +1689,10 @@ void VSICurlHandle::DownloadRegionPostProcess( const vsi_l_offset startOffset,
 size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
                             size_t const  nMemb )
 {
+    NetworkStatisticsFileSystem oContextFS(poFS->GetFSPrefix());
+    NetworkStatisticsFile oContextFile(m_osFilename);
+    NetworkStatisticsAction oContextAction("Read");
+
     size_t nBufferRequestSize = nSize * nMemb;
     if( nBufferRequestSize == 0 )
         return 0;
@@ -1584,6 +1705,8 @@ size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
 #endif
 
     vsi_l_offset iterOffset = curOffset;
+    const int knMAX_REGIONS = GetMaxRegions();
+    const int knDOWNLOAD_CHUNK_SIZE = VSICURLGetDownloadChunkSize();
     while( nBufferRequestSize )
     {
         // Don't try to read after end of file.
@@ -1600,7 +1723,7 @@ size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
         }
 
         const vsi_l_offset nOffsetToDownload =
-                (iterOffset / DOWNLOAD_CHUNK_SIZE) * DOWNLOAD_CHUNK_SIZE;
+                (iterOffset / knDOWNLOAD_CHUNK_SIZE) * knDOWNLOAD_CHUNK_SIZE;
         std::string osRegion;
         std::shared_ptr<std::string> psRegion = poFS->GetRegion(m_pszURL, nOffsetToDownload);
         if( psRegion != nullptr )
@@ -1627,13 +1750,12 @@ size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
             // Ensure that we will request at least the number of blocks
             // to satisfy the remaining buffer size to read.
             const vsi_l_offset nEndOffsetToDownload =
-                ((iterOffset + nBufferRequestSize) / DOWNLOAD_CHUNK_SIZE) *
-                DOWNLOAD_CHUNK_SIZE;
+                ((iterOffset + nBufferRequestSize + knDOWNLOAD_CHUNK_SIZE - 1) / knDOWNLOAD_CHUNK_SIZE) *
+                knDOWNLOAD_CHUNK_SIZE;
             const int nMinBlocksToDownload =
-                1 +
                 static_cast<int>(
                     (nEndOffsetToDownload - nOffsetToDownload) /
-                    DOWNLOAD_CHUNK_SIZE);
+                    knDOWNLOAD_CHUNK_SIZE);
             if( nBlocksToDownload < nMinBlocksToDownload )
                 nBlocksToDownload = nMinBlocksToDownload;
 
@@ -1644,15 +1766,15 @@ size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
             {
                 if( poFS->GetRegion(
                         m_pszURL,
-                        nOffsetToDownload + i * DOWNLOAD_CHUNK_SIZE) != nullptr )
+                        nOffsetToDownload + i * knDOWNLOAD_CHUNK_SIZE) != nullptr )
                 {
                     nBlocksToDownload = i;
                     break;
                 }
             }
 
-            if( nBlocksToDownload > N_MAX_REGIONS )
-                nBlocksToDownload = N_MAX_REGIONS;
+            if( nBlocksToDownload > knMAX_REGIONS )
+                nBlocksToDownload = knMAX_REGIONS;
 
             osRegion = DownloadRegion(nOffsetToDownload, nBlocksToDownload);
             if( osRegion.empty() )
@@ -1672,7 +1794,7 @@ size_t VSICurlHandle::Read( void * const pBufferIn, size_t const nSize,
         pBuffer = static_cast<char *>(pBuffer) + nToCopy;
         iterOffset += nToCopy;
         nBufferRequestSize -= nToCopy;
-        if( osRegion.size() < static_cast<size_t>(DOWNLOAD_CHUNK_SIZE) &&
+        if( osRegion.size() < static_cast<size_t>(knDOWNLOAD_CHUNK_SIZE) &&
             nBufferRequestSize != 0 )
         {
             break;
@@ -1702,6 +1824,10 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
     poFS->GetCachedFileProp(m_pszURL, oFileProp);
     if( oFileProp.eExists == EXIST_NO )
         return -1;
+
+    NetworkStatisticsFileSystem oContextFS(poFS->GetFSPrefix());
+    NetworkStatisticsFile oContextFile(m_osFilename);
+    NetworkStatisticsAction oContextAction("ReadMultiRange");
 
     const char* pszMultiRangeStrategy =
         CPLGetConfigOption("GDAL_HTTP_MULTIRANGE", "");
@@ -1741,20 +1867,16 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
 #endif
 
     std::vector<CURL*> aHandles;
-    std::vector<WriteFuncStruct> asWriteFuncData;
-    std::vector<WriteFuncStruct> asWriteFuncHeaderData;
+    std::vector<WriteFuncStruct> asWriteFuncData(nRanges);
+    std::vector<WriteFuncStruct> asWriteFuncHeaderData(nRanges);
     std::vector<char*> apszRanges;
     std::vector<struct curl_slist*> aHeaders;
 
     struct CurlErrBuffer
     {
-        char szCurlErrBuf[CURL_ERROR_SIZE+1];
+        std::array<char,CURL_ERROR_SIZE+1> szCurlErrBuf;
     };
-    std::vector<CurlErrBuffer> asCurlErrors;
-
-    asWriteFuncData.resize(nRanges);
-    asWriteFuncHeaderData.resize(nRanges);
-    asCurlErrors.resize(nRanges);
+    std::vector<CurlErrBuffer> asCurlErrors(nRanges);
 
     const bool bMergeConsecutiveRanges = CPLTestBool(CPLGetConfigOption(
         "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES", "TRUE"));
@@ -1831,7 +1953,7 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
 
         asCurlErrors[iRequest].szCurlErrBuf[0] = '\0';
         curl_easy_setopt(hCurlHandle, CURLOPT_ERRORBUFFER,
-                         asCurlErrors[iRequest].szCurlErrBuf );
+                         &asCurlErrors[iRequest].szCurlErrBuf[0] );
 
         headers = VSICurlMergeHeaders(headers, GetCurlHeaders("GET", headers));
         curl_easy_setopt(hCurlHandle, CURLOPT_HTTPHEADER, headers);
@@ -1850,6 +1972,7 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
     int nRet = 0;
     size_t iReq = 0;
     int iRange = 0;
+    size_t nTotalDownloaded = 0;
     for( ; iReq < aHandles.size(); iReq++, iRange++ )
     {
         while( iRange < nRanges && panSizes[iRange] == 0 )
@@ -1870,11 +1993,12 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
                     asWriteFuncHeaderData[iReq].nStartOffset,
                     asWriteFuncHeaderData[iReq].nEndOffset);
 
+            const char* pszErrorMsg = &asCurlErrors[iRange].szCurlErrBuf[0];
             CPLDebug("VSICURL", "ReadMultiRange(%s), %s: response_code=%d, msg=%s",
                      osURL.c_str(),
                      rangeStr,
                      static_cast<int>(response_code),
-                     asCurlErrors[iRange].szCurlErrBuf);
+                     pszErrorMsg);
         }
 
         if( (response_code != 206 && response_code != 225) ||
@@ -1896,6 +2020,7 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
         {
             size_t nOffset = 0;
             size_t nRemainingSize = asWriteFuncData[iReq].nSize;
+            nTotalDownloaded += nRemainingSize;
             CPLAssert( iRange < nRanges );
             while( true )
             {
@@ -1936,6 +2061,8 @@ int VSICurlHandle::ReadMultiRange( int const nRanges, void ** const ppData,
         CPLFree(asWriteFuncHeaderData[iReq].pBuffer);
         curl_slist_free_all(aHeaders[iReq]);
     }
+
+    NetworkStatisticsLogger::LogGET(nTotalDownloaded);
 
     if( ENABLE_DEBUG )
         CPLDebug("VSICURL", "Download completed");
@@ -2051,6 +2178,8 @@ int VSICurlHandle::ReadMultiRangeSingleGet(
     VSICURLResetHeaderAndWriterFunctions(hCurlHandle);
 
     curl_slist_free_all(headers);
+
+    NetworkStatisticsLogger::LogGET(sWriteFuncData.nSize);
 
     if( sWriteFuncData.bInterrupted )
     {
@@ -2362,7 +2491,6 @@ int       VSICurlHandle::Close()
 /************************************************************************/
 
 VSICurlFilesystemHandler::VSICurlFilesystemHandler():
-    oRegionCache{static_cast<size_t>(N_MAX_REGIONS)},
     oCacheFileProp{100 * 1024},
     oCacheDirList{1024, 0}
 {
@@ -2490,6 +2618,20 @@ CURLM* VSICurlFilesystemHandler::GetCurlMultiHandleFor(const CPLString& /*osURL*
 }
 
 /************************************************************************/
+/*                          GetRegionCache()                            */
+/************************************************************************/
+
+VSICurlFilesystemHandler::RegionCacheType* VSICurlFilesystemHandler::GetRegionCache()
+{
+    // should be called under hMutex taken
+    if( m_poRegionCacheDoNotUseDirectly == nullptr )
+    {
+        m_poRegionCacheDoNotUseDirectly.reset(new RegionCacheType(static_cast<size_t>(GetMaxRegions())));
+    }
+    return m_poRegionCacheDoNotUseDirectly.get();
+}
+
+/************************************************************************/
 /*                          GetRegion()                                 */
 /************************************************************************/
 
@@ -2499,11 +2641,12 @@ VSICurlFilesystemHandler::GetRegion( const char* pszURL,
 {
     CPLMutexHolder oHolder( &hMutex );
 
+    const int knDOWNLOAD_CHUNK_SIZE = VSICURLGetDownloadChunkSize();
     nFileOffsetStart =
-        (nFileOffsetStart / DOWNLOAD_CHUNK_SIZE) * DOWNLOAD_CHUNK_SIZE;
+        (nFileOffsetStart / knDOWNLOAD_CHUNK_SIZE) * knDOWNLOAD_CHUNK_SIZE;
 
     std::shared_ptr<std::string> out;
-    if( oRegionCache.tryGet(
+    if( GetRegionCache()->tryGet(
         FilenameOffsetPair(std::string(pszURL), nFileOffsetStart), out) )
     {
         return out;
@@ -2525,7 +2668,7 @@ void VSICurlFilesystemHandler::AddRegion( const char* pszURL,
 
     std::shared_ptr<std::string> value(new std::string());
     value->assign(pData, nSize);
-    oRegionCache.insert(
+    GetRegionCache()->insert(
         FilenameOffsetPair(std::string(pszURL), nFileOffsetStart),
         value);
 }
@@ -2540,7 +2683,10 @@ VSICurlFilesystemHandler::GetCachedFileProp( const char* pszURL,
 {
     CPLMutexHolder oHolder( &hMutex );
 
-    return oCacheFileProp.tryGet(std::string(pszURL), oFileProp);
+    return oCacheFileProp.tryGet(std::string(pszURL), oFileProp) &&
+            // Let a chance to use new auth parameters
+           !(oFileProp.eExists == EXIST_NO &&
+             gnGenerationAuthParameters != oFileProp.nGenerationAuthParameters);
 }
 
 /************************************************************************/
@@ -2549,10 +2695,11 @@ VSICurlFilesystemHandler::GetCachedFileProp( const char* pszURL,
 
 void
 VSICurlFilesystemHandler::SetCachedFileProp( const char* pszURL,
-                                             const FileProp& oFileProp )
+                                             FileProp& oFileProp )
 {
     CPLMutexHolder oHolder( &hMutex );
 
+    oFileProp.nGenerationAuthParameters = gnGenerationAuthParameters;
     oCacheFileProp.insert(std::string(pszURL), oFileProp);
 }
 
@@ -2566,7 +2713,9 @@ VSICurlFilesystemHandler::GetCachedDirList( const char* pszURL,
 {
     CPLMutexHolder oHolder( &hMutex );
 
-    return oCacheDirList.tryGet(std::string(pszURL), oCachedDirList);
+    return oCacheDirList.tryGet(std::string(pszURL), oCachedDirList) &&
+            // Let a chance to use new auth parameters
+           gnGenerationAuthParameters == oCachedDirList.nGenerationAuthParameters;
 }
 
 /************************************************************************/
@@ -2575,7 +2724,7 @@ VSICurlFilesystemHandler::GetCachedDirList( const char* pszURL,
 
 void
 VSICurlFilesystemHandler::SetCachedDirList( const char* pszURL,
-                                            const CachedDirList& oCachedDirList )
+                                            CachedDirList& oCachedDirList )
 {
     CPLMutexHolder oHolder( &hMutex );
 
@@ -2596,6 +2745,7 @@ VSICurlFilesystemHandler::SetCachedDirList( const char* pszURL,
         nCachedFilesInDirList -= oldValue.oFileList.size();
         oCacheDirList.remove(oldestKey);
     }
+    oCachedDirList.nGenerationAuthParameters = gnGenerationAuthParameters;
 
     nCachedFilesInDirList += oCachedDirList.oFileList.size();
     oCacheDirList.insert(key, oCachedDirList);
@@ -2643,9 +2793,10 @@ void VSICurlFilesystemHandler::InvalidateCachedData( const char* pszURL )
         if( kv.key.filename_ == osURL )
             keysToRemove.push_back(kv.key);
     };
-    oRegionCache.cwalk(lambda);
+    auto* poRegionCache = GetRegionCache();
+    poRegionCache->cwalk(lambda);
     for( auto& key: keysToRemove )
-        oRegionCache.remove(key);
+        poRegionCache->remove(key);
 }
 
 /************************************************************************/
@@ -2656,7 +2807,7 @@ void VSICurlFilesystemHandler::ClearCache()
 {
     CPLMutexHolder oHolder( &hMutex );
 
-    oRegionCache.clear();
+    GetRegionCache()->clear();
 
     oCacheFileProp.clear();
 
@@ -2687,9 +2838,10 @@ void VSICurlFilesystemHandler::PartialClearCache(const char* pszFilenamePrefix)
             if( strncmp(kv.key.filename_.c_str(), osURL, osURL.size()) == 0 )
                 keysToRemove.push_back(kv.key);
         };
-        oRegionCache.cwalk(lambda);
+        auto* poRegionCache = GetRegionCache();
+        poRegionCache->cwalk(lambda);
         for( auto& key: keysToRemove )
-            oRegionCache.remove(key);
+            poRegionCache->remove(key);
     }
 
     {
@@ -2903,7 +3055,7 @@ VSIVirtualHandle* VSICurlFilesystemHandler::Open( const char *pszFilename,
 
     bool bListDir = true;
     bool bEmptyDir = false;
-    CPLString osURL(
+    CPL_IGNORE_RET_VAL(
         VSICurlGetURLFromFilename(pszFilename, nullptr, nullptr, nullptr,
                                   &bListDir, &bEmptyDir, nullptr));
 
@@ -3764,6 +3916,8 @@ char** VSICurlFilesystemHandler::GetFileList(const char *pszDirname,
 
         curl_slist_free_all(headers);
 
+        NetworkStatisticsLogger::LogGET(sWriteFuncData.nSize);
+
         if( sWriteFuncData.pBuffer == nullptr )
         {
             curl_easy_cleanup(hCurlHandle);
@@ -3826,6 +3980,9 @@ int VSICurlFilesystemHandler::Stat( const char *pszFilename,
     if( !STARTS_WITH_CI(pszFilename, GetFSPrefix()) &&
         !STARTS_WITH_CI(pszFilename, "/vsicurl?") )
         return -1;
+
+    NetworkStatisticsFileSystem oContextFS(GetFSPrefix());
+    NetworkStatisticsAction oContextAction("Stat");
 
     const CPLString osFilename(pszFilename);
 
@@ -3891,7 +4048,7 @@ int VSICurlFilesystemHandler::Stat( const char *pszFilename,
          CPLTestBool(CPLGetConfigOption("CPL_VSIL_CURL_SLOW_GET_SIZE",
                                         "YES"))) )
     {
-        pStatBuf->st_size = poHandle->GetFileSize();
+        pStatBuf->st_size = poHandle->GetFileSize(false);
     }
 
     const int nRet =
@@ -3980,6 +4137,9 @@ char** VSICurlFilesystemHandler::ReadDirInternal( const char *pszDirname,
         return nullptr;
     }
 
+    NetworkStatisticsFileSystem oContextFS(GetFSPrefix());
+    NetworkStatisticsAction oContextAction("ReadDir");
+
     CPLMutexHolder oHolder( &hMutex );
 
     // If we know the file exists and is not a directory,
@@ -4054,6 +4214,43 @@ char** VSICurlFilesystemHandler::ReadDirEx( const char *pszDirname,
                                             int nMaxFiles )
 {
     return ReadDirInternal(pszDirname, nMaxFiles, nullptr);
+}
+
+/************************************************************************/
+/*                             SiblingFiles()                           */
+/************************************************************************/
+
+char** VSICurlFilesystemHandler::SiblingFiles( const char *pszFilename )
+{
+    /* Small optimization to avoid unnecessary stat'ing from PAux or ENVI */
+    /* drivers. The MBTiles driver needs no companion file. */
+    if( EQUAL(CPLGetExtension( pszFilename ),"mbtiles") )
+    {
+        return static_cast<char**> (CPLCalloc(1,sizeof(char*)));
+    }
+    return nullptr;
+    
+}
+
+/************************************************************************/
+/*                          GetFileMetadata()                           */
+/************************************************************************/
+
+char** VSICurlFilesystemHandler::GetFileMetadata( const char* pszFilename,
+                                                  const char* pszDomain,
+                                                  CSLConstList )
+{
+    if( pszDomain == nullptr || !EQUAL(pszDomain, "HEADERS") )
+        return nullptr;
+    std::unique_ptr<VSICurlHandle> poHandle(CreateFileHandle(pszFilename));
+    if( poHandle == nullptr )
+        return nullptr;
+
+    NetworkStatisticsFileSystem oContextFS(GetFSPrefix());
+    NetworkStatisticsAction oContextAction("GetFileMetadata");
+
+    poHandle->GetFileSizeOrHeaders(true, true);
+    return CSLDuplicate(poHandle->GetHeaders().List());
 }
 
 /************************************************************************/
@@ -4213,6 +4410,303 @@ int VSIAppendWriteHandle::Close()
     return nRet;
 }
 
+/************************************************************************/
+/*                         CurlRequestHelper()                          */
+/************************************************************************/
+
+CurlRequestHelper::CurlRequestHelper()
+{
+    VSICURLInitWriteFuncStruct(&sWriteFuncData, nullptr, nullptr, nullptr);
+    VSICURLInitWriteFuncStruct(&sWriteFuncHeaderData, nullptr, nullptr, nullptr);
+}
+
+/************************************************************************/
+/*                        ~CurlRequestHelper()                          */
+/************************************************************************/
+
+CurlRequestHelper::~CurlRequestHelper()
+{
+    CPLFree(sWriteFuncData.pBuffer);
+    CPLFree(sWriteFuncHeaderData.pBuffer);
+}
+
+/************************************************************************/
+/*                             perform()                                */
+/************************************************************************/
+
+long CurlRequestHelper::perform(CURL* hCurlHandle,
+                struct curl_slist* headers,
+                VSICurlFilesystemHandler *poFS,
+                IVSIS3LikeHandleHelper *poS3HandleHelper)
+{
+    curl_easy_setopt(hCurlHandle, CURLOPT_HTTPHEADER, headers);
+
+    poS3HandleHelper->ResetQueryParameters();
+
+    curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &sWriteFuncData);
+    curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
+                        VSICurlHandleWriteFunc);
+
+    curl_easy_setopt(hCurlHandle, CURLOPT_HEADERDATA, &sWriteFuncHeaderData);
+    curl_easy_setopt(hCurlHandle, CURLOPT_HEADERFUNCTION,
+                        VSICurlHandleWriteFunc);
+
+    szCurlErrBuf[0] = '\0';
+    curl_easy_setopt(hCurlHandle, CURLOPT_ERRORBUFFER, szCurlErrBuf );
+
+    MultiPerform(poFS->GetCurlMultiHandleFor(poS3HandleHelper->GetURL()),
+                    hCurlHandle);
+
+    VSICURLResetHeaderAndWriterFunctions(hCurlHandle);
+
+    curl_slist_free_all(headers);
+
+    long response_code = 0;
+    curl_easy_getinfo(hCurlHandle, CURLINFO_HTTP_CODE, &response_code);
+    return response_code;
+}
+
+/************************************************************************/
+/*                       NetworkStatisticsLogger                        */
+/************************************************************************/
+
+// Global variable
+NetworkStatisticsLogger NetworkStatisticsLogger::gInstance{};
+int NetworkStatisticsLogger::gnEnabled = -1; // unknown state
+
+static void ShowNetworkStats()
+{
+     printf("Network statistics:\n%s\n",    // ok
+            NetworkStatisticsLogger::GetReportAsSerializedJSON().c_str());
+}
+
+void NetworkStatisticsLogger::ReadEnabled()
+{
+    const bool bShowNetworkStats =
+        CPLTestBool(CPLGetConfigOption("CPL_VSIL_SHOW_NETWORK_STATS", "NO"));
+    gnEnabled = (bShowNetworkStats || CPLTestBool(
+        CPLGetConfigOption("CPL_VSIL_NETWORK_STATS_ENABLED", "NO"))) ? TRUE : FALSE;
+    if( bShowNetworkStats )
+    {
+        static bool bRegistered = false;
+        if( !bRegistered )
+        {
+            bRegistered = true;
+            atexit( ShowNetworkStats );
+        }
+    }
+}
+
+void NetworkStatisticsLogger::EnterFileSystem(const char* pszName)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].push_back(
+        ContextPathItem(ContextPathType::FILESYSTEM, pszName));
+}
+
+void NetworkStatisticsLogger::LeaveFileSystem()
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].pop_back();
+}
+
+void NetworkStatisticsLogger::EnterFile(const char* pszName)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].push_back(
+        ContextPathItem(ContextPathType::FILE, pszName));
+}
+
+void NetworkStatisticsLogger::LeaveFile()
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].pop_back();
+}
+
+void NetworkStatisticsLogger::EnterAction(const char* pszName)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].push_back(
+        ContextPathItem(ContextPathType::ACTION, pszName));
+}
+
+void NetworkStatisticsLogger::LeaveAction()
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_mapThreadIdToContextPath[CPLGetPID()].pop_back();
+}
+
+std::vector<NetworkStatisticsLogger::Counters*>
+NetworkStatisticsLogger::GetCountersForContext()
+{
+    std::vector<Counters*> v;
+    auto& contextPath = gInstance.m_mapThreadIdToContextPath[CPLGetPID()];
+
+    Stats* curStats = &m_stats;
+    v.push_back(&(curStats->counters));
+
+    bool inFileSystem = false;
+    bool inFile = false;
+    bool inAction = false;
+    for(const auto& item: contextPath )
+    {
+        if( item.eType == ContextPathType::FILESYSTEM )
+        {
+            if( inFileSystem )
+                continue;
+            inFileSystem = true;
+        }
+        else if( item.eType == ContextPathType::FILE )
+        {
+            if( inFile )
+                continue;
+            inFile = true;
+        }
+        else if( item.eType == ContextPathType::ACTION )
+        {
+            if( inAction )
+                continue;
+            inAction = true;
+        }
+
+        curStats = &(curStats->children[item]);
+        v.push_back(&(curStats->counters));
+    }
+
+    return v;
+}
+
+void NetworkStatisticsLogger::LogGET(size_t nDownloadedBytes)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    for( auto counters: gInstance.GetCountersForContext() )
+    {
+        counters->nGET ++;
+        counters->nGETDownloadedBytes += nDownloadedBytes;
+    }
+}
+
+void NetworkStatisticsLogger::LogPUT(size_t nUploadedBytes)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    for( auto counters: gInstance.GetCountersForContext() )
+    {
+        counters->nPUT ++;
+        counters->nPUTUploadedBytes += nUploadedBytes;
+    }
+}
+
+void NetworkStatisticsLogger::LogHEAD()
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    for( auto counters: gInstance.GetCountersForContext() )
+    {
+        counters->nHEAD++;
+    }
+}
+
+void NetworkStatisticsLogger::LogPOST(size_t nUploadedBytes,
+                                      size_t nDownloadedBytes)
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    for( auto counters: gInstance.GetCountersForContext() )
+    {
+        counters->nPOST++;
+        counters->nPOSTUploadedBytes += nUploadedBytes;
+        counters->nPOSTDownloadedBytes += nDownloadedBytes;
+    }
+}
+
+void NetworkStatisticsLogger::LogDELETE()
+{
+    if( !IsEnabled() ) return;
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    for( auto counters: gInstance.GetCountersForContext() )
+    {
+        counters->nDELETE++;
+    }
+}
+
+void NetworkStatisticsLogger::Reset()
+{
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+    gInstance.m_stats = Stats();
+    gnEnabled = -1;
+}
+
+void NetworkStatisticsLogger::Stats::AsJSON(CPLJSONObject& oJSON) const
+{
+    CPLJSONObject oMethods;
+    if( counters.nHEAD )
+        oMethods.Add("HEAD/count", counters.nHEAD);
+    if( counters.nGET )
+        oMethods.Add("GET/count", counters.nGET);
+    if( counters.nGETDownloadedBytes )
+        oMethods.Add("GET/downloaded_bytes", counters.nGETDownloadedBytes);
+    if( counters.nPUT )
+        oMethods.Add("PUT/count", counters.nPUT);
+    if( counters.nPUTUploadedBytes )
+        oMethods.Add("PUT/uploaded_bytes", counters.nPUTUploadedBytes);
+    if( counters.nPOST )
+        oMethods.Add("POST/count", counters.nPOST);
+    if( counters.nPOSTUploadedBytes )
+        oMethods.Add("POST/uploaded_bytes", counters.nPOSTUploadedBytes);
+    if( counters.nPOSTDownloadedBytes )
+        oMethods.Add("POST/downloaded_bytes", counters.nPOSTDownloadedBytes);
+    if( counters.nDELETE )
+        oMethods.Add("DELETE/count", counters.nDELETE);
+    oJSON.Add("methods", oMethods);
+    CPLJSONObject oFiles;
+    bool bFilesAdded = false;
+    for( const auto &kv: children )
+    {
+        CPLJSONObject childJSON;
+        kv.second.AsJSON(childJSON);
+        if( kv.first.eType == ContextPathType::FILESYSTEM )
+        {
+            CPLString osName( kv.first.osName );
+            if( !osName.empty() && osName[0] == '/' )
+                osName = osName.substr(1);
+            if( !osName.empty() && osName.back() == '/' )
+                osName.resize(osName.size() - 1);
+            oJSON.Add( ("handlers/" + osName).c_str(), childJSON);
+        }
+        else if( kv.first.eType == ContextPathType::FILE )
+        {
+            if( !bFilesAdded )
+            {
+                bFilesAdded = true;
+                oJSON.Add("files", oFiles);
+            }
+            oFiles.AddNoSplitName(kv.first.osName.c_str(), childJSON);
+        }
+        else if( kv.first.eType == ContextPathType::ACTION )
+        {
+            oJSON.Add( ("actions/" + kv.first.osName).c_str(), childJSON);
+        }
+    }
+}
+
+CPLString NetworkStatisticsLogger::GetReportAsSerializedJSON()
+{
+    std::lock_guard<std::mutex> oLock(gInstance.m_mutex);
+
+    CPLJSONObject oJSON;
+    gInstance.m_stats.AsJSON(oJSON);
+    return oJSON.Format(CPLJSONObject::PrettyFormat::Pretty);
+}
+
+
 } /* end of namespace cpl */
 
 /************************************************************************/
@@ -4299,21 +4793,6 @@ struct curl_slist* VSICurlMergeHeaders( struct curl_slist* poDest,
  */
 void VSIInstallCurlFileHandler( void )
 {
-    DOWNLOAD_CHUNK_SIZE = atoi(
-            CPLGetConfigOption("CPL_VSIL_CURL_CHUNK_SIZE", "16384"));
-    if( DOWNLOAD_CHUNK_SIZE < 1024 || DOWNLOAD_CHUNK_SIZE > 10 * 1024* 1024 )
-        DOWNLOAD_CHUNK_SIZE = 16384;
-
-    GIntBig nCacheSize = CPLAtoGIntBig(
-        CPLGetConfigOption("CPL_VSIL_CURL_CACHE_SIZE", "16384000"));
-    if( nCacheSize < DOWNLOAD_CHUNK_SIZE ||
-        nCacheSize / DOWNLOAD_CHUNK_SIZE > INT_MAX )
-    {
-        nCacheSize = 16384000;
-    }
-    N_MAX_REGIONS = std::max(1,
-                        static_cast<int>(nCacheSize / DOWNLOAD_CHUNK_SIZE));
-
     VSIFilesystemHandler* poHandler = new cpl::VSICurlFilesystemHandler;
     VSIFileManager::InstallHandler( "/vsicurl/", poHandler );
     VSIFileManager::InstallHandler( "/vsicurl?", poHandler );
@@ -4383,6 +4862,123 @@ void VSICurlPartialClearCache(const char* pszFilenamePrefix)
 
     if( poFSHandler )
         poFSHandler->PartialClearCache(pszFilenamePrefix);
+}
+
+/************************************************************************/
+/*                        VSINetworkStatsReset()                        */
+/************************************************************************/
+
+/**
+ * \brief Clear network related statistics.
+ *
+ * The effect of the CPL_VSIL_NETWORK_STATS_ENABLED configuration option
+ * will also be reset. That is, that the next network access will check its
+ * value again.
+ *
+ * @since GDAL 3.2.0
+ */
+
+void VSINetworkStatsReset( void )
+{
+    cpl::NetworkStatisticsLogger::Reset();
+}
+
+/************************************************************************/
+/*                 VSINetworkStatsGetAsSerializedJSON()                 */
+/************************************************************************/
+
+/**
+ * \brief Return network related statistics, as a JSON serialized object.
+ *
+ * Statistics collecting should be enabled with the CPL_VSIL_NETWORK_STATS_ENABLED
+ * configuration option set to YES before any network activity starts
+ * (for efficiency, reading it is cached on first access, until VSINetworkStatsReset() is called)
+ *
+ * Statistics can also be emitted on standard output at process termination if
+ * the CPL_VSIL_SHOW_NETWORK_STATS configuration option is set to YES.
+ *
+ * Example of output:
+ * <pre>
+ * {
+ *   "methods":{
+ *     "GET":{
+ *       "count":6,
+ *       "downloaded_bytes":40825
+ *     },
+ *     "PUT":{
+ *       "count":1,
+ *       "uploaded_bytes":35472
+ *     }
+ *   },
+ *   "handlers":{
+ *     "vsigs":{
+ *       "methods":{
+ *         "GET":{
+ *           "count":2,
+ *           "downloaded_bytes":446
+ *         },
+ *         "PUT":{
+ *           "count":1,
+ *           "uploaded_bytes":35472
+ *         }
+ *       },
+ *       "files":{
+ *         "\/vsigs\/spatialys\/byte.tif":{
+ *           "methods":{
+ *             "PUT":{
+ *               "count":1,
+ *               "uploaded_bytes":35472
+ *             }
+ *           },
+ *           "actions":{
+ *             "Write":{
+ *               "methods":{
+ *                 "PUT":{
+ *                   "count":1,
+ *                   "uploaded_bytes":35472
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         }
+ *       },
+ *       "actions":{
+ *         "Stat":{
+ *           "methods":{
+ *             "GET":{
+ *               "count":2,
+ *               "downloaded_bytes":446
+ *             }
+ *           },
+ *           "files":{
+ *             "\/vsigs\/spatialys\/byte.tif\/":{
+ *               "methods":{
+ *                 "GET":{
+ *                   "count":1,
+ *                   "downloaded_bytes":181
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         }
+ *       }
+ *     },
+ *     "vsis3":{
+ *          [...]
+ *     } 
+ *   }
+ * }
+
+ * </pre>
+ *
+ * @param papszOptions Unused.
+ * @return a JSON serialized string to free with VSIFree(), or nullptr
+ * @since GDAL 3.2.0
+ */
+
+char* VSINetworkStatsGetAsSerializedJSON( CPL_UNUSED char** papszOptions )
+{
+    return CPLStrdup(cpl::NetworkStatisticsLogger::GetReportAsSerializedJSON());
 }
 
 #endif /* HAVE_CURL */

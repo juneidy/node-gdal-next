@@ -2,10 +2,10 @@
  *
  * Project:  Carto Translator
  * Purpose:  Implements OGRCARTOTableLayer class.
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@
 #include "ogr_pgdump.h"
 #include "ogrgeojsonreader.h"
 
-CPL_CVSID("$Id: ogrcartotablelayer.cpp 7c1371be6c306fc45cfc2b8f556060d67c54e6f3 2019-04-16 16:43:35 +0200 Raul Marin $")
+CPL_CVSID("$Id: ogrcartotablelayer.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                    OGRCARTOEscapeIdentifier( )                     */
@@ -623,7 +623,6 @@ OGRErr OGRCARTOTableLayer::CreateGeomField( OGRGeomFieldDefn *poGeomFieldIn,
     }
     
     const char *pszNameIn = poGeomFieldIn->GetNameRef();
-    CPLString osGeomFieldName = CPLString(pszNameIn);
     if( pszNameIn == nullptr || EQUAL(pszNameIn, "") )
     {        
         CPLError(CE_Failure, CPLE_AppDefined,

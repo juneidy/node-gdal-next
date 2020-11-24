@@ -1,5 +1,5 @@
 /**********************************************************************
- * $Id: geoconcept.c f825dbb9d097f3b37afe160c626248799fba13c1 2019-04-01 17:37:43 +0200 Raul Marin $
+ * $Id: geoconcept.c b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $
  *
  * Name:     geoconcept.c
  * Project:  OpenGIS Simple Features Reference Implementation
@@ -8,7 +8,7 @@
  *
  **********************************************************************
  * Copyright (c) 2007,  Geoconcept and IGN
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,7 +36,7 @@
 #include "cpl_string.h"
 #include "ogr_core.h"
 
-CPL_CVSID("$Id: geoconcept.c f825dbb9d097f3b37afe160c626248799fba13c1 2019-04-01 17:37:43 +0200 Raul Marin $")
+CPL_CVSID("$Id: geoconcept.c b55a33407a80673ec314b165c82f47dd02e9dc9c 2020-04-27 20:37:55 +0200 Even Rouault $")
 
 #define kItemSize_GCIO      256
 #define kExtraSize_GCIO    4096
@@ -2134,7 +2134,11 @@ static OGRGeometryH GCIOAPI_CALL _buildOGRGeometry_GCIO (
               {
                 OGRGeometryH hPolyRing = OGR_G_CreateGeometry(wkbPolygon);
                 int bRes;
-                OGR_G_AddGeometryDirectly(hPolyRing, ring);
+                if(OGR_G_AddGeometryDirectly(hPolyRing, ring) != OGRERR_NONE )
+                {
+                  OGR_G_DestroyGeometry(hPolyRing);
+                  goto onError;
+                }
                 bRes = OGR_G_Contains(outer,hPolyRing) ;
                 OGR_G_RemoveGeometry(hPolyRing, 0, FALSE);
                 OGR_G_DestroyGeometry(hPolyRing);
@@ -2234,7 +2238,7 @@ static OGRFeatureH GCIOAPI_CALL _buildOGRFeature_GCIO (
   OGRFeatureDefnH fd;
   OGRFeatureH f;
   OGRGeometryH g;
-  int bTokenBehaviour= CSLT_ALLOWEMPTYTOKENS;
+  int bTokenBehavior= CSLT_ALLOWEMPTYTOKENS;
 
   fd= NULL;
   f= NULL;
@@ -2276,12 +2280,12 @@ static OGRFeatureH GCIOAPI_CALL _buildOGRFeature_GCIO (
   /*         allow direct access !                        */
   if( GetMetaQuotedText_GCIO(Meta) )
   {
-    bTokenBehaviour|= CSLT_HONOURSTRINGS;
+    bTokenBehavior|= CSLT_HONOURSTRINGS;
   }
   CPLDebug("GEOCONCEPT","Cache=[%s] delim=[%s]", GetGCCache_GCIO(H), delim);
   if( !(papszFields= CSLTokenizeString2(GetGCCache_GCIO(H),
                                       delim,
-                                      bTokenBehaviour)) )
+                                      bTokenBehavior)) )
   {
     CPLError( CE_Failure, CPLE_AppDefined,
               "Line %ld, Geoconcept line syntax is wrong.\n",

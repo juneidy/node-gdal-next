@@ -37,7 +37,7 @@
 #include <limits>
 
 // g++ -DDEBUG -g -Wall -fPIC -shared -o ogr_MongoDB.so -I/home/even/boost_1_53_0 -Iport -Igcore -Iogr -Iogr/ogrsf_frmts -Iogr/ogrsf_frmts/mongodb ogr/ogrsf_frmts/mongodb/*.c* -L. -lgdal -I/home/even/mongo-cxx-1.0.2-install/include -L/home/even/mongo-cxx-1.0.2-install/lib -lmongoclient -L/home/even/boost_1_53_0/stage/lib -lboost_system -lboost_thread -lboost_regex
-CPL_CVSID("$Id: ogrmongodbdriver.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrmongodbdriver.cpp 1761acd90777d5bcc49eddbc13c193098f0ed40b 2020-10-01 12:12:00 +0200 Even Rouault $")
 
 #define MAX_DOCS_IN_BULK                1000
 
@@ -2438,8 +2438,8 @@ int OGRMongoDBDataSource::ListLayers(const char* pszDatabase)
         {
             const std::string& osCollection(*oIter);
             if( !STARTS_WITH(osCollection.c_str(), "system.") &&
-                osCollection != "startup_log" &&
-                osCollection != "_ogr_metadata" )
+                osCollection != std::string("startup_log") &&
+                osCollection != std::string("_ogr_metadata") )
             {
                 m_apoLayers.push_back(new OGRMongoDBLayer(this,
                                                       pszDatabase,
@@ -2594,7 +2594,7 @@ int OGRMongoDBDataSource::TestCapability( const char * pszCap )
 /*                    OGRMongoDBSingleFeatureLayer                      */
 /************************************************************************/
 
-class OGRMongoDBSingleFeatureLayer: public OGRLayer
+class OGRMongoDBSingleFeatureLayer final: public OGRLayer
 {
     OGRFeatureDefn     *m_poFeatureDefn;
     CPLString           osVal;
@@ -2818,7 +2818,7 @@ void RegisterOGRMongoDB()
     poDriver->SetDescription( "MongoDB" );
     poDriver->SetMetadataItem( GDAL_DCAP_VECTOR, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "MongoDB" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drv_mongodb.html" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/vector/mongodb.html" );
 
     poDriver->SetMetadataItem( GDAL_DMD_CONNECTION_PREFIX, "MongoDB:" );
 

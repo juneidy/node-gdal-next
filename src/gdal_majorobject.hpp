@@ -6,10 +6,7 @@
 #include <node_object_wrap.h>
 
 // nan
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
-#pragma GCC diagnostic pop
+#include "nan-wrapper.h"
 
 // gdal
 #include <gdal_priv.h>
@@ -20,9 +17,9 @@ using namespace node;
 namespace node_gdal {
 
 class MajorObject {
-public:
-	static Local<Object> getMetadata(GDALMajorObject *obj, const char *domain);
+    public:
+  static Local<Object> getMetadata(GDALMajorObject *obj, const char *domain);
 };
 
-}
+} // namespace node_gdal
 #endif

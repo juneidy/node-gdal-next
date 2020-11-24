@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogr_idb.h 2c3d60220a2d6b41496ded571e231b96435bffa0 2016-11-25 14:09:24Z Even Rouault $
+ * $Id: ogr_idb.h 417b66cdf50174fe8d59833c93710813f205d9ba 2020-08-30 12:18:19 +0200 Even Rouault $
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Implements OGRIDBTableLayer class, access to an existing table
@@ -33,7 +33,7 @@
 
 #include "ogrsf_frmts.h"
 #include "cpl_error.h"
-#include <it.h>
+#include "idb_headers.h"
 
 /************************************************************************/
 /*                            OGRIDBLayer                              */
@@ -41,12 +41,12 @@
 
 class OGRIDBDataSource;
 
-class OGRIDBLayer : public OGRLayer
+class OGRIDBLayer CPL_NON_FINAL: public OGRLayer
 {
   protected:
     OGRFeatureDefn     *poFeatureDefn;
 
-    ITCursor   *poCurr;
+    ITCursor   *m_poCurr;
 
     // Layer spatial reference system, and srid.
     OGRSpatialReference *poSRS;
@@ -63,7 +63,7 @@ class OGRIDBLayer : public OGRLayer
     CPLErr              BuildFeatureDefn( const char *pszLayerName,
                                           ITCursor *poCurr );
 
-    virtual ITCursor *  GetQuery() { return poCurr; }
+    virtual ITCursor *  GetQuery() { return m_poCurr; }
 
   public:
                         OGRIDBLayer();
@@ -89,7 +89,7 @@ class OGRIDBLayer : public OGRLayer
 /*                           OGRIDBTableLayer                          */
 /************************************************************************/
 
-class OGRIDBTableLayer : public OGRIDBLayer
+class OGRIDBTableLayer final: public OGRIDBLayer
 {
     int                 bUpdateAccess;
 
@@ -100,7 +100,7 @@ class OGRIDBTableLayer : public OGRIDBLayer
     void                ClearQuery();
     OGRErr              ResetQuery();
 
-    virtual ITCursor *  GetQuery();
+    virtual ITCursor *  GetQuery() override;
 
   public:
     explicit            OGRIDBTableLayer( OGRIDBDataSource * );
@@ -133,14 +133,14 @@ class OGRIDBTableLayer : public OGRIDBLayer
 /*                          OGRIDBSelectLayer                          */
 /************************************************************************/
 
-class OGRIDBSelectLayer : public OGRIDBLayer
+class OGRIDBSelectLayer final: public OGRIDBLayer
 {
     char                *pszBaseQuery;
 
     void                ClearQuery();
     OGRErr              ResetQuery();
 
-    virtual ITCursor *  GetQuery();
+    virtual ITCursor *  GetQuery() override;
 
   public:
                         OGRIDBSelectLayer( OGRIDBDataSource *,
@@ -163,7 +163,7 @@ class OGRIDBSelectLayer : public OGRIDBLayer
 /*                           OGRIDBDataSource                          */
 /************************************************************************/
 
-class OGRIDBDataSource : public OGRDataSource
+class OGRIDBDataSource final: public OGRDataSource
 {
     OGRIDBLayer        **papoLayers;
     int                 nLayers;
@@ -201,7 +201,7 @@ class OGRIDBDataSource : public OGRDataSource
 /*                             OGRIDBDriver                            */
 /************************************************************************/
 
-class OGRIDBDriver : public OGRSFDriver
+class OGRIDBDriver final: public OGRSFDriver
 {
     public:
                        ~OGRIDBDriver();

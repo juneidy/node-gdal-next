@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2010, Brian Case
- * Copyright (c) 2010-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2010-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,7 +36,7 @@
 #include "ogr_p.h"
 #include "ogrsf_frmts.h"
 
-CPL_CVSID("$Id: ogrlibkmlfield.cpp a4652d3daf2b2735f2976540e22c795deb5bbc62 2018-08-02 22:49:27 +0200 Even Rouault $")
+CPL_CVSID("$Id: ogrlibkmlfield.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 using kmldom::CameraPtr;
 using kmldom::DataPtr;
@@ -680,8 +680,8 @@ void field2kml(
                     if( poKmlPlacemark->has_geometry()
                         && -1 < poOgrFeat->GetFieldAsInteger( i ) )
                     {
-                        const int iTesselate = poOgrFeat->GetFieldAsInteger( i );
-                        if( iTesselate &&
+                        const int iTessellate = poOgrFeat->GetFieldAsInteger( i );
+                        if( iTessellate &&
                             !(!isGX &&
                               static_cast<kmldom::AltitudeModeEnum>(iAltitudeMode) ==
                               kmldom::ALTITUDEMODE_CLAMPTOGROUND) &&
@@ -700,7 +700,7 @@ void field2kml(
                         {
                             GeometryPtr poKmlGeometry =
                                 poKmlPlacemark->get_geometry();
-                            ogr2tessellate_rec( CPL_TO_BOOL(iTesselate),
+                            ogr2tessellate_rec( CPL_TO_BOOL(iTessellate),
                                                 poKmlGeometry );
                             if( !isGX &&
                                 iAltitudeMode ==
@@ -1357,20 +1357,18 @@ void kml2field( OGRFeature * poOgrFeat, FeaturePtr poKmlFeature )
                 poOgrFeat->SetField( iField, camera->get_roll() );
         }
 
-        int nAltitudeMode = -1;
-
         int iField = poOgrFeat->GetFieldIndex( oFC.altitudeModefield );
 
         if( iField > -1 )
         {
             if( camera->has_altitudemode() )
             {
-                nAltitudeMode = camera->get_altitudemode();
+                const int nAltitudeMode = camera->get_altitudemode();
                 ogrkmlSetAltitudeMode(poOgrFeat, iField, nAltitudeMode, false);
             }
             else if( camera->has_gx_altitudemode() )
             {
-                nAltitudeMode = camera->get_gx_altitudemode();
+                const int nAltitudeMode = camera->get_gx_altitudemode();
                 ogrkmlSetAltitudeMode(poOgrFeat, iField, nAltitudeMode, true);
             }
         }

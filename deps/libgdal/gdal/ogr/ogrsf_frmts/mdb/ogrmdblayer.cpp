@@ -2,10 +2,10 @@
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Implements OGRMDBLayer class
- * Author:   Even Rouault, <even dot rouault at mines dash paris dot org>
+ * Author:   Even Rouault, <even dot rouault at spatialys.com>
  *
  ******************************************************************************
- * Copyright (c) 2011-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -32,7 +32,7 @@
 #include "ogrpgeogeometry.h"
 #include "ogrgeomediageometry.h"
 
-CPL_CVSID("$Id: ogrmdblayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrmdblayer.cpp bcbf5d514c5224cd13de7c697f66e7f6cc52df27 2020-06-23 23:09:29 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                            OGRMDBLayer()                            */
@@ -135,6 +135,7 @@ CPLErr OGRMDBLayer::BuildFeatureDefn()
         {
           case MDB_Boolean:
             oField.SetType( OFTInteger );
+            oField.SetSubType( OFSTBoolean );
             oField.SetWidth(1);
             break;
 
@@ -257,7 +258,8 @@ OGRFeature *OGRMDBLayer::GetNextRawFeature()
     {
         int iSrcField = panFieldOrdinals[iField]-1;
         char *pszValue = poMDBTable->GetColumnAsString( iSrcField );
-        OGRFieldType eType = poFeature->GetFieldDefnRef(iField)->GetType();
+        const auto poFieldDefn = poFeature->GetFieldDefnRef(iField);
+        const OGRFieldType eType = poFieldDefn->GetType();
 
         if( pszValue == nullptr )
             poFeature->SetFieldNull( iField );
@@ -270,9 +272,9 @@ OGRFeature *OGRMDBLayer::GetNextRawFeature()
                                  pData );
             CPLFree(pData);
         }
-        else if ( eType == OFTInteger && EQUAL(pszValue, "true"))
+        else if ( eType == OFTInteger && poFieldDefn->GetSubType() == OFSTBoolean )
         {
-           poFeature->SetField( iField, 1 );
+           poFeature->SetField( iField, EQUAL(pszValue, "true") ? 1 : 0 );
         }
         else
         {

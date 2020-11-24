@@ -35,7 +35,7 @@
 
 #include "cpl_json_header.h"
 
-CPL_CVSID("$Id: ogrgmlasreader.cpp a8c61f67b231ce0931337d807cc2c722b1dc0798 2019-03-23 13:48:32 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrgmlasreader.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                        GMLASBinInputStream                           */
@@ -254,7 +254,7 @@ GMLASBaseEntityResolver::~GMLASBaseEntityResolver()
 
 /* Called by GMLASInputSource destructor. This is useful for use to */
 /* know where a .xsd has been finished from processing. Note that we */
-/* strongly depend on Xerces behaviour here... */
+/* strongly depend on Xerces behavior here... */
 void GMLASBaseEntityResolver::notifyClosing(const CPLString& osFilename )
 {
     CPLDebug("GMLAS", "Closing %s", osFilename.c_str());
@@ -596,6 +596,7 @@ bool GMLASReader::Init(const char* pszFilename,
         m_poSAXReader->setFeature (XMLUni::fgXercesSchema, true);
 
         // We want all errors to be reported
+        // coverity[unsafe_xml_parse_config]
         m_poSAXReader->setFeature (XMLUni::fgXercesValidationErrorAsFatal, false);
 
         CPLString osBaseDirname( CPLGetDirname(pszFilename) );
@@ -2639,8 +2640,8 @@ void GMLASReader::ProcessSWEDataArray(CPLXMLNode* psRoot)
                                                "encoding.TextEncoding");
     if( psTextEncoding == nullptr )
         return;
-    CPLString osDecimalSeparator =
-        CPLGetXMLValue(psTextEncoding, "decimalSeparator", ".");
+    //CPLString osDecimalSeparator =
+    //    CPLGetXMLValue(psTextEncoding, "decimalSeparator", ".");
     CPLString osBlockSeparator =
         CPLGetXMLValue(psTextEncoding, "blockSeparator", "");
     CPLString osTokenSeparator =
@@ -2938,7 +2939,7 @@ void GMLASReader::ProcessGeometry(CPLXMLNode* psRoot)
             if( !bReprojectionOK )
             {
                 CPLError(CE_Warning, CPLE_AppDefined,
-                         "Reprojection fom %s to %s failed",
+                         "Reprojection from %s to %s failed",
                          pszSRSName,
                          m_oMapGeomFieldDefnToSRSName[poGeomFieldDefn].c_str());
                 delete poGeom;

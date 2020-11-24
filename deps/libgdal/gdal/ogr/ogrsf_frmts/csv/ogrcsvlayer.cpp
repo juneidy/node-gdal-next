@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
- * Copyright (c) 2008-2014, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -59,7 +59,7 @@
 
 #define DIGIT_ZERO '0'
 
-CPL_CVSID("$Id: ogrcsvlayer.cpp 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $")
+CPL_CVSID("$Id: ogrcsvlayer.cpp be0e7553d890b0ac876365f23b16d86de56a2aba 2020-10-03 23:21:47 +0200 Even Rouault $")
 
 /************************************************************************/
 /*                            CSVSplitLine()                            */
@@ -517,17 +517,22 @@ void OGRCSVLayer::BuildFeatureDefn( const char *pszNfdcGeomField,
     char **papszFieldTypes = nullptr;
     if( !bNew )
     {
-        char *dname = CPLStrdup(CPLGetDirname(pszFilename));
-        char *fname = CPLStrdup(CPLGetBasename(pszFilename));
-        VSILFILE *fpCSVT =
-            VSIFOpenL(CPLFormFilename(dname, fname, ".csvt"), "r");
-        CPLFree(dname);
-        CPLFree(fname);
-        if( fpCSVT != nullptr )
+        // Only try to read .csvt from files that have an extension
+        const char* pszExt = CPLGetExtension(pszFilename);
+        if( pszExt[0] )
         {
-            VSIRewindL(fpCSVT);
-            papszFieldTypes = OGRCSVReadParseLineL(fpCSVT, ',', false, false);
-            VSIFCloseL(fpCSVT);
+            char *dname = CPLStrdup(CPLGetDirname(pszFilename));
+            char *fname = CPLStrdup(CPLGetBasename(pszFilename));
+            VSILFILE *fpCSVT =
+                VSIFOpenL(CPLFormFilename(dname, fname, ".csvt"), "r");
+            CPLFree(dname);
+            CPLFree(fname);
+            if( fpCSVT != nullptr )
+            {
+                VSIRewindL(fpCSVT);
+                papszFieldTypes = OGRCSVReadParseLineL(fpCSVT, ',', false, false);
+                VSIFCloseL(fpCSVT);
+            }
         }
     }
 
@@ -2395,6 +2400,7 @@ OGRErr OGRCSVLayer::ICreateFeature( OGRFeature *poNewFeature )
             }
             else
             {
+                CPLFree(pszEscaped);
                 pszEscaped = CPLStrdup("");
             }
         }

@@ -7,7 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2003 OPeNDAP, Inc.
- * Copyright (c) 2007-2010, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2010, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -35,8 +35,6 @@
 #include <algorithm>
 #include <exception>
 
-#include <debug.h>
-
 #include "libdap_headers.h"
 
 #include "cpl_string.h"
@@ -46,7 +44,7 @@
 
 using namespace libdap;
 
-CPL_CVSID("$Id: dodsdataset2.cpp 14c2c1423be52767d66c7b1d142984d73d43f559 2019-03-23 14:37:45 +0100 Even Rouault $")
+CPL_CVSID("$Id: dodsdataset2.cpp 8ca42e1b9c2e54b75d35e49885df9789a2643aa4 2020-05-17 21:43:40 +0200 Even Rouault $")
 
 /** Attribute names used to encode geo-referencing information. Note that
     these are not C++ objects to avoid problems with static global
@@ -178,7 +176,7 @@ static int GetDimension( string oCE, const char *pszDimName,
 /* ==================================================================== */
 /************************************************************************/
 
-class DODSDataset : public GDALDataset
+class DODSDataset final: public GDALDataset
 {
 private:
     AISConnect *poConnect;      // Virtual connection to the data source
@@ -237,7 +235,7 @@ private:
 /* ==================================================================== */
 /************************************************************************/
 
-class DODSRasterBand : public GDALRasterBand
+class DODSRasterBand final: public GDALRasterBand
 {
 private:
     string oVarName;
@@ -357,7 +355,7 @@ DODSDataset::connect_to_server() /*throw(Error)*/
 /*      Connect, and fetch version information.                         */
 /* -------------------------------------------------------------------- */
     AISConnect *poConnection = new AISConnect(oURL);
-    string version = poConnection->request_version();
+    /*string version = */ poConnection->request_version();
     /*    if (version.empty() || version.find("/3.") == string::npos)
     {
         CPLError( CE_Warning, CPLE_AppDefined,
@@ -1719,7 +1717,7 @@ void GDALRegister_DODS()
     poDriver->SetDescription( "DODS" );
     poDriver->SetMetadataItem( GDAL_DCAP_RASTER, "YES" );
     poDriver->SetMetadataItem( GDAL_DMD_LONGNAME, "DAP 3.x servers" );
-    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "frmt_various.html#DODS" );
+    poDriver->SetMetadataItem( GDAL_DMD_HELPTOPIC, "drivers/raster/dods.html" );
 
     poDriver->pfnOpen = DODSDataset::Open;
 

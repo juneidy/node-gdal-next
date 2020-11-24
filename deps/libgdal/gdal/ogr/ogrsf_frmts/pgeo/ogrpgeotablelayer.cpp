@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2005, Frank Warmerdam
- * Copyright (c) 2008-2011, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2011, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@
 #include "ogr_pgeo.h"
 #include "ogrpgeogeometry.h"
 
-CPL_CVSID("$Id: ogrpgeotablelayer.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12-11 19:08:47Z Even Rouault $")
+CPL_CVSID("$Id: ogrpgeotablelayer.cpp 94b866cf397d5b988c35f9cc76d126be054cd4b4 2020-08-26 10:25:17 +1000 Nyall Dawson $")
 
 /************************************************************************/
 /*                          OGRPGeoTableLayer()                         */
@@ -90,7 +90,8 @@ CPLErr OGRPGeoTableLayer::Initialize( const char *pszTableName,
     sExtent.MinY = dfExtentBottom;
     sExtent.MaxY = dfExtentTop;
 
-    LookupSRID( nSRID );
+    if ( pszGeomCol )
+        LookupSRID( nSRID );
 
 /* -------------------------------------------------------------------- */
 /*      Setup geometry type.                                            */

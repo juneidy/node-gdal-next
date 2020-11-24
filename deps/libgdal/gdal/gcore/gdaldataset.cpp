@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 1998, 2003, Frank Warmerdam
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -64,7 +64,7 @@
 #include "ograpispy.h"
 #include "ogrsf_frmts.h"
 #include "ogrunionlayer.h"
-#include "swq.h"
+#include "ogr_swq.h"
 
 #include "../frmts/derived/derivedlist.h"
 
@@ -72,7 +72,7 @@
 #include "../sqlite/ogrsqliteexecutesql.h"
 #endif
 
-CPL_CVSID("$Id: gdaldataset.cpp c590dcec36eb6dcd7c5451623b859e7227475b44 2019-11-13 16:36:03 +0100 Even Rouault $")
+CPL_CVSID("$Id: gdaldataset.cpp 66858a03ff715bea7cde7a27e97c5c7d7f4e4a4d 2020-10-22 08:03:40 +0200 Kai Pastor $")
 
 CPL_C_START
 GDALAsyncReader *
@@ -843,7 +843,7 @@ int CPL_STDCALL GDALGetRasterCount( GDALDatasetH hDS )
  * @return a pointer to an internal projection reference string.  It should
  * not be altered, freed or expected to last for long.
  *
- * @see http://www.gdal.org/osr_tutorial.html
+ * @see https://gdal.org/tutorials/osr_api_tut.html
  */
 
 const char *GDALDataset::GetProjectionRef() const
@@ -865,7 +865,7 @@ const char *GDALDataset::GetProjectionRefFromSpatialRef(const OGRSpatialReferenc
     {
         return "";
     }
-    if( pszWKT && m_poPrivate->m_pszWKTCached &&
+    if( m_poPrivate->m_pszWKTCached &&
         strcmp(pszWKT, m_poPrivate->m_pszWKTCached) == 0 )
     {
         CPLFree(pszWKT);
@@ -903,7 +903,7 @@ const char *GDALDataset::_GetProjectionRef() { return (""); }
  * Its lifetime will be the one of the dataset object, or until the next
  * call to this method.
  *
- * @see http://www.gdal.org/osr_tutorial.html
+ * @see https://gdal.org/tutorials/osr_api_tut.html
  */
 
 const OGRSpatialReference* GDALDataset::GetSpatialRef() const
@@ -916,7 +916,7 @@ const OGRSpatialReference* GDALDataset::GetSpatialRef() const
 /************************************************************************/
 
 /**
- * \brief Fetch the projection definition string for this dataset.
+ * \brief Fetch the spatial reference for this dataset.
  *
  * @since GDAL 3.0
  *
@@ -1004,7 +1004,7 @@ CPLErr GDALDataset::SetProjection( const char *pszProjection )
     {
         OGRSpatialReference oSRS;
         oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-        if( oSRS.importFromWkt(pszProjection) != OGRERR_NONE )
+        if( oSRS.SetFromUserInput(pszProjection) != OGRERR_NONE )
         {
             return CE_Failure;
         }
@@ -1553,7 +1553,7 @@ const char *GDALDataset::GetGCPProjectionFromSpatialRef(const OGRSpatialReferenc
     {
         return "";
     }
-    if( pszWKT && m_poPrivate->m_pszWKTGCPCached &&
+    if( m_poPrivate->m_pszWKTGCPCached &&
         strcmp(pszWKT, m_poPrivate->m_pszWKTGCPCached) == 0 )
     {
         CPLFree(pszWKT);
@@ -1894,6 +1894,10 @@ CPLErr GDALSetGCPs2( GDALDatasetH hDS, int nGCPCount,
  * deleted by specifying nOverviews == 0. This works at least for external
  * overviews (.ovr), TIFF internal overviews, etc.
  *
+ * Starting with GDAL 3.2, the GDAL_NUM_THREADS configuration option can be set
+ * to "ALL_CPUS" or a integer value to specify the number of threads to use for
+ * overview computation.
+ *
  * This method is the same as the C function GDALBuildOverviews().
  *
  * @param pszResampling one of "AVERAGE", "AVERAGE_MAGPHASE", "BILINEAR",
@@ -1912,12 +1916,12 @@ CPLErr GDALSetGCPs2( GDALDatasetH hDS, int nGCPCount,
  *
  * For example, to build overview level 2, 4 and 8 on all bands the following
  * call could be made:
- * <pre>
+ * \code{.cpp}
  *   int       anOverviewList[3] = { 2, 4, 8 };
  *
  *   poDataset->BuildOverviews( "NEAREST", 3, anOverviewList, 0, nullptr,
  *                              GDALDummyProgress, nullptr );
- * </pre>
+ * \endcode
  *
  * @see GDALRegenerateOverviews()
  */
@@ -2028,12 +2032,17 @@ CPLErr GDALDataset::IRasterIO( GDALRWFlag eRWFlag,
                                GDALRasterIOExtraArg* psExtraArg )
 
 {
-
     const char *pszInterleave = nullptr;
 
     CPLAssert(nullptr != pData);
 
-    if (nXSize == nBufXSize && nYSize == nBufYSize && nBandCount > 1 &&
+    const bool bHasSubpixelShift =
+       psExtraArg->bFloatingPointWindowValidity &&
+       psExtraArg->eResampleAlg != GRIORA_NearestNeighbour &&
+       (nXOff != psExtraArg->dfXOff || nYOff != psExtraArg->dfYOff);
+
+    if (!bHasSubpixelShift &&
+        nXSize == nBufXSize && nYSize == nBufYSize && nBandCount > 1 &&
         (pszInterleave = GetMetadataItem("INTERLEAVE", "IMAGE_STRUCTURE")) !=
             nullptr &&
         EQUAL(pszInterleave, "PIXEL"))
@@ -2051,6 +2060,23 @@ CPLErr GDALDataset::IRasterIO( GDALRWFlag eRWFlag,
          psExtraArg->eResampleAlg == GRIORA_Lanczos) &&
         !(nXSize == nBufXSize && nYSize == nBufYSize) && nBandCount > 1 )
     {
+        if( nBufXSize < nXSize && nBufYSize < nYSize )
+        {
+            int bTried = FALSE;
+            const CPLErr eErr =
+                TryOverviewRasterIO( eRWFlag,
+                                    nXOff, nYOff, nXSize, nYSize,
+                                    pData, nBufXSize, nBufYSize,
+                                    eBufType,
+                                    nBandCount, panBandMap,
+                                    nPixelSpace, nLineSpace,
+                                    nBandSpace,
+                                    psExtraArg,
+                                    &bTried );
+            if( bTried )
+                return eErr;
+        }
+
         GDALDataType eFirstBandDT = GDT_Unknown;
         int nFirstMaskFlags = 0;
         GDALRasterBand *poFirstMaskBand = nullptr;
@@ -2403,7 +2429,7 @@ CPLErr GDALDataset::ValidateRasterIOOrAdviseReadParameters(
  *
  * @param psExtraArg (new in GDAL 2.0) pointer to a GDALRasterIOExtraArg
  * structure with additional arguments to specify resampling and progress
- * callback, or NULL for default behaviour. The GDAL_RASTERIO_RESAMPLING
+ * callback, or NULL for default behavior. The GDAL_RASTERIO_RESAMPLING
  * configuration option can also be defined to override the default resampling
  * to one of BILINEAR, CUBIC, CUBICSPLINE, LANCZOS, AVERAGE or MODE.
  *
@@ -2817,6 +2843,82 @@ GDALDatasetAdviseRead( GDALDatasetH hDS,
 }
 
 /************************************************************************/
+/*                         AntiRecursionStruct                          */
+/************************************************************************/
+
+namespace {
+// Prevent infinite recursion.
+struct AntiRecursionStruct
+{
+    struct DatasetContext
+    {
+        std::string osFilename;
+        int         nOpenFlags;
+        int         nSizeAllowedDrivers;
+
+        DatasetContext(const std::string& osFilenameIn,
+                        int nOpenFlagsIn,
+                        int nSizeAllowedDriversIn) :
+            osFilename(osFilenameIn),
+            nOpenFlags(nOpenFlagsIn),
+            nSizeAllowedDrivers(nSizeAllowedDriversIn) {}
+    };
+
+    struct DatasetContextCompare {
+        bool operator() (const DatasetContext& lhs, const DatasetContext& rhs) const {
+            return lhs.osFilename < rhs.osFilename ||
+                    (lhs.osFilename == rhs.osFilename &&
+                    (lhs.nOpenFlags < rhs.nOpenFlags ||
+                        (lhs.nOpenFlags == rhs.nOpenFlags &&
+                        lhs.nSizeAllowedDrivers < rhs.nSizeAllowedDrivers)));
+        }
+    };
+
+    std::set<DatasetContext, DatasetContextCompare> aosDatasetNamesWithFlags{};
+    int nRecLevel = 0;
+};
+} // namespace
+
+#ifdef WIN32
+// Currently thread_local and C++ objects don't work well with DLL on Windows
+static void FreeAntiRecursion( void* pData )
+{
+    delete static_cast<AntiRecursionStruct*>(pData);
+}
+
+static AntiRecursionStruct& GetAntiRecursion()
+{
+    static AntiRecursionStruct dummy;
+    int bMemoryErrorOccurred = false;
+    void* pData = CPLGetTLSEx(CTLS_GDALOPEN_ANTIRECURSION, &bMemoryErrorOccurred);
+    if( bMemoryErrorOccurred )
+    {
+        return dummy;
+    }
+    if( pData == nullptr)
+    {
+        auto pAntiRecursion = new AntiRecursionStruct();
+        CPLSetTLSWithFreeFuncEx( CTLS_GDALOPEN_ANTIRECURSION,
+                                 pAntiRecursion,
+                                 FreeAntiRecursion, &bMemoryErrorOccurred );
+        if( bMemoryErrorOccurred )
+        {
+            delete pAntiRecursion;
+            return dummy;
+        }
+        return *pAntiRecursion;
+    }
+    return *static_cast<AntiRecursionStruct*>(pData);
+}
+#else
+static thread_local AntiRecursionStruct g_tls_antiRecursion;
+static AntiRecursionStruct& GetAntiRecursion()
+{
+    return g_tls_antiRecursion;
+}
+#endif
+
+/************************************************************************/
 /*                            GetFileList()                             */
 /************************************************************************/
 
@@ -2858,6 +2960,15 @@ char **GDALDataset::GetFileList()
     if( bMainFileReal )
         papszList = CSLAddString(papszList, osMainFilename);
 
+    AntiRecursionStruct& sAntiRecursion = GetAntiRecursion();
+    if( sAntiRecursion.nRecLevel == 100 )
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                    "GetFileList() called with too many recursion levels");
+        return papszList;
+    }
+    ++sAntiRecursion.nRecLevel;
+
 /* -------------------------------------------------------------------- */
 /*      Do we have a known overview file?                               */
 /* -------------------------------------------------------------------- */
@@ -2883,6 +2994,8 @@ char **GDALDataset::GetFileList()
         }
         CSLDestroy(papszMskList);
     }
+
+    --sAntiRecursion.nRecLevel;
 
     return papszList;
 }
@@ -3010,9 +3123,6 @@ CPLErr CPL_STDCALL GDALCreateDatasetMaskBand( GDALDatasetH hDS, int nFlags )
  * .tar/.tar.gz/.tgz archive (see VSIInstallTarFileHandler()) or on a HTTP / FTP
  * server (see VSIInstallCurlFileHandler())
  *
- * In some situations (dealing with unverified data), the datasets can be opened
- * in another process through the \ref gdal_api_proxy mechanism.
- *
  * \sa GDALOpenShared()
  * \sa GDALOpenEx()
  *
@@ -3038,82 +3148,6 @@ GDALOpen( const char * pszFilename, GDALAccess eAccess )
         GDALOpenEx(pszFilename, nOpenFlags, nullptr, nullptr, nullptr);
     return hDataset;
 }
-
-/************************************************************************/
-/*                         AntiRecursionStruct                          */
-/************************************************************************/
-
-namespace {
-// Prevent infinite recursion.
-struct AntiRecursionStruct
-{
-    struct DatasetContext
-    {
-        std::string osFilename;
-        int         nOpenFlags;
-        int         nSizeAllowedDrivers;
-
-        DatasetContext(const std::string& osFilenameIn,
-                        int nOpenFlagsIn,
-                        int nSizeAllowedDriversIn) :
-            osFilename(osFilenameIn),
-            nOpenFlags(nOpenFlagsIn),
-            nSizeAllowedDrivers(nSizeAllowedDriversIn) {}
-    };
-
-    struct DatasetContextCompare {
-        bool operator() (const DatasetContext& lhs, const DatasetContext& rhs) const {
-            return lhs.osFilename < rhs.osFilename ||
-                    (lhs.osFilename == rhs.osFilename &&
-                    (lhs.nOpenFlags < rhs.nOpenFlags ||
-                        (lhs.nOpenFlags == rhs.nOpenFlags &&
-                        lhs.nSizeAllowedDrivers < rhs.nSizeAllowedDrivers)));
-        }
-    };
-
-    std::set<DatasetContext, DatasetContextCompare> aosDatasetNamesWithFlags{};
-    int nRecLevel = 0;
-};
-} // namespace
-
-#ifdef WIN32
-// Currently thread_local and C++ objects don't work well with DLL on Windows
-static void FreeAntiRecursion( void* pData )
-{
-    delete static_cast<AntiRecursionStruct*>(pData);
-}
-
-static AntiRecursionStruct& GetAntiRecursion()
-{
-    static AntiRecursionStruct dummy;
-    int bMemoryErrorOccurred = false;
-    void* pData = CPLGetTLSEx(CTLS_GDALOPEN_ANTIRECURSION, &bMemoryErrorOccurred);
-    if( bMemoryErrorOccurred )
-    {
-        return dummy;
-    }
-    if( pData == nullptr)
-    {
-        auto pAntiRecursion = new AntiRecursionStruct();
-        CPLSetTLSWithFreeFuncEx( CTLS_GDALOPEN_ANTIRECURSION,
-                                 pAntiRecursion,
-                                 FreeAntiRecursion, &bMemoryErrorOccurred );
-        if( bMemoryErrorOccurred )
-        {
-            delete pAntiRecursion;
-            return dummy;
-        }
-        return *pAntiRecursion;
-    }
-    return *static_cast<AntiRecursionStruct*>(pData);
-}
-#else
-static thread_local AntiRecursionStruct g_tls_antiRecursion;
-static AntiRecursionStruct& GetAntiRecursion()
-{
-    return g_tls_antiRecursion;
-}
-#endif
 
 /************************************************************************/
 /*                             GDALOpenEx()                             */
@@ -3142,9 +3176,6 @@ static AntiRecursionStruct& GetAntiRecursion()
  * file in a .zip archive (see VSIInstallZipFileHandler()), in a
  * .tar/.tar.gz/.tgz archive (see VSIInstallTarFileHandler()) or on a HTTP / FTP
  * server (see VSIInstallCurlFileHandler())
- *
- * In some situations (dealing with unverified data), the datasets can be opened
- * in another process through the \ref gdal_api_proxy mechanism.
  *
  * In order to reduce the need for searches through the operating system
  * file system machinery, it is possible to give an optional list of files with
@@ -3210,7 +3241,6 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
                                      const char *const *papszSiblingFiles )
 {
     VALIDATE_POINTER1(pszFilename, "GDALOpen", nullptr);
-
 /* -------------------------------------------------------------------- */
 /*      In case of shared dataset, first scan the existing list to see  */
 /*      if it could already contain the requested dataset.              */
@@ -3253,7 +3283,7 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
 
     // If no driver kind is specified, assume all are to be probed.
     if( (nOpenFlags & GDAL_OF_KIND_MASK) == 0 )
-        nOpenFlags |= GDAL_OF_KIND_MASK;
+        nOpenFlags |= GDAL_OF_KIND_MASK & ~GDAL_OF_MULTIDIM_RASTER;
 
     GDALDriverManager *poDM = GetGDALDriverManager();
     // CPLLocaleC  oLocaleForcer;
@@ -3299,21 +3329,22 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
 
     oOpenInfo.papszOpenOptions = papszOpenOptionsCleaned;
 
-    for( int iDriver = -1; iDriver < poDM->GetDriverCount(); ++iDriver )
-    {
-        GDALDriver *poDriver = nullptr;
+#ifdef OGRAPISPY_ENABLED
+    const bool bUpdate = (nOpenFlags & GDAL_OF_UPDATE) != 0;
+    const int iSnapshot = (nOpenFlags & GDAL_OF_VECTOR) != 0 &&
+                          (nOpenFlags & GDAL_OF_RASTER) == 0 ?
+        OGRAPISpyOpenTakeSnapshot(pszFilename, bUpdate) : INT_MIN;
+#endif
 
-        if( iDriver < 0 )
+    const int nDriverCount = poDM->GetDriverCount();
+    for( int iDriver = 0; iDriver < nDriverCount; ++iDriver )
+    {
+        GDALDriver *poDriver = poDM->GetDriver(iDriver);
+        if (papszAllowedDrivers != nullptr &&
+            CSLFindString(papszAllowedDrivers,
+                            GDALGetDriverShortName(poDriver)) == -1)
         {
-            poDriver = GDALGetAPIPROXYDriver();
-        }
-        else
-        {
-            poDriver = poDM->GetDriver(iDriver);
-            if (papszAllowedDrivers != nullptr &&
-                CSLFindString(papszAllowedDrivers,
-                              GDALGetDriverShortName(poDriver)) == -1)
-                continue;
+            continue;
         }
 
         if( (nOpenFlags & GDAL_OF_RASTER) != 0 &&
@@ -3323,6 +3354,10 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
         if( (nOpenFlags & GDAL_OF_VECTOR) != 0 &&
             (nOpenFlags & GDAL_OF_RASTER) == 0 &&
             poDriver->GetMetadataItem(GDAL_DCAP_VECTOR) == nullptr )
+            continue;
+        if( (nOpenFlags & GDAL_OF_MULTIDIM_RASTER) != 0 &&
+            (nOpenFlags & GDAL_OF_RASTER) == 0 &&
+            poDriver->GetMetadataItem(GDAL_DCAP_MULTIDIM_RASTER) == nullptr )
             continue;
         if( poDriver->pfnOpen == nullptr &&
             poDriver->pfnOpenWithDriverArg == nullptr )
@@ -3353,6 +3388,8 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
         }
 
         const bool bIdentifyRes =
+            poDriver->pfnIdentifyEx ?
+                poDriver->pfnIdentifyEx(poDriver, &oOpenInfo) > 0:
             poDriver->pfnIdentify && poDriver->pfnIdentify(&oOpenInfo) > 0;
         if( bIdentifyRes )
         {
@@ -3373,8 +3410,11 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
             poDS = poDriver->pfnOpen(&oOpenInfo);
             // If we couldn't determine for sure with Identify() (it returned
             // -1), but Open() managed to open the file, post validate options.
-            if( poDS != nullptr && poDriver->pfnIdentify && !bIdentifyRes )
+            if( poDS != nullptr &&
+                (poDriver->pfnIdentify || poDriver->pfnIdentifyEx) && !bIdentifyRes )
+            {
                 GDALValidateOpenOptions(poDriver, papszOptionsToValidate);
+            }
         }
         else if( poDriver->pfnOpenWithDriverArg != nullptr )
         {
@@ -3466,6 +3506,16 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
             VSIErrorReset();
 
             CSLDestroy(papszOpenOptionsCleaned);
+
+#ifdef OGRAPISPY_ENABLED
+            if( iSnapshot != INT_MIN )
+            {
+                GDALDatasetH hDS = GDALDataset::ToHandle(poDS);
+                OGRAPISpyOpen(pszFilename, bUpdate, iSnapshot, &hDS);
+                poDS = GDALDataset::FromHandle(hDS);
+            }
+#endif
+
             return poDS;
         }
 
@@ -3482,6 +3532,14 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
         if( CPLGetLastErrorNo() != 0 && CPLGetLastErrorType() > CE_Warning)
         {
             CSLDestroy(papszOpenOptionsCleaned);
+
+#ifdef OGRAPISPY_ENABLED
+            if( iSnapshot != INT_MIN )
+            {
+                GDALDatasetH hDS = nullptr;
+                OGRAPISpyOpen(pszFilename, bUpdate, iSnapshot, &hDS);
+            }
+#endif
             return nullptr;
         }
 #endif
@@ -3489,13 +3547,26 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
 
     CSLDestroy(papszOpenOptionsCleaned);
 
+#ifdef OGRAPISPY_ENABLED
+    if( iSnapshot != INT_MIN )
+    {
+        GDALDatasetH hDS = nullptr;
+        OGRAPISpyOpen(pszFilename, bUpdate, iSnapshot, &hDS);
+    }
+#endif
+
     if( nOpenFlags & GDAL_OF_VERBOSE_ERROR )
     {
         // Check to see if there was a filesystem error, and report it if so.
         // If not, return a more generic error.
         if(!VSIToCPLError(CE_Failure, CPLE_OpenFailed))
         {
-            if( oOpenInfo.bStatOK )
+            if( nDriverCount == 0 )
+            {
+                CPLError(CE_Failure, CPLE_OpenFailed,
+                         "No driver registered.");
+            }
+            else if( oOpenInfo.bStatOK )
             {
                 CPLError(CE_Failure, CPLE_OpenFailed,
                          "`%s' not recognized as a supported file format.",
@@ -3540,9 +3611,6 @@ GDALDatasetH CPL_STDCALL GDALOpenEx( const char *pszFilename,
  * file in a .zip archive (see VSIInstallZipFileHandler()), in a
  * .tar/.tar.gz/.tgz archive (see VSIInstallTarFileHandler()) or on a HTTP / FTP
  * server (see VSIInstallCurlFileHandler())
- *
- * In some situations (dealing with unverified data), the datasets can be opened
- * in another process through the \ref gdal_api_proxy mechanism.
  *
  * \sa GDALOpen()
  * \sa GDALOpenEx()
@@ -3591,6 +3659,11 @@ void CPL_STDCALL GDALClose( GDALDatasetH hDS )
     if( hDS == nullptr )
         return;
 
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpyPreClose(hDS);
+#endif
+
     GDALDataset *poDS = GDALDataset::FromHandle(hDS);
 
     if (poDS->GetShared())
@@ -3604,6 +3677,12 @@ void CPL_STDCALL GDALClose( GDALDatasetH hDS )
             return;
 
         delete poDS;
+
+#ifdef OGRAPISPY_ENABLED
+        if( bOGRAPISpyEnabled )
+            OGRAPISpyPostClose();
+#endif
+
         return;
     }
 
@@ -3611,6 +3690,11 @@ void CPL_STDCALL GDALClose( GDALDatasetH hDS )
 /*      This is not shared dataset, so directly delete it.              */
 /* -------------------------------------------------------------------- */
     delete poDS;
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpyPostClose();
+#endif
 }
 
 /************************************************************************/
@@ -3965,6 +4049,7 @@ int GDALDataset::CloseDependentDatasets()
 /*                            ReportError()                             */
 /************************************************************************/
 
+#ifndef DOXYGEN_XML
 /**
  * \brief Emits an error related to a dataset.
  *
@@ -3985,11 +4070,43 @@ void GDALDataset::ReportError(CPLErr eErrClass, CPLErrorNum err_no,
                               const char *fmt, ...)
 {
     va_list args;
-
     va_start(args, fmt);
+    ReportErrorV(GetDescription(), eErrClass, err_no, fmt, args);
+    va_end(args);
+}
 
+/**
+ * \brief Emits an error related to a dataset (static method)
+ *
+ * This function is a wrapper for regular CPLError(). The only difference
+ * with CPLError() is that it prepends the error message with the dataset
+ * name.
+ *
+ * @param pszDSName dataset name.
+ * @param eErrClass one of CE_Warning, CE_Failure or CE_Fatal.
+ * @param err_no the error number (CPLE_*) from cpl_error.h.
+ * @param fmt a printf() style format string.  Any additional arguments
+ * will be treated as arguments to fill in this format in a manner
+ * similar to printf().
+ *
+ * @since GDAL 3.2.0
+ */
+
+void GDALDataset::ReportError(const char* pszDSName,
+                              CPLErr eErrClass, CPLErrorNum err_no,
+                              const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    ReportErrorV(pszDSName, eErrClass, err_no, fmt, args);
+    va_end(args);
+}
+
+void GDALDataset::ReportErrorV(const char* pszDSName,
+                               CPLErr eErrClass, CPLErrorNum err_no,
+                               const char *fmt, va_list args)
+{
     char szNewFmt[256] = {};
-    const char *pszDSName = GetDescription();
     if (strlen(fmt) + strlen(pszDSName) + 3 >= sizeof(szNewFmt) - 1)
         pszDSName = CPLGetFilename(pszDSName);
     if (pszDSName[0] != '\0' && strchr(pszDSName, '%') == nullptr &&
@@ -4002,8 +4119,8 @@ void GDALDataset::ReportError(CPLErr eErrClass, CPLErrorNum err_no,
     {
         CPLErrorV(eErrClass, err_no, fmt, args);
     }
-    va_end(args);
 }
+#endif
 
 /************************************************************************/
 /*                            GetMetadata()                             */
@@ -4161,6 +4278,11 @@ void GDALDatasetReleaseResultSet( GDALDatasetH hDS, OGRLayerH hLayer )
 {
     VALIDATE_POINTER0(hDS, "GDALDatasetReleaseResultSet");
 
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_ReleaseResultSet(hDS, hLayer);
+#endif
+
     GDALDataset::FromHandle(hDS)
         ->ReleaseResultSet(OGRLayer::FromHandle(hLayer));
 }
@@ -4184,6 +4306,11 @@ int GDALDatasetGetLayerCount( GDALDatasetH hDS )
 
 {
     VALIDATE_POINTER1(hDS, "GDALDatasetH", 0);
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_GetLayerCount(reinterpret_cast<GDALDatasetH>(hDS));
+#endif
 
     return GDALDataset::FromHandle(hDS)->GetLayerCount();
 }
@@ -4213,8 +4340,15 @@ OGRLayerH GDALDatasetGetLayer( GDALDatasetH hDS, int iLayer )
 {
     VALIDATE_POINTER1(hDS, "GDALDatasetGetLayer", nullptr);
 
-    return OGRLayer::ToHandle(
+    OGRLayerH hLayer = OGRLayer::ToHandle(
         GDALDataset::FromHandle(hDS)->GetLayer(iLayer));
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_GetLayer(hDS, iLayer, hLayer);
+#endif
+
+    return hLayer;
 }
 
 /************************************************************************/
@@ -4242,8 +4376,15 @@ OGRLayerH GDALDatasetGetLayerByName( GDALDatasetH hDS, const char *pszName )
 {
     VALIDATE_POINTER1(hDS, "GDALDatasetGetLayerByName", nullptr);
 
-    return OGRLayer::ToHandle(
+    OGRLayerH hLayer = OGRLayer::ToHandle(
         GDALDataset::FromHandle(hDS)->GetLayerByName(pszName));
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_GetLayerByName(hDS, pszName, hLayer);
+#endif
+
+    return hLayer;
 }
 
 /************************************************************************/
@@ -4296,23 +4437,9 @@ deprecated OGR_DS_CreateLayer().
 
 In GDAL 1.X, this method used to be in the OGRDataSource class.
 
-@param pszName the name for the new layer.  This should ideally not
-match any existing layer on the datasource.
-@param poSpatialRef the coordinate system to use for the new layer, or NULL if
-no coordinate system is available.  The driver might only increase
-the reference counter of the object to take ownership, and not make a full copy,
-so do not use OSRDestroySpatialReference(), but OSRRelease() instead when you
-are done with the object.
-@param eGType the geometry type for the layer.  Use wkbUnknown if there
-are no constraints on the types geometry to be written.
-@param papszOptions a StringList of name=value options.  Options are driver
-specific.
+Example:
 
-@return NULL is returned on failure, or a new OGRLayer handle on success.
-
-<b>Example:</b>
-
-\code
+\code{.cpp}
 #include "gdal.h"
 #include "cpl_string.h"
 
@@ -4336,6 +4463,21 @@ specific.
             ...
         }
 \endcode
+
+@param pszName the name for the new layer.  This should ideally not
+match any existing layer on the datasource.
+@param poSpatialRef the coordinate system to use for the new layer, or NULL if
+no coordinate system is available.  The driver might only increase
+the reference counter of the object to take ownership, and not make a full copy,
+so do not use OSRDestroySpatialReference(), but OSRRelease() instead when you
+are done with the object.
+@param eGType the geometry type for the layer.  Use wkbUnknown if there
+are no constraints on the types geometry to be written.
+@param papszOptions a StringList of name=value options.  Options are driver
+specific.
+
+@return NULL is returned on failure, or a new OGRLayer handle on success.
+
 */
 
 OGRLayer *GDALDataset::CreateLayer( const char * pszName,
@@ -4380,6 +4522,33 @@ documentation.
 
 This method is the same as the C++ method GDALDataset::CreateLayer().
 
+Example:
+
+\code{.c}
+#include "gdal.h"
+#include "cpl_string.h"
+
+...
+
+        OGRLayerH  hLayer;
+        char     **papszOptions;
+
+        if( !GDALDatasetTestCapability( hDS, ODsCCreateLayer ) )
+        {
+        ...
+        }
+
+        papszOptions = CSLSetNameValue( papszOptions, "DIM", "2" );
+        hLayer = GDALDatasetCreateLayer( hDS, "NewLayer", NULL, wkbUnknown,
+                                         papszOptions );
+        CSLDestroy( papszOptions );
+
+        if( hLayer == NULL )
+        {
+            ...
+        }
+\endcode
+
 @since GDAL 2.0
 
 @param hDS the dataset handle
@@ -4397,32 +4566,6 @@ specific.
 
 @return NULL is returned on failure, or a new OGRLayer handle on success.
 
-<b>Example:</b>
-
-\code
-#include "gdal.h"
-#include "cpl_string.h"
-
-...
-
-        OGRLayer *poLayer;
-        char     **papszOptions;
-
-        if( !poDS->TestCapability( ODsCCreateLayer ) )
-        {
-        ...
-        }
-
-        papszOptions = CSLSetNameValue( papszOptions, "DIM", "2" );
-        poLayer = poDS->CreateLayer( "NewLayer", nullptr, wkbUnknown,
-                                     papszOptions );
-        CSLDestroy( papszOptions );
-
-        if( poLayer == NULL )
-        {
-            ...
-        }
-\endcode
 */
 
 OGRLayerH GDALDatasetCreateLayer( GDALDatasetH hDS,
@@ -4441,10 +4584,17 @@ OGRLayerH GDALDatasetCreateLayer( GDALDatasetH hDS,
         return nullptr;
     }
 
-    return OGRLayer::ToHandle(
+    OGRLayerH hLayer = OGRLayer::ToHandle(
         GDALDataset::FromHandle(hDS)->CreateLayer(
             pszName, OGRSpatialReference::FromHandle(hSpatialRef),
             eGType, const_cast<char**>(papszOptions)));
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_CreateLayer(hDS, pszName, hSpatialRef, eGType, const_cast<char**>(papszOptions), hLayer);
+#endif
+
+    return hLayer;
 }
 
 /************************************************************************/
@@ -4471,7 +4621,7 @@ OGRLayerH GDALDatasetCreateLayer( GDALDatasetH hDS,
  @param papszOptions a StringList of name=value options.  Options are driver
                      specific.
 
- @return an handle to the layer, or NULL if an error occurs.
+ @return a handle to the layer, or NULL if an error occurs.
 */
 OGRLayerH GDALDatasetCopyLayer( GDALDatasetH hDS,
                                 OGRLayerH hSrcLayer, const char *pszNewName,
@@ -4523,7 +4673,7 @@ OGRLayerH GDALDatasetCopyLayer( GDALDatasetH hDS,
  dialect. Starting with OGR 1.10, the SQLITE dialect can also be used.
 
  @return an OGRLayer containing the results of the query.  Deallocate with
- ReleaseResultSet().
+ GDALDatasetReleaseResultSet().
 
 */
 
@@ -4535,11 +4685,49 @@ OGRLayerH GDALDatasetExecuteSQL( GDALDatasetH hDS,
 {
     VALIDATE_POINTER1(hDS, "GDALDatasetExecuteSQL", nullptr);
 
-    return OGRLayer::ToHandle(
+    OGRLayerH hLayer = OGRLayer::ToHandle(
         GDALDataset::FromHandle(hDS)->ExecuteSQL(
             pszStatement, OGRGeometry::FromHandle(hSpatialFilter),
             pszDialect));
+
+#ifdef OGRAPISPY_ENABLED
+    if( bOGRAPISpyEnabled )
+        OGRAPISpy_DS_ExecuteSQL(hDS, pszStatement, hSpatialFilter, pszDialect, hLayer);
+#endif
+
+    return hLayer;
 }
+
+
+/************************************************************************/
+/*                        GDALDatasetAbortSQL()                         */
+/************************************************************************/
+
+/**
+ \brief Abort any SQL statement running in the data store.
+ 
+ This function can be safely called from any thread (pending that the dataset object is still alive). Driver implementations will make sure that it can be called in a thread-safe way.
+ 
+ This might not be implemented by all drivers. At time of writing, only SQLite, GPKG and PG drivers implement it
+
+ This method is the same as the C++ method GDALDataset::AbortSQL()
+
+ @since GDAL 3.2.0
+
+ @param hDS the dataset handle.
+
+ @return OGRERR_NONE on success, or OGRERR_UNSUPPORTED_OPERATION if AbortSQL
+ is not supported for this datasource. .
+
+*/
+
+OGRErr GDALDatasetAbortSQL( GDALDatasetH hDS )
+
+{
+    VALIDATE_POINTER1(hDS, "GDALDatasetAbortSQL", OGRERR_FAILURE );
+    return GDALDataset::FromHandle(hDS)->AbortSQL();
+}
+
 
 /************************************************************************/
 /*                      GDALDatasetGetStyleTable()                      */
@@ -4780,7 +4968,7 @@ OGRLayer *GDALDataset::ICreateLayer( CPL_UNUSED const char * pszName,
                      spatial reference: DST_SRSWKT. The option should be in
                      WKT format.
 
- @return an handle to the layer, or NULL if an error occurs.
+ @return a handle to the layer, or NULL if an error occurs.
 */
 
 OGRLayer *GDALDataset::CopyLayer( OGRLayer *poSrcLayer,
@@ -4800,6 +4988,7 @@ OGRLayer *GDALDataset::CopyLayer( OGRLayer *poSrcLayer,
 
     const char *pszSRSWKT = CSLFetchNameValue(papszOptions, "DST_SRSWKT");
     OGRSpatialReference oDstSpaRef(pszSRSWKT);
+    oDstSpaRef.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     OGRFeatureDefn *poSrcDefn = poSrcLayer->GetLayerDefn();
     OGRLayer *poDstLayer = nullptr;
 
@@ -4820,9 +5009,11 @@ OGRLayer *GDALDataset::CopyLayer( OGRLayer *poSrcLayer,
         {
             // Remove DST_WKT from option list to prevent warning from driver.
             const int nSRSPos = CSLFindName(papszOptions, "DST_SRSWKT");
-            papszOptions = CSLRemoveStrings(papszOptions, nSRSPos, 1, nullptr);
+            CPLStringList aosOptionsWithoutDstSRSWKT(
+                CSLRemoveStrings(CSLDuplicate(papszOptions), nSRSPos, 1, nullptr));
             poDstLayer = ICreateLayer(pszNewName, &oDstSpaRef,
-                                      poSrcDefn->GetGeomType(), papszOptions);
+                                      poSrcDefn->GetGeomType(),
+                                      aosOptionsWithoutDstSRSWKT.List());
         }
     }
 
@@ -6117,6 +6308,32 @@ GDALDataset::ExecuteSQL( const char *pszStatement,
 }
 //! @endcond
 
+
+/************************************************************************/
+/*                             AbortSQL()                             */
+/************************************************************************/
+
+/**
+ \brief Abort any SQL statement running in the data store.
+
+ This function can be safely called from any thread (pending that the dataset object is still alive). Driver implementations will make sure that it can be called in a thread-safe way.
+
+ This might not be implemented by all drivers. At time of writing, only SQLite, GPKG and PG drivers implement it
+
+ This method is the same as the C method GDALDatasetAbortSQL()
+
+ @since GDAL 3.2.0
+
+
+*/
+
+OGRErr GDALDataset::AbortSQL(  )
+{  
+  CPLError(CE_Failure, CPLE_NotSupported, "AbortSQL is not supported for this driver.");
+  return OGRERR_UNSUPPORTED_OPERATION;
+}
+
+
 /************************************************************************/
 /*                        BuildLayerFromSelectInfo()                    */
 /************************************************************************/
@@ -6244,6 +6461,11 @@ GDALDataset::BuildParseInfo(swq_select *psSelectInfo,
             (poSelectParseOptions &&
             poSelectParseOptions->bAddSecondaryTablesGeometryFields) )
             nFieldCount += poSrcLayer->GetLayerDefn()->GetGeomFieldCount();
+
+        const char* pszFID = poSrcLayer->GetFIDColumn();
+        if (pszFID && !EQUAL(pszFID, "") && !EQUAL(pszFID, "FID") &&
+            poSrcLayer->GetLayerDefn()->GetFieldIndex(pszFID) < 0)
+            nFieldCount++;
     }
 
 /* -------------------------------------------------------------------- */
@@ -6255,13 +6477,13 @@ GDALDataset::BuildParseInfo(swq_select *psSelectInfo,
 
     psParseInfo->sFieldList.count = 0;
     psParseInfo->sFieldList.names = static_cast<char **>(
-        CPLMalloc(sizeof(char *) * (nFieldCount + SPECIAL_FIELD_COUNT + 1)));
+        CPLMalloc(sizeof(char *) * (nFieldCount + SPECIAL_FIELD_COUNT)));
     psParseInfo->sFieldList.types = static_cast<swq_field_type *>(CPLMalloc(
-        sizeof(swq_field_type) * (nFieldCount + SPECIAL_FIELD_COUNT + 1)));
+        sizeof(swq_field_type) * (nFieldCount + SPECIAL_FIELD_COUNT)));
     psParseInfo->sFieldList.table_ids = static_cast<int *>(
-        CPLMalloc(sizeof(int) * (nFieldCount + SPECIAL_FIELD_COUNT + 1)));
+        CPLMalloc(sizeof(int) * (nFieldCount + SPECIAL_FIELD_COUNT)));
     psParseInfo->sFieldList.ids = static_cast<int *>(
-        CPLMalloc(sizeof(int) * (nFieldCount + SPECIAL_FIELD_COUNT + 1)));
+        CPLMalloc(sizeof(int) * (nFieldCount + SPECIAL_FIELD_COUNT)));
 
     bool bIsFID64 = false;
     for( int iTable = 0; iTable < psSelectInfo->table_count; iTable++ )
@@ -7388,6 +7610,8 @@ void GDALDataset::TemporarilyDropReadWriteLock()
 #endif
         for(int i = 0; i < nCount + 1; i++)
         {
+            // The mutex is recursive
+            // coverity[double_unlock]
             CPLReleaseMutex(m_poPrivate->hMutex);
         }
     }
@@ -7425,6 +7649,8 @@ void GDALDataset::ReacquireReadWriteLock()
             CPLReleaseMutex(m_poPrivate->hMutex);
         for(int i = 0; i < nCount - 1; i++)
         {
+            // The mutex is recursive
+            // coverity[double_lock]
             CPLAcquireMutex(m_poPrivate->hMutex, 1000.0);
         }
     }
@@ -7528,14 +7754,14 @@ bool GDALDataset::Features::Iterator::operator!= (const Iterator& it) const
 * FeatureLayerPair reference which is returned is reused.
 *
 * Typical use is:
-* <pre>
+* \code{.cpp}
 * for( auto&& oFeatureLayerPair: poDS->GetFeatures() )
 * {
 *       std::cout << "Feature of layer " <<
 *               oFeatureLayerPair.layer->GetName() << std::endl;
 *       oFeatureLayerPair.feature->DumpReadable();
 * }
-* </pre>
+* \endcode
 *
 * @see GetNextFeature()
 *
@@ -7679,12 +7905,12 @@ bool GDALDataset::Layers::Iterator::operator!= (const Iterator& it) const
 * This is a C++ iterator friendly version of GetLayer().
 *
 * Typical use is:
-* <pre>
+* \code{.cpp}
 * for( auto&& poLayer: poDS->GetLayers() )
 * {
 *       std::cout << "Layer  << poLayer->GetName() << std::endl;
 * }
-* </pre>
+* \endcode
 *
 * @see GetLayer()
 *
@@ -7869,12 +8095,12 @@ bool GDALDataset::Bands::Iterator::operator!= (const Iterator& it) const
 * This is a C++ iterator friendly version of GetRasterBand().
 *
 * Typical use is:
-* <pre>
+* \code{.cpp}
 * for( auto&& poBand: poDS->GetBands() )
 * {
 *       std::cout << "Band  << poBand->GetDescription() << std::endl;
 * }
-* </pre>
+* \endcode
 *
 * @see GetRasterBand()
 *
@@ -7980,4 +8206,81 @@ GDALRasterBand* GDALDataset::Bands::operator[](int iBand)
 GDALRasterBand* GDALDataset::Bands::operator[](size_t iBand)
 {
     return m_poSelf->GetRasterBand(1+static_cast<int>(iBand));
+}
+
+/************************************************************************/
+/*                           GetRootGroup()                             */
+/************************************************************************/
+
+/**
+ \brief Return the root GDALGroup of this dataset.
+
+ Only valid for multidimensional datasets.
+ 
+ This is the same as the C function GDALDatasetGetRootGroup().
+
+ @since GDAL 3.1
+*/
+
+std::shared_ptr<GDALGroup> GDALDataset::GetRootGroup() const
+{
+    return nullptr;
+}
+
+
+/************************************************************************/
+/*                        GetRawBinaryLayout()                          */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+/**
+ \brief Return the layout of a dataset that can be considered as a raw binary format.
+
+ @param sLayout Structure that will be set if the dataset is a raw binary one.
+ @return true if the dataset is a raw binary one.
+ @since GDAL 3.1
+*/
+
+bool GDALDataset::GetRawBinaryLayout(RawBinaryLayout& sLayout)
+{
+    CPL_IGNORE_RET_VAL(sLayout);
+    return false;
+}
+//! @endcond
+
+
+/************************************************************************/
+/*                          ClearStatistics()                           */
+/************************************************************************/
+
+/**
+ \brief Clear statistics
+
+ Only implemented for now in PAM supported datasets
+
+ This is the same as the C function GDALDatasetClearStatistics().
+
+ @since GDAL 3.2
+*/
+
+void GDALDataset::ClearStatistics()
+{
+}
+
+/************************************************************************/
+/*                        GDALDatasetClearStatistics()                  */
+/************************************************************************/
+
+/**
+ \brief Clear statistics
+
+ This is the same as the C++ method GDALDataset::ClearStatistics().
+
+ @since GDAL 3.2
+*/
+
+void GDALDatasetClearStatistics(GDALDatasetH hDS)
+{
+    VALIDATE_POINTER0(hDS, __func__);
+    GDALDataset::FromHandle(hDS)->ClearStatistics();
 }

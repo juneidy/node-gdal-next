@@ -6,7 +6,7 @@
  *
  * ****************************************************************************
  * Copyright (c) 2006, MapShots Inc (www.mapshots.com)
- * Copyright (c) 2007-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -46,7 +46,7 @@
 #include "cpl_string.h"
 #include "gdal.h"
 
-CPL_CVSID("$Id: nearblack_lib.cpp 88eda08930b6dafb9ea1374ba19e0b1cf5ded3d3 2018-08-11 20:16:37 +0200 Even Rouault $")
+CPL_CVSID("$Id: nearblack_lib.cpp adf0cd29fb7e479c33474ed88072945ad8c8cc69 2020-09-12 20:10:58 +0200 Even Rouault $")
 
 typedef std::vector<int> Color;
 typedef std::vector< Color > Colors;
@@ -86,7 +86,7 @@ static void ProcessLine( GByte *pabyLine, GByte *pabyMask, int iStart,
 /**
  * Convert nearly black/white borders to exact value.
  *
- * This is the equivalent of the <a href="nearblack.html">nearblack</a> utility.
+ * This is the equivalent of the <a href="/programs/nearblack.html">nearblack</a> utility.
  *
  * GDALNearblackOptions* must be allocated and freed with GDALNearblackOptionsNew()
  * and GDALNearblackOptionsFree() respectively.
@@ -99,7 +99,7 @@ static void ProcessLine( GByte *pabyLine, GByte *pabyMask, int iStart,
  * @param hDstDS the destination dataset or NULL. Might be equal to hSrcDataset.
  * @param hSrcDataset the source dataset handle.
  * @param psOptionsIn the options struct returned by GDALNearblackOptionsNew() or NULL.
- * @param pbUsageError the pointer to int variable to determine any usage error has occurred or NULL.
+ * @param pbUsageError pointer to a integer output variable to store if any usage error has occurred or NULL.
  * @return the output dataset (new dataset that must be closed using GDALClose(), or hDstDS is not NULL) or NULL in case of error.
  *
  * @since GDAL 2.1
@@ -535,6 +535,7 @@ GDALDatasetH CPL_DLL GDALNearblack( const char *pszDest, GDALDatasetH hDstDS,
         CPLFree(pabyMask);
 
     CPLFree( panLastLineCounts );
+    GDALNearblackOptionsFree(psOptionsToFree);
 
     return hDstDS;
 }
@@ -750,7 +751,7 @@ static bool IsInt( const char *pszArg )
  * Allocates a GDALNearblackOptions struct.
  *
  * @param papszArgv NULL terminated list of options (potentially including filename and open options too), or NULL.
- *                  The accepted options are the ones of the <a href="nearblack.html">nearblack</a> utility.
+ *                  The accepted options are the ones of the <a href="/programs/nearblack.html">nearblack</a> utility.
  * @param psOptionsForBinary (output) may be NULL (and should generally be NULL),
  *                           otherwise (gdal_translate_bin.cpp use case) must be allocated with
  *                           GDALNearblackOptionsForBinaryNew() prior to this function. Will be

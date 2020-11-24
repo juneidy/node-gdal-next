@@ -6,7 +6,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2008, Frank Warmerdam
- * Copyright (c) 2009-2011, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2009-2011, Even Rouault <even dot rouault at spatialys.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -44,7 +44,7 @@
 #include "gdal.h"
 #include "gdal_alg_priv.h"
 
-CPL_CVSID("$Id: gdalsievefilter.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12-11 19:08:47Z Even Rouault $")
+CPL_CVSID("$Id: gdalsievefilter.cpp 88fb6c783f68f1f529ef53ebcd53dc2f31972bd6 2020-05-25 21:31:50 +0300 uclaros $")
 
 #define MY_MAX_INT 2147483647
 
@@ -154,7 +154,7 @@ static inline void CompareNeighbour( int nPolyId1, int nPolyId2,
  * Removes small raster polygons.
  *
  * The function removes raster polygons smaller than a provided
- * threshold size (in pixels) and replaces replaces them with the pixel value
+ * threshold size (in pixels) and replaces them with the pixel value
  * of the largest neighbour polygon.
  *
  * Polygon are determined (per GDALRasterPolygonEnumerator) as regions of
@@ -427,8 +427,7 @@ GDALSieveFilter( GDALRasterBandH hSrcBand, GDALRasterBandH hMaskBand,
 /* -------------------------------------------------------------------- */
 /*      Report progress, and support interrupts.                        */
 /* -------------------------------------------------------------------- */
-        if( eErr == CE_None &&
-            !pfnProgress(0.25 + 0.25 * ((iY + 1) / static_cast<double>(nYSize)),
+        if( !pfnProgress(0.25 + 0.25 * ((iY + 1) / static_cast<double>(nYSize)),
                          "", pProgressArg) )
         {
             CPLError( CE_Failure, CPLE_UserInterrupt, "User terminated" );

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: wmsdriver.h 8e5eeb35bf76390e3134a4ea7076dab7d478ea0e 2018-11-14 22:55:13 +0100 Even Rouault $
+ * $Id: wmsdriver.h 816ac3854ae287862bcafe49aa66f201dda93274 2020-09-24 20:05:33 +0300 Idan Miara $
  *
  * Project:  WMS Client Driver
  * Purpose:  Implementation of Dataset and RasterBand classes for WMS
@@ -8,7 +8,7 @@
  *
  ******************************************************************************
  * Copyright (c) 2007, Adam Nowacki
- * Copyright (c) 2008-2013, Even Rouault <even dot rouault at mines-paris dot org>
+ * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2017, Dmitry Baryshnikov, <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS, <info@nextgis.com>
  *
@@ -237,6 +237,7 @@ public:
     virtual GDALDataset* GetDataset(const char *pszKey,
                                     char **papszOpenOptions) const = 0;
     virtual void Clean() = 0;
+    virtual int GetCleanThreadRunTimeout() = 0;
 protected:
     CPLString m_soPath;
 };
@@ -272,7 +273,7 @@ private:
 /*                            GDALWMSDataset                            */
 /************************************************************************/
 
-class GDALWMSDataset : public GDALPamDataset {
+class GDALWMSDataset final: public GDALPamDataset {
     friend class GDALWMSRasterBand;
 
 public:
@@ -461,7 +462,7 @@ protected:
 /*                            GDALWMSRasterBand                         */
 /************************************************************************/
 
-class GDALWMSRasterBand : public GDALPamRasterBand {
+class GDALWMSRasterBand final: public GDALPamRasterBand {
     friend class GDALWMSDataset;
     void    ComputeRequestInfo( GDALWMSImageRequestInfo &iri,
                                 GDALWMSTiledImageRequestInfo &tiri,
