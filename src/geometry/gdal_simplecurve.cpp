@@ -36,8 +36,8 @@ void SimpleCurve::Initialize(Local<Object> target) {
  * Abstract class representing all SimpleCurves.
  *
  * @constructor
- * @class gdal.SimpleCurve
- * @extends gdal.Geometry
+ * @class SimpleCurve
+ * @extends Geometry
  */
 NAN_METHOD(SimpleCurve::New) {
   Nan::ThrowError("SimpleCurve is an abstract class and cannot be instantiated");
@@ -51,8 +51,10 @@ NAN_METHOD(SimpleCurve::toString) {
  * Returns the point at the specified distance along the SimpleCurve.
  *
  * @method value
+ * @instance
+ * @memberof SimpleCurve
  * @param {number} distance
- * @return {gdal.Point}
+ * @return {Point}
  */
 NAN_METHOD(SimpleCurve::value) {
 
@@ -72,6 +74,8 @@ NAN_METHOD(SimpleCurve::value) {
  * Compute the length of a multiSimpleCurve.
  *
  * @method getLength
+ * @instance
+ * @memberof SimpleCurve
  * @return {number}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SimpleCurve, getLength, Number, get_Length);
@@ -79,8 +83,11 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SimpleCurve, getLength, Number, get_Length);
 /**
  * The points that make up the SimpleCurve geometry.
  *
- * @attribute points
- * @type {gdal.LineStringPoints}
+ * @kind member
+ * @name points
+ * @instance
+ * @memberof Geometry
+ * @type {LineStringPoints}
  */
 NAN_GETTER(SimpleCurve::pointsGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("points_").ToLocalChecked()).ToLocalChecked());
@@ -94,7 +101,9 @@ NAN_GETTER(SimpleCurve::pointsGetter) {
  * vertices will be reversed as they are copied.
  *
  * @method addSubLineString
- * @param {gdal.LineString} LineString to be added
+ * @instance
+ * @memberof SimpleCurve
+ * @param {LineString} LineString to be added
  * @param {number} [start=0] the first vertex to copy, defaults to 0 to start with
  * the first vertex in the other LineString
  * @param {number} [end=-1] the last vertex to copy, defaults to -1 indicating the

@@ -51,19 +51,19 @@ RasterBand *RasterBandPixels::parent(const Nan::FunctionCallbackInfo<v8::Value> 
 }
 
 /**
- * A representation of a {{#crossLink
- * "gdal.RasterBand"}}RasterBand{{/crossLink}}'s pixels.
+ * A representation of a {@link RasterBand}'s pixels.
  *
  *
  * Note: Typed arrays should be created with an external ArrayBuffer for
  * versions of node >= 0.11
- * ```
- * var n = 16*16;
- * var data = new Float32Array(new ArrayBuffer(n*4));
- * //read data into the existing array
- * band.pixels.read(0,0,16,16,data);```
  *
- * @class gdal.RasterBandPixels
+ * @example
+ * const n = 16*16;
+ * const data = new Float32Array(new ArrayBuffer(n*4));
+ * //read data into the existing array
+ * band.pixels.read(0,0,16,16,data);
+ *
+ * @class RasterBandPixels
  */
 NAN_METHOD(RasterBandPixels::New) {
 
@@ -106,20 +106,24 @@ NAN_METHOD(RasterBandPixels::toString) {
  * Returns the value at the x, y coordinate.
  *
  * @method get
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
- * @throws Error
+ * @throws {Error}
  * @return {number}
  */
 
 /**
  * Returns the value at the x, y coordinate.
- * {{{async}}}
+ * @async
  *
  * @method getAsync
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
- * @param {callback<number>} [callback=undefined] {{{cb}}}
+ * @param {callback<number>} [callback=undefined]
  * @return {Promise<number>}
  */
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::get) {
@@ -152,6 +156,8 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::get) {
  * Sets the value at the x, y coordinate.
  *
  * @method set
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
  * @param {number} value
@@ -159,13 +165,15 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::get) {
 
 /**
  * Sets the value at the x, y coordinate.
- * {{{async}}}
+ * @async
  *
  * @method setAsync
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
  * @param {number} value
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<void>}
  */
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::set) {
@@ -248,46 +256,68 @@ static inline int findHighest(int w, int h, int px, int ln, int offset) {
 }
 
 /**
+ * @typedef {Uint8Array | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array} TypedArray
+ * @memberof RasterBandPixels
+ */
+
+/**
+ * @typedef {object} ReadOptions
+ * @memberof RasterBandPixels
+ * @property {number} [buffer_width]
+ * @property {number} [buffer_height]
+ * @property {string} [type]
+ * @property {number} [pixel_space]
+ * @property {number} [line_space]
+ * @property {string} [resampling]
+ * @property {ProgressCb} [progress_cb]
+ * @property {number} [offset]
+ */
+
+/**
  * Reads a region of pixels.
  *
  * @method read
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
  * @param {number} width
  * @param {number} height
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to put the data in. A new array is created if not given.
+ * @param {TypedArray} [data] The `TypedArray` to put the data in. A new array is created if not given.
  * @param {ReadOptions} [options]
  * @param {number} [options.buffer_width=x_size]
  * @param {number} [options.buffer_height=y_size]
- * @param {string} [options.data_type] See {{#crossLink "Constants (GDT)"}}GDT constants{{/crossLink}}.
+ * @param {string} [options.data_type] See {@link GDT|GDT constants}
  * @param {number} [options.pixel_space]
  * @param {number} [options.line_space]
- * @param {string} [options.resampling] Resampling algorithm ({{#crossLink "Constants (GRA)"}}available options{{/crossLink}})
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
- * @return {TypedArray} A TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values.
+ * @param {string} [options.resampling] Resampling algorithm ({@link GRA|available options})
+ * @param {ProgressCb} [options.progress_cb]
+ * @return {TypedArray} A `TypedArray` of values.
  */
 
 /**
  * Asynchronously reads a region of pixels.
- * {{{async}}}
+ * @async
  *
  * @method readAsync
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
  * @param {number} width the width
  * @param {number} height
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to put the data in. A new array is created if not given.
+ * @param {TypedArray} [data] The `TypedArray` to put the data in. A new array is created if not given.
  * @param {ReadOptions} [options]
  * @param {number} [options.buffer_width=x_size]
  * @param {number} [options.buffer_height=y_size]
- * @param {string} [options.data_type] See {{#crossLink "Constants (GDT)"}}GDT constants{{/crossLink}}.
+ * @param {string} [options.data_type] See {@link GDT|GDT constants}
  * @param {number} [options.pixel_space]
  * @param {number} [options.line_space]
- * @param {string} [options.resampling] Resampling algorithm ({{#crossLink "Constants (GRA)"}}available options{{/crossLink}})
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
- * @param {callback<TypedArray>} [callback=undefined] {{{cb}}}
- * @return {Promise<TypedArray>} A TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values.
+ * @param {string} [options.resampling] Resampling algorithm ({@link GRA|available options}
+ * @param {ProgressCb} [options.progress_cb]
+ * @param {callback<TypedArray>} [callback=undefined]
+ * @return {Promise<TypedArray>} A `TypedArray` of values.
  */
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::read) {
 
@@ -397,40 +427,55 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::read) {
 }
 
 /**
+ * @typedef {object} WriteOptions
+ * @memberof RasterBandPixels
+ * @property {number} [buffer_width]
+ * @property {number} [buffer_height]
+ * @property {number} [pixel_space]
+ * @property {number} [line_space]
+ * @property {ProgressCb} [progress_cb]
+ * @property {number} [offset]
+ */
+
+/**
  * Writes a region of pixels.
  *
  * @method write
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
  * @param {number} width
  * @param {number} height
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to write to the band.
+ * @param {TypedArray} [data] The `TypedArray` to write to the band.
  * @param {WriteOptions} [options]
  * @param {number} [options.buffer_width=x_size]
  * @param {number} [options.buffer_height=y_size]
  * @param {number} [options.pixel_space]
  * @param {number} [options.line_space]
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
+ * @param {ProgressCb} [options.progress_cb]
  */
 
 /**
  * Asynchronously writes a region of pixels.
- * {{{async}}}
+ * @async
  *
  * @method writeAsync
+ * @instance
+ * @memberof RasterBandPixels
  * @param {number} x
  * @param {number} y
  * @param {number} width
  * @param {number} height
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to write to the band.
+ * @param {TypedArray} [data] The `TypedArray` to write to the band.
  * @param {WriteOptions} [options]
  * @param {number} [options.buffer_width=x_size]
  * @param {number} [options.buffer_height=y_size]
  * @param {number} [options.pixel_space]
  * @param {number} [options.line_space]
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @param {ProgressCb} [options.progress_cb]
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<void>}
  */
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::write) {
@@ -521,24 +566,28 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::write) {
  * Reads a block of pixels.
  *
  * @method readBlock
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to put the data in. A new array is created if not given.
- * @return {TypedArray} A TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values.
+ * @param {TypedArray} [data] The `TypedArray` to put the data in. A new array is created if not given.
+ * @return {TypedArray} A `TypedArray` of values.
  */
 
 /**
  * Reads a block of pixels.
- * {{{async}}}
+ * @async
  *
  * @method readBlockAsync
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
- * @param {TypedArray} [data] The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) to put the data in. A new array is created if not given.
- * @param {callback<TypedArray>} [callback=undefined] {{{cb}}}
- * @return {Promise<TypedArray>} A TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values.
+ * @param {TypedArray} [data] The `TypedArray` to put the data in. A new array is created if not given.
+ * @param {callback<TypedArray>} [callback=undefined]
+ * @return {Promise<TypedArray>} A `TypedArray` of values.
  */
 
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::readBlock) {
@@ -592,22 +641,26 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::readBlock) {
  * Writes a block of pixels.
  *
  * @method writeBlock
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
- * @param {TypedArray} data The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values to write to the band.
+ * @param {TypedArray} data The `TypedArray` of values to write to the band.
  */
 
 /**
  * Writes a block of pixels.
- * {{{async}}}
+ * @async
  *
  * @method writeBlockAsync
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
- * @param {TypedArray} data The TypedArray (https://developer.mozilla.org/en-US/docs/Web/API/ArrayBufferView#Typed_array_subclasses) of values to write to the band.
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @param {TypedArray} data The `TypedArray` of values to write to the band.
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<void>}
  */
 GDAL_ASYNCABLE_DEFINE(RasterBandPixels::writeBlock) {
@@ -650,7 +703,9 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::writeBlock) {
  * Handles partial blocks at the edges of the raster and returns the true number of pixels.
  *
  * @method clampBlock
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
  * @return {xyz} A size object.
@@ -659,13 +714,15 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::writeBlock) {
 /**
  * Clamp the block size for a given block offset.
  * Handles partial blocks at the edges of the raster and returns the true number of pixels.
- * {{{async}}}
+ * @async
  *
  * @method clampBlockAsync
- * @throws Error
+ * @instance
+ * @memberof RasterBandPixels
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
- * @param {callback<xyz>} [callback=undefined] {{{cb}}}
+ * @param {callback<xyz>} [callback=undefined]
  * @return {Promise<xyz>} A size object.
  */
 
@@ -702,11 +759,14 @@ GDAL_ASYNCABLE_DEFINE(RasterBandPixels::clampBlock) {
 }
 
 /**
- * Parent raster band
+ * Returns the parent raster band.
  *
- * @readOnly
- * @attribute band
- * @type {gdal.RasterBand}
+ * @readonly
+ * @kind member
+ * @name band
+ * @instance
+ * @memberof RasterBandPixels
+ * @type {RasterBand}
  */
 NAN_GETTER(RasterBandPixels::bandGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("parent_").ToLocalChecked()).ToLocalChecked());

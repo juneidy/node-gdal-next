@@ -12,8 +12,10 @@
 				"./gdal/apps/ogr2ogr_lib.cpp",
 				"./gdal/apps/gdalbuildvrt_lib.cpp",
         "./gdal/apps/gdal_translate_lib.cpp",
+        "./gdal/apps/gdal_rasterize_lib.cpp",
         "./gdal/apps/gdalinfo_lib.cpp",
         "./gdal/apps/gdalwarp_lib.cpp",
+        "./gdal/apps/gdaldem_lib.cpp",
 				"./gdal/apps/commonutils.cpp",
 				"./gdal/frmts/gdalallregister.cpp",
 				"./gdal/frmts/derived/deriveddataset.cpp",
@@ -47,7 +49,6 @@
 				"./gdal/ogr/ogrgeometryfactory.cpp",
 				"./gdal/ogr/ogrgeometrycollection.cpp",
 				"./gdal/ogr/ogrgeometry.cpp",
-				"./gdal/ogr/ogrgeomediageometry.cpp",
 				"./gdal/ogr/ogrfielddefn.cpp",
 				"./gdal/ogr/ogrfeaturestyle.cpp",
 				"./gdal/ogr/ogrfeaturequery.cpp",
@@ -77,6 +78,7 @@
 				"./gdal/ogr/ogr_fromepsg.cpp",
 				"./gdal/ogr/ogr_expat.cpp",
 				"./gdal/ogr/ogr_api.cpp",
+				"./gdal/ogr/ogr_wkb.cpp",
 				"./gdal/ogr/ogr2gmlgeometry.cpp",
 				"./gdal/ogr/gml2ogrgeometry.cpp",
 				# "./gdal/ogr/generate_encoding_table.c",
@@ -92,6 +94,7 @@
 				"./gdal/ogr/ogrsf_frmts/generic/ogrmutexedlayer.cpp",
 				"./gdal/ogr/ogrsf_frmts/generic/ogrwarpedlayer.cpp",
 				"./gdal/ogr/ogrsf_frmts/generic/ogrlayerpool.cpp",
+				"./gdal/ogr/ogrsf_frmts/generic/ograrrowarrayhelper.cpp",
 				"./gdal/ogr/ogrsf_frmts/generic/ogrsfdriverregistrar.cpp",
 				"./gdal/ogr/ogrsf_frmts/generic/ogrmutexeddatasource.cpp",
 				"./gdal/ogr/ogrsf_frmts/generic/ogrlayer.cpp",
@@ -104,9 +107,9 @@
 
 				# "./gdal/port/vsipreload.cpp",
 				# "./gdal/port/cpl_vsil_simple.cpp",
-				"./gdal/port/xmlreformat.cpp",
 				"./gdal/port/cplstringlist.cpp",
 				"./gdal/port/cplstring.cpp",
+				"./gdal/port/cpl_float.cpp",
 				"./gdal/port/cplkeywordparser.cpp",
 				"./gdal/port/cplgetsymbol.cpp",
 				"./gdal/port/cpl_xml_validate.cpp",
@@ -209,6 +212,11 @@
 				'<@(gdal_format_defs)'
 			],
 			"conditions": [
+        ["runtime == 'electron'", {
+          "include_dirs": [
+    			  "./gdal/frmts/zlib"
+          ]
+        }],
 				["OS == 'win'", {
 					"sources": [
 						"./gdal/port/cpl_odbc.cpp"

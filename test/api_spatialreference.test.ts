@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chaiAsPromised from 'chai-as-promised'
 import * as chai from 'chai'
 const assert = chai.assert
@@ -10,7 +10,8 @@ import * as semver from 'semver'
 // http://spatialreference.org/ref/
 
 describe('gdal.SpatialReference', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   it('should be exposed', () => {
     assert.ok(gdal.SpatialReference)

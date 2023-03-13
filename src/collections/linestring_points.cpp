@@ -35,10 +35,9 @@ LineStringPoints::~LineStringPoints() {
 }
 
 /**
- * An encapsulation of a {{#crossLink
- * "gdal.LineString"}}LineString{{/crossLink}}'s points.
+ * An encapsulation of a {@link LineString}'s points.
  *
- * @class gdal.LineStringPoints
+ * @class LineStringPoints
  */
 NAN_METHOD(LineStringPoints::New) {
 
@@ -81,6 +80,8 @@ NAN_METHOD(LineStringPoints::toString) {
  * Returns the number of points that are part of the line string.
  *
  * @method count
+ * @instance
+ * @memberof LineStringPoints
  * @return {number}
  */
 NAN_METHOD(LineStringPoints::count) {
@@ -96,6 +97,8 @@ NAN_METHOD(LineStringPoints::count) {
  * Reverses the order of all the points.
  *
  * @method reverse
+ * @instance
+ * @memberof LineStringPoints
  */
 NAN_METHOD(LineStringPoints::reverse) {
 
@@ -112,6 +115,8 @@ NAN_METHOD(LineStringPoints::reverse) {
  * Adjusts the number of points that make up the line string.
  *
  * @method resize
+ * @instance
+ * @memberof LineStringPoints
  * @param {number} count
  */
 NAN_METHOD(LineStringPoints::resize) {
@@ -131,9 +136,11 @@ NAN_METHOD(LineStringPoints::resize) {
  * Returns the point at the specified index.
  *
  * @method get
+ * @instance
+ * @memberof LineStringPoints
  * @param {number} index 0-based index
- * @throws Error
- * @return {gdal.Point}
+ * @throws {Error}
+ * @return {Point}
  */
 NAN_METHOD(LineStringPoints::get) {
 
@@ -160,18 +167,22 @@ NAN_METHOD(LineStringPoints::get) {
  * Sets the point at the specified index.
  *
  * @example
- * ```
- * lineString.points.set(0, new gdal.Point(1, 2));```
+ *
+ * lineString.points.set(0, new gdal.Point(1, 2));
  *
  * @method set
- * @throws Error
+ * @instance
+ * @memberof LineStringPoints
+ * @throws {Error}
  * @param {number} index 0-based index
- * @param {gdal.Point|xyz} point
+ * @param {Point|xyz} point
  */
 
 /**
  * @method set
- * @throws Error
+ * @instance
+ * @memberof LineStringPoints
+ * @throws {Error}
  * @param {number} index 0-based index
  * @param {number} x
  * @param {number} y
@@ -257,22 +268,26 @@ NAN_METHOD(LineStringPoints::set) {
  * property.
  *
  * @example
- * ```
+ *
  * lineString.points.add(new gdal.Point(1, 2));
  * lineString.points.add([
  *     new gdal.Point(1, 2)
  *     new gdal.Point(3, 4)
- * ]);```
+ * ]);
  *
  * @method add
- * @throws Error
- * @param {gdal.Point|xyz|(gdal.Point|xyz)[]} points
+ * @instance
+ * @memberof LineStringPoints
+ * @throws {Error}
+ * @param {Point|xyz|(Point|xyz)[]} points
  */
 
 /**
  *
  * @method add
- * @throws Error
+ * @instance
+ * @memberof LineStringPoints
+ * @throws {Error}
  * @param {number} x
  * @param {number} y
  * @param {number} [z]

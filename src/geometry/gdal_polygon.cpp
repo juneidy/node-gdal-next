@@ -36,8 +36,8 @@ void Polygon::SetPrivate(Nan::ADDON_REGISTER_FUNCTION_ARGS_TYPE _this, v8::Local
  * Concrete class representing polygons.
  *
  * @constructor
- * @class gdal.Polygon
- * @extends gdal.Geometry
+ * @class Polygon
+ * @extends Geometry
  */
 
 NAN_METHOD(Polygon::toString) {
@@ -48,6 +48,8 @@ NAN_METHOD(Polygon::toString) {
  * Computes the area of the polygon.
  *
  * @method getArea
+ * @instance
+ * @memberof Polygon
  * @return {number}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(Polygon, getArea, Number, get_Area);
@@ -55,8 +57,11 @@ NODE_WRAPPED_METHOD_WITH_RESULT(Polygon, getArea, Number, get_Area);
 /**
  * The rings that make up the polygon geometry.
  *
- * @attribute rings
- * @type {gdal.PolygonRings}
+ * @kind member
+ * @name rings
+ * @instance
+ * @memberof Polygon
+ * @type {PolygonRings}
  */
 NAN_GETTER(Polygon::ringsGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("rings_").ToLocalChecked()).ToLocalChecked());

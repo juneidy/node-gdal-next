@@ -1,8 +1,11 @@
-
+#include <string>
 #include "gdal_coordinate_transformation.hpp"
 #include "gdal_common.hpp"
 #include "gdal_dataset.hpp"
 #include "gdal_spatial_reference.hpp"
+#ifdef BUNDLED_GDAL
+#include "proj.h"
+#endif
 
 namespace node_gdal {
 
@@ -43,11 +46,11 @@ CoordinateTransformation::~CoordinateTransformation() {
 /**
  * Object for transforming between coordinate systems.
  *
- * @throws Error
+ * @throws {Error}
  * @constructor
- * @class gdal.CoordinateTransformation
- * @param {gdal.SpatialReference} source
- * @param {gdal.SpatialReference|gdal.Dataset} target If a raster Dataset, the
+ * @class CoordinateTransformation
+ * @param {SpatialReference} source
+ * @param {SpatialReference|Dataset} target If a raster Dataset, the
  * conversion will represent a conversion to pixel coordinates.
  */
 NAN_METHOD(CoordinateTransformation::New) {
@@ -153,10 +156,12 @@ NAN_METHOD(CoordinateTransformation::toString) {
  * Transform point from source to destination space.
  *
  * @example
- * ```
+ *
  * pt = transform.transformPoint(0, 0, 0);
  *
  * @method transformPoint
+ * @instance
+ * @memberof CoordinateTransformation
  * @param {number} x
  * @param {number} y
  * @param {number} [z]
@@ -167,10 +172,12 @@ NAN_METHOD(CoordinateTransformation::toString) {
  * Transform point from source to destination space.
  *
  * @example
- * ```
- * pt = transform.transformPoint({x: 0, y: 0, z: 0});```
+ *
+ * pt = transform.transformPoint({x: 0, y: 0, z: 0});
  *
  * @method transformPoint
+ * @instance
+ * @memberof CoordinateTransformation
  * @param {xyz} point
  * @return {xyz} A regular object containing `x`, `y`, `z` properties.
  */
@@ -197,10 +204,20 @@ NAN_METHOD(CoordinateTransformation::transformPoint) {
     NODE_ARG_DOUBLE_OPT(2, "z", z);
   }
 
+#ifdef BUNDLED_GDAL
+  int proj_error_code = 0;
+  int r = transform->this_->TransformWithErrorCodes(1, &x, &y, &z, nullptr, &proj_error_code);
+  if (!r || proj_error_code != 0) {
+    Nan::ThrowError(
+      ("Error transforming point: " + std::string(proj_context_errno_string(nullptr, proj_error_code))).c_str());
+    return;
+  }
+#else
   if (!transform->this_->Transform(1, &x, &y, &z)) {
     Nan::ThrowError("Error transforming point");
     return;
   }
+#endif
 
   Local<Object> result = Nan::New<Object>();
   Nan::Set(result, Nan::New("x").ToLocalChecked(), Nan::New<Number>(x));

@@ -1,4 +1,4 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chaiAsPromised from 'chai-as-promised'
 import * as chai from 'chai'
 const assert = chai.assert
@@ -7,7 +7,8 @@ import * as path from 'path'
 import * as semver from 'semver'
 
 describe('gdal_utils', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('translate', () => {
     it('should be equivalent to gdal_translate', () => {
@@ -49,6 +50,11 @@ describe('gdal_utils', () => {
       const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
       assert.throws(() => {
         gdal.translate(tmpFile, ds)
+      })
+    })
+    it('should throw if the Dataset object is of wrong type', () => {
+      assert.throws(() => {
+        gdal.translate('a', {} as gdal.Dataset)
       })
     })
   })
@@ -333,6 +339,323 @@ describe('gdal_utils', () => {
     })
   })
 
+  describe('buildVRT', () => {
+    it('should be equivalent to gdalbuildvrt', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const t = path.resolve(__dirname, 'data', 'AROME_T2m_10.tiff')
+      const td = path.resolve(__dirname, 'data', 'AROME_D2m_10.tiff')
+
+      let out_ds = gdal.buildVRT(tmpFile, [ t, td ])
+
+      assert.equal(out_ds.bands.count(), 1)
+      out_ds.close()
+
+      out_ds = gdal.open(tmpFile)
+      assert.equal(out_ds.bands.count(), 1)
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+
+    it('should accept open Datasets', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const t = gdal.open(path.resolve(__dirname, 'data', 'AROME_T2m_10.tiff'))
+      const td = gdal.open(path.resolve(__dirname, 'data', 'AROME_D2m_10.tiff'))
+
+      let out_ds = gdal.buildVRT(tmpFile, [ t, td ])
+
+      assert.equal(out_ds.bands.count(), 1)
+      assert.deepEqual(out_ds.rasterSize, t.rasterSize)
+      assert.deepEqual(out_ds.geoTransform, t.geoTransform)
+      out_ds.close()
+
+      out_ds = gdal.open(tmpFile)
+      assert.equal(out_ds.bands.count(), 1)
+      assert.deepEqual(out_ds.rasterSize, t.rasterSize)
+      assert.deepEqual(out_ds.geoTransform, t.geoTransform)
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+
+    it('should accept gdalbuildvrt command-line options', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const t = path.resolve(__dirname, 'data', 'AROME_T2m_10.tiff')
+      const td = path.resolve(__dirname, 'data', 'AROME_D2m_10.tiff')
+
+      let out_ds = gdal.buildVRT(tmpFile, [ t, td ], [ '-separate' ])
+
+      assert.equal(out_ds.bands.count(), 2)
+      out_ds.close()
+
+      out_ds = gdal.open(tmpFile)
+      assert.equal(out_ds.bands.count(), 2)
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+
+    it('should call a progress callback', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const t = path.resolve(__dirname, 'data', 'AROME_T2m_10.tiff')
+      const td = path.resolve(__dirname, 'data', 'AROME_D2m_10.tiff')
+
+      let called = 0
+      const out_ds = gdal.buildVRT(tmpFile, [ t, td ], [], { progress_cb: () => {
+        called++
+      } })
+      assert.equal(out_ds.bands.count(), 1)
+      assert.isAbove(called, 0)
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+
+    it('should throw when mixing input types', () => {
+      assert.throws(() => {
+        gdal.buildVRT('file', [ 'a', {} as string ])
+      }, /must have the same type/)
+      assert.throws(() => {
+        gdal.buildVRT('file', [
+          gdal.open(path.resolve(__dirname, 'data', 'sample.tif')),
+          'a' as unknown as gdal.Dataset
+        ])
+      }, /Object must be a Dataset object/)
+    })
+  })
+
+  describe('buildVRTAsync', () => {
+    it('should be equivalent to gdalbuildvrt', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const t = path.resolve(__dirname, 'data', 'AROME_T2m_10.tiff')
+      const td = path.resolve(__dirname, 'data', 'AROME_D2m_10.tiff')
+
+      const out = gdal.buildVRTAsync(tmpFile, [ t, td ])
+
+      return assert.isFulfilled(out.then((out_ds) => {
+        assert.equal(out_ds.bands.count(), 1)
+        out_ds.close()
+
+        out_ds = gdal.open(tmpFile)
+        assert.equal(out_ds.bands.count(), 1)
+        out_ds.close()
+
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should reject on error', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      return assert.isRejected(gdal.buildVRTAsync(tmpFile, [ path.resolve(__dirname, 'data', 'nofile') ]),
+        /nofile/)
+    })
+  })
+
+  describe('rasterize', () => {
+    it('should be equivalent to gdal_rasterize', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tiff`
+      const dst = gdal.open(tmpFile, 'w', 'GTiff', 256, 256, 1, gdal.GDT_Float32)
+
+      let out_ds = gdal.rasterize(dst, gdal.open(path.resolve(__dirname, 'data', 'park.geo.json')))
+
+      assert.equal(out_ds.bands.count(), 1)
+      out_ds.close()
+
+      out_ds = gdal.open(tmpFile)
+      assert.equal(out_ds.bands.count(), 1)
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should accept open Dataset', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tiff`
+      let out_ds = gdal.rasterize(tmpFile, gdal.open(path.resolve(__dirname, 'data', 'park.geo.json')),
+        [ '-ts', '256', '256' ])
+
+      assert.equal(out_ds.bands.count(), 1)
+      assert.deepEqual(out_ds.rasterSize, { x: 256, y: 256 })
+      out_ds.close()
+
+      out_ds = gdal.open(tmpFile)
+      assert.equal(out_ds.bands.count(), 1)
+      assert.deepEqual(out_ds.rasterSize, { x: 256, y: 256 })
+      out_ds.close()
+
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should call a progress callback', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tiff`
+      let called = 0
+      const out_ds = gdal.rasterize(tmpFile,
+        gdal.open(path.resolve(__dirname, 'data', 'park.geo.json')),
+        [ '-ts', '256', '256' ],
+        { progress_cb: () => {
+          called++
+        } })
+
+      assert.isAbove(called, 0)
+
+      out_ds.close()
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should reject on error', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const src = gdal.open(path.resolve(__dirname, 'data', 'park.geo.json'))
+      src.close()
+      assert.throws(() => {
+        gdal.rasterize(tmpFile, src)
+      }, /Dataset object has already been destroyed/)
+    })
+  })
+
+  describe('rasterizeAsync', () => {
+    it('should be equivalent to gdal_rasterize', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tiff`
+      const dst = gdal.open(tmpFile, 'w', 'GTiff', 256, 256, 1, gdal.GDT_Float32)
+
+      const out = gdal.rasterizeAsync(dst, gdal.open(path.resolve(__dirname, 'data', 'park.geo.json')))
+
+      return assert.isFulfilled(out.then((out_ds) => {
+        assert.equal(out_ds.bands.count(), 1)
+        out_ds.close()
+
+        out_ds = gdal.open(tmpFile)
+        assert.equal(out_ds.bands.count(), 1)
+        out_ds.close()
+
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should reject on error', () => {
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.vrt`
+      const src = gdal.open(path.resolve(__dirname, 'data', 'park.geo.json'))
+      src.close()
+      return assert.isRejected(gdal.rasterizeAsync(tmpFile, src),
+        /Dataset object has already been destroyed/)
+    })
+  })
+
+  describe('dem', () => {
+    it('should be equivalent to gdaldem', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const out = gdal.dem(tmpFile, ds, 'hillshade', [ '-z', '2' ])
+      assert.instanceOf(out, gdal.Dataset)
+      assert.equal(out.bands.count(), 1)
+      out.close()
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should be callable w/o options', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const out = gdal.dem(tmpFile, ds, 'hillshade')
+      assert.instanceOf(out, gdal.Dataset)
+      assert.equal(out.bands.count(), 1)
+      out.close()
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should accept a color file', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const out = gdal.dem(tmpFile, ds, 'color-relief', [], path.resolve(__dirname, 'data', 'color-file.txt'))
+      assert.instanceOf(out, gdal.Dataset)
+      assert.equal(out.bands.count(), 3)
+      out.close()
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should support progress callbacks', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      let calls = 0
+      const out = gdal.dem(tmpFile, ds, 'hillshade', [], undefined, { progress_cb: () => calls++ })
+      assert.instanceOf(out, gdal.Dataset)
+      assert.isAbove(calls, 0)
+      out.close()
+      gdal.vsimem.release(tmpFile)
+    })
+    it('should throw on unrecognized options', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      ds.close()
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      assert.throws(() => {
+        gdal.dem(tmpFile, ds, 'hillshade', [ '-nosuchoption' ])
+      })
+    })
+    it('should throw if the Dataset is closed', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'multiband.tif'))
+      ds.close()
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      assert.throws(() => {
+        gdal.dem(tmpFile, ds, 'hillshade')
+      })
+    })
+    it('should throw if the Dataset object is of wrong type', () => {
+      assert.throws(() => {
+        gdal.dem('a', {} as gdal.Dataset, 'hillshade')
+      })
+    })
+  })
+
+  describe('demAsync', () => {
+    it('should be equivalent to gdaldem', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const q = gdal.demAsync(tmpFile, ds, 'hillshade', [ '-z', '2' ])
+      return assert.isFulfilled(q.then((out) => {
+        assert.instanceOf(out, gdal.Dataset)
+        assert.equal(out.bands.count(), 1)
+        out.close()
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should be callable w/o options', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const q = gdal.demAsync(tmpFile, ds, 'hillshade')
+      return assert.isFulfilled(q.then((out) => {
+        assert.instanceOf(out, gdal.Dataset)
+        assert.equal(out.bands.count(), 1)
+        out.close()
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should accept a color file', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      const q = gdal.demAsync(tmpFile, ds, 'color-relief', [], path.resolve(__dirname, 'data', 'color-file.txt'))
+      return assert.isFulfilled(q.then((out) => {
+        assert.instanceOf(out, gdal.Dataset)
+        assert.equal(out.bands.count(), 3)
+        out.close()
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should support progress callbacks', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      let calls = 0
+      const q = gdal.demAsync(tmpFile, ds, 'hillshade', [], undefined, { progress_cb: () => calls++ })
+      return assert.isFulfilled(q.then((out) => {
+        assert.instanceOf(out, gdal.Dataset)
+        assert.isAbove(calls, 0)
+        out.close()
+        gdal.vsimem.release(tmpFile)
+      }))
+    })
+    it('should throw on unrecognized options', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'sample.tif'))
+      ds.close()
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      assert.isRejected(gdal.demAsync(tmpFile, ds, 'hillshade', [ '-nosuchoption' ]))
+    })
+    it('should throw if the Dataset is closed', () => {
+      const ds = gdal.open(path.resolve(__dirname, 'data', 'multiband.tif'))
+      ds.close()
+      const tmpFile = `/vsimem/${String(Math.random()).substring(2)}.tif`
+      return assert.isRejected(gdal.demAsync(tmpFile, ds, 'hillshade'))
+    })
+    it('should throw if the Dataset object is of wrong type', () => assert.isRejected(gdal.demAsync('a', {} as gdal.Dataset, 'hillshade')))
+  })
+
   describe('calcAsync', () => {
     it('should perform the given calculation', async () => {
       const tempFile = `/vsimem/cloudbase_${String(Math.random()).substring(2)}.tiff`
@@ -348,10 +671,18 @@ describe('gdal_utils', () => {
       // Underground clouds are very rare
       (await cloudBase.bands.getAsync(1)).noDataValue = -1e38
 
+      let done = 0
       await gdal.calcAsync({
         t: await T2m.bands.getAsync(1),
         td: await D2m.bands.getAsync(1)
-      }, await cloudBase.bands.getAsync(1), espyFn, { convertNoData: true })
+      }, await cloudBase.bands.getAsync(1), espyFn, {
+        convertNoData: true,
+        progress_cb: (complete) => {
+          assert.isAbove(complete, done)
+          done = complete
+        }
+      })
+      assert.closeTo(done, 1, 0.1)
 
       const t2mData = await (await T2m.bands.getAsync(1)).pixels.readAsync(0, 0, size.x, size.y)
       const d2mData = await (await D2m.bands.getAsync(1)).pixels.readAsync(0, 0, size.x, size.y)
@@ -364,6 +695,71 @@ describe('gdal_utils', () => {
       cloudBase.close()
       gdal.vsimem.release(tempFile)
     })
+
+    it('should reject on exception in the supplied function', () => {
+      const tempFile = `/vsimem/invalid_calc_${String(Math.random()).substring(2)}.tiff`
+      const T2m = gdal.open(path.resolve(__dirname, 'data','AROME_T2m_10.tiff'))
+      const D2m = gdal.open(path.resolve(__dirname, 'data','AROME_D2m_10.tiff'))
+      const size = T2m.rasterSize
+      const throwFn = () => {
+        throw new Error('propagate this')
+      }
+      return assert.isRejected(
+        gdal.calcAsync({
+          A: T2m.bands.get(1),
+          B: D2m.bands.get(1)
+        },
+        gdal.open(tempFile, 'w', 'GTiff', size.x, size.y, 1, gdal.GDT_Float64).bands.get(1),
+        throwFn),
+        /propagate this/
+      )
+    })
+
+    it('should reject when the file is corrupted', function () {
+      const tempFile = `/vsimem/invalid_calc_${String(Math.random()).substring(2)}.tiff`
+      let T2m, D2m
+      try {
+        T2m = gdal.open(path.resolve(__dirname, 'data','AROME_T2m_10.tiff'))
+        D2m = gdal.open(path.resolve(__dirname, 'data','truncated.tiff'))
+      } catch (e) {
+        // Older GDAL versions cannot open the truncated file, so this is
+        // considered a successful test too
+        this.skip()
+      }
+      const size = T2m.rasterSize
+      const espyFn = (t: number, td: number) => 125 * (t - td)
+      return assert.isRejected(
+        gdal.calcAsync({
+          A: T2m.bands.get(1),
+          B: D2m.bands.get(1)
+        },
+        gdal.open(tempFile, 'w', 'GTiff', size.x, size.y, 1, gdal.GDT_Float64).bands.get(1),
+        espyFn),
+        /Cannot read/
+      )
+    })
+
+    it('should reject on progress exception', () => {
+      const tempFile = `/vsimem/invalid_calc_${String(Math.random()).substring(2)}.tiff`
+      const T2m = gdal.open(path.resolve(__dirname, 'data','AROME_T2m_10.tiff'))
+      const D2m = gdal.open(path.resolve(__dirname, 'data','AROME_D2m_10.tiff'))
+      const size = T2m.rasterSize
+      const espyFn = (t: number, td: number) => 125 * (t - td)
+      return assert.isRejected(
+        gdal.calcAsync({
+          A: T2m.bands.get(1),
+          B: D2m.bands.get(1)
+        },
+        gdal.open(tempFile, 'w', 'GTiff', size.x, size.y, 1, gdal.GDT_Float64).bands.get(1),
+        espyFn,
+        { progress_cb: () => {
+          throw new Error('progress error')
+        } }
+        ),
+        /progress error/
+      )
+    })
+
     it('should reject when raster sizes do not match', () => {
       const tempFile = `/vsimem/invalid_calc_${String(Math.random()).substring(2)}.tiff`
       const espyFn = (t: number, td: number) => 125 * (t - td)
@@ -376,6 +772,46 @@ describe('gdal_utils', () => {
         espyFn),
         /dimensions must match/
       )
+    })
+
+    it('should support ignoring NoData values', async () => {
+      const tempFile = `/vsimem/calc_nodata1_${String(Math.random()).substring(2)}.tiff`
+      const dem = await gdal.openAsync(path.resolve(__dirname, 'data', 'dem_azimuth50_pa.img'))
+      const size = await dem.rasterSizeAsync
+      const output = await gdal.openAsync(tempFile,
+        'w', 'GTiff', size.x, size.y, 1, gdal.GDT_Float64)
+
+      const fn = (dem: number) => (dem + 1);
+
+      (await output.bands.getAsync(1)).noDataValue = -100
+
+      await gdal.calcAsync({
+        dem: await dem.bands.getAsync(1)
+      }, await output.bands.getAsync(1), fn, { convertNoData: false })
+
+      assert.equal(output.bands.get(1).pixels.get(0, 0), 1)
+      output.close()
+      gdal.vsimem.release(tempFile)
+    })
+
+    it('should support converting NoData values', async () => {
+      const tempFile = `/vsimem/calc_nodata2_${String(Math.random()).substring(2)}.tiff`
+      const dem = await gdal.openAsync(path.resolve(__dirname, 'data', 'dem_azimuth50_pa.img'))
+      const size = await dem.rasterSizeAsync
+      const output = await gdal.openAsync(tempFile,
+        'w', 'GTiff', size.x, size.y, 1, gdal.GDT_Float64)
+
+      const fn = (dem: number) => (dem + 1);
+
+      (await output.bands.getAsync(1)).noDataValue = -100
+
+      await gdal.calcAsync({
+        dem: await dem.bands.getAsync(1)
+      }, await output.bands.getAsync(1), fn, { convertNoData: true, convertInput: true })
+
+      assert.equal(output.bands.get(1).pixels.get(0, 0), -100)
+      output.close()
+      gdal.vsimem.release(tempFile)
     })
   })
 })

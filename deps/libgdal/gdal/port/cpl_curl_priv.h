@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: cpl_curl_priv.h 818288a58e026803402172eaa5a53bcc31ebf7aa 2021-03-14 17:20:00 +0300 drons $
+ * $Id$
  *
  * Project:  CPL - Common Portability Library
  * Author:   Andrew Sudorgin (drons [a] list dot ru)
@@ -32,9 +32,9 @@
 #include <curl/curl.h>
 
 #ifndef CURL_AT_LEAST_VERSION
-#define CURL_VERSION_BITS(x,y,z) ((x)<<16|(y)<<8|z)
-#define CURL_AT_LEAST_VERSION(x,y,z) \
-  (LIBCURL_VERSION_NUM >= CURL_VERSION_BITS(x, y, z))
-#endif //#ifndef CURL_AT_LEAST_VERSION
+#define CURL_VERSION_BITS(x, y, z) ((x) << 16 | (y) << 8 | z)
+#define CURL_AT_LEAST_VERSION(x, y, z)                                         \
+    (LIBCURL_VERSION_NUM >= CURL_VERSION_BITS(x, y, z))
+#endif  // #ifndef CURL_AT_LEAST_VERSION
 
-#endif // CPL_CURL_PRIV_H_INCLUDED
+#endif  // CPL_CURL_PRIV_H_INCLUDED

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ili1reader.h 9ff6d46686d8c7c6b1b813179caebe45b0dea065 2018-04-02 16:59:04 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  Interlis 1 Reader
  * Purpose:  Private Declarations for Reader code.
@@ -36,20 +36,21 @@ class OGRILI1DataSource;
 
 class IILI1Reader
 {
-public:
-    virtual     ~IILI1Reader();
+  public:
+    virtual ~IILI1Reader();
 
-    virtual int  OpenFile( const char *pszFilename ) = 0;
+    virtual int OpenFile(const char *pszFilename) = 0;
 
-    virtual int  ReadModel( ImdReader *poImdReader, const char *pszModelFilename, OGRILI1DataSource *poDS ) = 0;
-    virtual int  ReadFeatures() = 0;
+    virtual int ReadModel(ImdReader *poImdReader, const char *pszModelFilename,
+                          OGRILI1DataSource *poDS) = 0;
+    virtual int ReadFeatures() = 0;
 
-    virtual OGRLayer *GetLayer( int ) = 0;
-    virtual OGRLayer *GetLayerByName( const char* ) = 0;
-    virtual int  GetLayerCount() = 0;
+    virtual OGRLayer *GetLayer(int) = 0;
+    virtual OGRLayer *GetLayerByName(const char *) = 0;
+    virtual int GetLayerCount() = 0;
 };
 
 IILI1Reader *CreateILI1Reader();
-void DestroyILI1Reader(IILI1Reader* reader);
+void DestroyILI1Reader(IILI1Reader *reader);
 
 #endif

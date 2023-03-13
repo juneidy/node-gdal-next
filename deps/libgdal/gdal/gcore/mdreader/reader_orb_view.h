@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: reader_orb_view.h e37e476c4cf8f4b0df8995e0d95d5d672fca1a9b 2018-05-05 16:54:18 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Read metadata from OrbView imagery.
@@ -45,19 +45,20 @@ Common metadata (from metadata filename):
     CloudCover:          productInfo.productCloudCoverPercentage
     AcquisitionDateTime: inputImageInfo.firstLineAcquisitionDateTime
 */
-class GDALMDReaderOrbView: public GDALMDReaderBase
+class GDALMDReaderOrbView : public GDALMDReaderBase
 {
-public:
+  public:
     GDALMDReaderOrbView(const char *pszPath, char **papszSiblingFiles);
     virtual ~GDALMDReaderOrbView();
     virtual bool HasRequiredFiles() const override;
-    virtual char** GetMetadataFiles() const override;
-protected:
+    virtual char **GetMetadataFiles() const override;
+
+  protected:
     virtual void LoadMetadata() override;
-protected:
+
+  protected:
     CPLString m_osIMDSourceFilename{};
     CPLString m_osRPBSourceFilename{};
 };
 
-#endif // READER_ORB_VIEW_H_INCLUDED
-
+#endif  // READER_ORB_VIEW_H_INCLUDED

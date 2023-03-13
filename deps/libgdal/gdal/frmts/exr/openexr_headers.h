@@ -35,6 +35,12 @@
 #pragma GCC system_header
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(push)
+// conversion from 'int' to 'unsigned short', possible loss of data
+#pragma warning(disable : 4244)
+#endif
+
 #include "ImathMatrix.h"
 #include "ImfChannelList.h"
 #include "ImfFloatAttribute.h"
@@ -49,5 +55,9 @@
 #include "ImfStringAttribute.h"
 #include "ImfTiledInputPart.h"
 #include "ImfTiledOutputPart.h"
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif

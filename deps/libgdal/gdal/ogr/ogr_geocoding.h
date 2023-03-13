@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogr_geocoding.h 355b41831cd2685c85d1aabe5b95665a2c6e99b7 2019-06-19 17:07:04 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Client of geocoding service.
@@ -44,21 +44,19 @@ CPL_C_START
 /** Opaque type for a geocoding session */
 typedef struct _OGRGeocodingSessionHS *OGRGeocodingSessionH;
 
-OGRGeocodingSessionH CPL_DLL OGRGeocodeCreateSession(char** papszOptions);
+OGRGeocodingSessionH CPL_DLL OGRGeocodeCreateSession(char **papszOptions);
 
 void CPL_DLL OGRGeocodeDestroySession(OGRGeocodingSessionH hSession);
 
 OGRLayerH CPL_DLL OGRGeocode(OGRGeocodingSessionH hSession,
-                             const char* pszQuery,
-                             char** papszStructuredQuery,
-                             char** papszOptions);
+                             const char *pszQuery, char **papszStructuredQuery,
+                             char **papszOptions);
 
-OGRLayerH CPL_DLL OGRGeocodeReverse(OGRGeocodingSessionH hSession,
-                                    double dfLon, double dfLat,
-                                    char** papszOptions);
+OGRLayerH CPL_DLL OGRGeocodeReverse(OGRGeocodingSessionH hSession, double dfLon,
+                                    double dfLat, char **papszOptions);
 
 void CPL_DLL OGRGeocodeFreeResult(OGRLayerH hLayer);
 
 CPL_C_END
 
-#endif // OGR_GEOCODING_H_INCLUDED
+#endif  // OGR_GEOCODING_H_INCLUDED

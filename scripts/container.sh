@@ -5,7 +5,7 @@ DIST=$2
 NODEJS=$3
 GDAL=$4
 if [ -z "${OP}" ]; then
-  echo "container.sh <release|dev|shell> [ubuntu:{18.04|20.04|21.10}|centos:8|fedora:{33|34}|debian:{buster|bullseye}|amazonlinux] [<Node.js version>] [shared]"
+  echo "container.sh <release|dev|shell> [ubuntu:{18.04|20.04|21.10}|centos:stream8|fedora:{33|34}|debian:{buster|bullseye}|amazonlinux:2022] [<Node.js version>] [shared]"
   exit 1
 fi
 if [ ! -d "test/platforms" ]; then
@@ -35,25 +35,38 @@ docker build \
         --build-arg VERSION=${VERSION} --build-arg NODEJS=${NODEJS} --build-arg GDAL=${GDAL} \
         -t ${CONTAINER} -f test/platforms/Dockerfile.${DIST} test/platforms
 
+COMMON_ARGS="--user `id -u`:`id -g` --env MOCHA_TEST_NETWORK -v `pwd`:/src:ro"
+
+echo "Checking for ccache"
+if which ccache && test "${OP}" != "publish"; then
+  CCACHE_DIR=`ccache --get-config=cache_dir`
+  if [ ! -w ${CCACHE_DIR} ]; then
+    echo "${CCACHE_DIR} not available, creating it"
+    mkdir -p ${CCACHE_DIR}
+  fi
+  echo "cache in ${CCACHE_DIR}"
+  COMMON_ARGS="${COMMON_ARGS} -v ${CCACHE_DIR}:/ccache --env CCACHE_DIR=/ccache"
+fi
+
 case ${OP} in
   release)
     echo -e "${SEP}Testing in ${CONTAINER}${SEP}"
-    docker run --env MOCHA_TEST_NETWORK -v `pwd`:/src ${CONTAINER} RELEASE || exit 1
+    docker run ${COMMON_ARGS} ${CONTAINER} RELEASE || exit 1
     ;;
   dev)
     echo -e "${SEP}Testing in ${CONTAINER}${SEP}"
-    docker run --env MOCHA_TEST_NETWORK -v `pwd`:/src ${CONTAINER} DEV || exit 1
+    docker run ${COMMON_ARGS} ${CONTAINER} DEV || exit 1
     ;;
   publish)
     echo -e "${SEP}Publishing in ${CONTAINER}${SEP}"
-    docker run --env MOCHA_TEST_NETWORK --env NODE_PRE_GYP_GITHUB_TOKEN -v `pwd`:/src ${CONTAINER} PUBLISH || exit 1
+    docker run ${COMMON_ARGS} --env NODE_PRE_GYP_GITHUB_TOKEN ${CONTAINER} PUBLISH || exit 1
     ;;
   shell)
     echo -e "${SEP}Testing in ${CONTAINER} and running a shell${SEP}"
-    docker run -it --env MOCHA_TEST_NETWORK -v `pwd`:/src ${CONTAINER} DEV /bin/bash
+    docker run -it ${COMMON_ARGS} ${CONTAINER} DEV /bin/bash
     ;;
   asan)
     echo -e "${SEP}Testing w/asan in ${CONTAINER}${SEP}"
-    docker run --env MOCHA_TEST_NETWORK -v `pwd`:/src ${CONTAINER} DEV || exit 1
+    docker run ${COMMON_ARGS} ${CONTAINER} DEV || exit 1
     ;;
 esac

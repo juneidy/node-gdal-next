@@ -60,7 +60,7 @@ void Attribute::dispose() {
 /**
  * A representation of a group with access methods.
  *
- * @class gdal.Attribute
+ * @class Attribute
  */
 NAN_METHOD(Attribute::New) {
   if (!info.IsConstructCall()) {
@@ -123,9 +123,12 @@ NAN_METHOD(Attribute::toString) {
 
 /**
  * Complex GDAL data types introduced in 3.1 are not yet supported
- * @readOnly
- * @attribute value
- * @throws Error
+ * @readonly
+ * @kind member
+ * @name value
+ * @instance
+ * @memberof Attribute
+ * @throws {Error}
  * @type {string|number}
  */
 NAN_GETTER(Attribute::valueGetter) {
@@ -144,8 +147,11 @@ NAN_GETTER(Attribute::valueGetter) {
 }
 
 /**
- * @readOnly
- * @attribute dataType
+ * @readonly
+ * @kind member
+ * @name dataType
+ * @instance
+ * @memberof Attribute
  * @type {string}
  */
 NAN_GETTER(Attribute::typeGetter) {

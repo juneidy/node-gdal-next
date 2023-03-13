@@ -1,4 +1,4 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chai from 'chai'
 const assert = chai.assert
 import * as chaiAsPromised from 'chai-as-promised'
@@ -9,7 +9,8 @@ chai.use(chaiAsPromised)
 const magosm = 'https://magosm.magellium.com/geoserver/ows?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=magosm%3Afrance_telecom_fibre_connection_point&CRS=CRS:84&BBOX=2,48,3,49'
 
 describe('Open', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('WMS w/Net', () => {
     let ds: gdal.Dataset

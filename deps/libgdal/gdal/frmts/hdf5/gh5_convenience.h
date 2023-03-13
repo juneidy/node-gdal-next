@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gh5_convenience.h de35b73572bc3545ba4b5c3c72a6e340249339cf 2018-08-27 15:05:29 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  Hierarchical Data Format Release 5 (HDF5)
  * Purpose:  HDF5 convenience functions.
@@ -37,25 +37,23 @@
 
 /* release 1.6.3 or 1.6.4 changed the type of count in some api functions */
 
-#if H5_VERS_MAJOR == 1 && H5_VERS_MINOR <= 6 && \
-       (H5_VERS_MINOR < 6 || H5_VERS_RELEASE < 3)
-#  define H5OFFSET_TYPE hssize_t
+#if H5_VERS_MAJOR == 1 && H5_VERS_MINOR <= 6 &&                                \
+    (H5_VERS_MINOR < 6 || H5_VERS_RELEASE < 3)
+#define H5OFFSET_TYPE hssize_t
 #else
-#  define H5OFFSET_TYPE  hsize_t
+#define H5OFFSET_TYPE hsize_t
 #endif
 
-bool GH5_FetchAttribute( hid_t loc_id, const char *pszName,
-                         CPLString &osResult, bool bReportError = false );
-bool GH5_FetchAttribute( hid_t loc_id, const char *pszName,
-                         double &dfResult, bool bReportError = false );
+bool GH5_FetchAttribute(hid_t loc_id, const char *pszName, CPLString &osResult,
+                        bool bReportError = false);
+bool GH5_FetchAttribute(hid_t loc_id, const char *pszName, double &dfResult,
+                        bool bReportError = false);
 GDALDataType GH5_GetDataType(hid_t TypeID);
-bool GH5_CreateAttribute (hid_t loc_id, const char *pszAttrName,
-                          hid_t TypeID, unsigned nMaxLen = 0);
-bool GH5_WriteAttribute (hid_t loc_id, const char *pszAttrName,
-                          const char* pszValue);
-bool GH5_WriteAttribute (hid_t loc_id, const char *pszAttrName,
-                          double dfValue);
-bool GH5_WriteAttribute (hid_t loc_id, const char *pszAttrName,
-                         unsigned nValue);
+bool GH5_CreateAttribute(hid_t loc_id, const char *pszAttrName, hid_t TypeID,
+                         unsigned nMaxLen = 0);
+bool GH5_WriteAttribute(hid_t loc_id, const char *pszAttrName,
+                        const char *pszValue);
+bool GH5_WriteAttribute(hid_t loc_id, const char *pszAttrName, double dfValue);
+bool GH5_WriteAttribute(hid_t loc_id, const char *pszAttrName, unsigned nValue);
 
 #endif /* ndef GH5_CONVENIENCE_H_INCLUDED_ */

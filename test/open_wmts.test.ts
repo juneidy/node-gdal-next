@@ -1,4 +1,4 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chai from 'chai'
 const assert = chai.assert
 import * as chaiAsPromised from 'chai-as-promised'
@@ -7,7 +7,8 @@ chai.use(chaiAsPromised)
 const shomTides = 'WMTS:https://services.data.shom.fr/INSPIRE/wmts?request=GetCapabilities&service=WMTS&version=1.0.0,layer=ZONES_MAREE_PYR_PNG_3857_WMTS'
 
 describe('Open', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('WMTS w/Net', () => {
     let ds: gdal.Dataset

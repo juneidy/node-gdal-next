@@ -31,61 +31,75 @@ int GroupGroups::__count(std::shared_ptr<GDALGroup> parent) {
 }
 
 /**
- * An encapsulation of a {{#crossLink "gdal.Group"}}Group{{/crossLink}}'s
+ * An encapsulation of a {@link Group}
  * descendant groups.
  *
  *
- * @class gdal.GroupGroups
+ * @class GroupGroups
  */
 
 /**
  * Returns the group with the given name/index.
  *
  * @method get
+ * @instance
+ * @memberof GroupGroups
  * @param {string|number} group
- * @return {gdal.Group}
+ * @return {Group}
  */
 
 /**
  * Returns the group with the given name/index.
- * {{{async}}}
+ * @async
  *
  * @method getAsync
+ * @instance
+ * @memberof GroupGroups
  *
  * @param {string|number} group
- * @param {callback<gdal.Group>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.Group>}
+ * @param {callback<Group>} [callback=undefined]
+ * @return {Promise<Group>}
  */
 
 /**
  * Returns the number of groups in the collection.
  *
  * @method count
+ * @instance
+ * @memberof GroupGroups
  * @return {number}
  */
 
 /**
  * Returns the number of groups in the collection.
- * {{{async}}}
+ * @async
  *
  * @method countAsync
+ * @instance
+ * @memberof GroupGroups
  *
- * @param {callback<number>} [callback=undefined] {{{cb}}}
+ * @param {callback<number>} [callback=undefined]
  * @return {Promise<number>}
  */
 
 /**
- * @readOnly
- * @attribute names
+ * @readonly
+ * @kind member
+ * @name names
+ * @instance
+ * @memberof GroupGroups
  * @type {string[]}
  */
 
 /**
- * Parent dataset
+ * Returns the parent dataset.
  *
- * @readOnly
- * @attribute ds
- * @type {gdal.Dataset}
+ * @readonly
+ * @kind member
+ * @name ds
+ * @instance
+ * @memberof GroupGroups
+ * @type {Dataset}
  */
 #endif
 } // namespace node_gdal

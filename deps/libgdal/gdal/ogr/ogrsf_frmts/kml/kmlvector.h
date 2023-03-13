@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: kmlvector.h f2eb8781ae5db589bee4dcdb93a5be1e36e986a1 2018-02-19 13:28:36Z Even Rouault $
+ * $Id$
  *
  * Project:  KML Driver
  * Purpose:  Specialization of the kml class, only for vectors in kml files.
@@ -38,19 +38,18 @@
 
 class KMLVector : public KML
 {
-public:
+  public:
     ~KMLVector();
 
     // Container - FeatureContainer - Feature
-    bool isFeature(std::string const& sIn) const override;
-    bool isFeatureContainer(std::string const& sIn) const override;
-    bool isContainer(std::string const& sIn) const override;
-    bool isLeaf(std::string const& sIn) const override;
-    bool isRest(std::string const& sIn) const override;
-    void findLayers(KMLNode* poNode, int bKeepEmptyContainers) override;
+    bool isFeature(std::string const &sIn) const override;
+    bool isFeatureContainer(std::string const &sIn) const override;
+    bool isContainer(std::string const &sIn) const override;
+    bool isLeaf(std::string const &sIn) const override;
+    bool isRest(std::string const &sIn) const override;
+    void findLayers(KMLNode *poNode, int bKeepEmptyContainers) override;
 };
 
-#endif // HAVE_EXPAT
+#endif  // HAVE_EXPAT
 
 #endif /* OGR_KMLVECTOR_H_INCLUDED */
-

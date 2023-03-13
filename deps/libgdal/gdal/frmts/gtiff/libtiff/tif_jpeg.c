@@ -112,6 +112,13 @@ typedef unsigned char boolean;
 #include "jerror.h"
 #include "jpeglib.h"
 
+/* Do optional compile-time version check */
+#if defined(EXPECTED_JPEG_LIB_VERSION) && !defined(LIBJPEG_12_PATH)
+#if EXPECTED_JPEG_LIB_VERSION != JPEG_LIB_VERSION
+#error EXPECTED_JPEG_LIB_VERSION != JPEG_LIB_VERSION
+#endif
+#endif
+
 /*
  * Do we want to do special processing suitable for when JSAMPLE is a
  * 16bit value?
@@ -947,7 +954,7 @@ static int JPEGSetupDecode(TIFF *tif) {
   JPEGState *sp = JState(tif);
   TIFFDirectory *td = &tif->tif_dir;
 
-#if defined(JPEG_DUAL_MODE_8_12) && !defined(TIFFInitJPEG)
+#if defined(JPEG_DUAL_MODE_8_12) && !defined(FROM_TIF_JPEG_12)
   if (tif->tif_dir.td_bitspersample == 12) {
     /* We pass a pointer to a copy of otherSettings, since */
     /* TIFFReInitJPEG_12() will clear sp */
@@ -1002,7 +1009,7 @@ int TIFFJPEGIsFullStripRequired(TIFF *tif) {
   int ret;
   JPEGState state;
 
-#if defined(JPEG_DUAL_MODE_8_12) && !defined(TIFFJPEGIsFullStripRequired)
+#if defined(JPEG_DUAL_MODE_8_12) && !defined(FROM_TIF_JPEG_12)
   if (tif->tif_dir.td_bitspersample == 12)
     return TIFFJPEGIsFullStripRequired_12(tif);
 #endif
@@ -1423,7 +1430,7 @@ static int JPEGDecode(TIFF *tif, uint8_t *buf, tmsize_t cc, uint16_t s) {
 
   TIFFErrorExt(tif->tif_clientdata, "TIFFReadScanline",
                "scanline oriented access is not supported for downsampled JPEG "
-               "compressed images, consider enabling TIFF_JPEGCOLORMODE as "
+               "compressed images, consider enabling TIFFTAG_JPEGCOLORMODE as "
                "JPEGCOLORMODE_RGB.");
   return 0;
 }
@@ -1675,7 +1682,7 @@ static int JPEGSetupEncode(TIFF *tif) {
   TIFFDirectory *td = &tif->tif_dir;
   static const char module[] = "JPEGSetupEncode";
 
-#if defined(JPEG_DUAL_MODE_8_12) && !defined(TIFFInitJPEG)
+#if defined(JPEG_DUAL_MODE_8_12) && !defined(FROM_TIF_JPEG_12)
   if (tif->tif_dir.td_bitspersample == 12) {
     /* We pass a pointer to a copy of otherSettings, since */
     /* TIFFReInitJPEG_12() will clear sp */

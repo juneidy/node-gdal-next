@@ -1,5 +1,5 @@
 /**********************************************************************
- * $Id: mitab_geometry.h 1b6ddf05f3ceee1fde40bbd56f44a2d462af0856 2017-02-09 14:29:57Z Kurt Schwehr $
+ * $Id$
  *
  * Name:     mitab_geometry.cpp
  * Project:  MapInfo TAB Read/Write library
@@ -37,8 +37,8 @@
 
 GBool OGRPointInRing(OGRPoint *poPoint, OGRLineString *poRing);
 GBool OGRIntersectPointPolygon(OGRPoint *poPoint, OGRPolygon *poPoly);
-int   OGRPolygonLabelPoint(OGRPolygon *poPoly, OGRPoint *poLabelPoint);
-int   OGRPolylineCenterPoint(OGRLineString *poLine, OGRPoint *poLabelPoint);
-int   OGRPolylineLabelPoint(OGRLineString *poLine, OGRPoint *poLabelPoint);
+int OGRPolygonLabelPoint(OGRPolygon *poPoly, OGRPoint *poLabelPoint);
+int OGRPolylineCenterPoint(OGRLineString *poLine, OGRPoint *poLabelPoint);
+int OGRPolylineLabelPoint(OGRLineString *poLine, OGRPoint *poLabelPoint);
 
 #endif /* ndef MITAB_GEOMETRY_H_INCLUDED */

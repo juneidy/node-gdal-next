@@ -3,12 +3,14 @@
  * Iterates through all #4 using a callback function.
  *
  * @example
- * ```
- * #3.forEach(function(array, i) { ... });```
  *
- * @for gdal.#1
- * @method forEach
- * @param {forEachCb<gdal.#2>} callback The callback to be called with each {{#crossLink "#2"}}#2{{/crossLink}}
+ * #3.forEach(function(array, i) { ... });
+ *
+ * @method
+ * @name forEach
+ * @instance
+ * @memberof #1
+ * @param {forEachCb<#2>} callback The callback to be called with each {@link #2}
  */
   gdal.#1.prototype.forEach = defaultForEach
 >
@@ -19,14 +21,16 @@
  * an array of the returned values.
  *
  * @example
- * ```
+ *
  * var result = #3.map(function(array, i) {
  *     return value;
- * });```
+ * });
  *
- * @for gdal.#1
- * @method map<U>
- * @param {mapCb<gdal.#2,U>} callback The callback to be called with each {{#crossLink "#2"}}#2{{/crossLink}}
+ * @method
+ * @name map<U>
+ * @instance
+ * @memberof #1
+ * @param {mapCb<#2,U>} callback The callback to be called with each {@link #2}
  * @return {U[]}
  */
   gdal.#1.prototype.map = defaultMap
@@ -36,9 +40,11 @@
 /**
  * Outputs all #4 as a regular javascript array.
  *
- * @for gdal.#1
- * @method toArray
- * @return {gdal.#2[]} List of {{#crossLink "#2"}}#2{{/crossLink}} instances.
+ * @method
+ * @name toArray
+ * @instance
+ * @memberof #1
+ * @return {#2[]} List of {@link #2|#2 instances}
  */
   gdal.#1.prototype.toArray = defaultToArray
 >
@@ -48,13 +54,15 @@
  * Iterates through all #4 using an iterator
  *
  * @example
- * ```
+ *
  * for (const array of #3) {
  * }
  *
- * @for gdal.#1
- * @type {gdal.#2}
- * @method Symbol.iterator
+ * @method
+ * @name @@iterator
+ * @instance
+ * @memberof #1
+ * @type {#2}
  */
   gdal.#1.prototype[Symbol.iterator] = defaultIterator
 >
@@ -64,13 +72,15 @@
  * Iterates through all #4 using an async iterator
  *
  * @example
- * ```
+ *
  * for await (const array of #3) {
  * }
  *
- * @for gdal.#1
- * @type {gdal.#2}
- * @method Symbol.asyncIterator
+ * @method
+ * @name @@asyncIterator
+ * @instance
+ * @memberof #1
+ * @type {#2}
  */
   if (Symbol.asyncIterator)
     gdal.#1.prototype[Symbol.asyncIterator] = defaultAsyncIterator
@@ -97,9 +107,11 @@ function defaultForEach(callback) {
 }
 
 /**
- * map() callback type
- * @element mapCb
- * @typedef mapCb<T,U> (obj: T, index: number) => U
+ * @callback mapCb
+ * @param {T} object
+ * @param {number} index
+ * @returns {U}
+ * @typedef {(obj: T, index: number) => U} mapCb<T,U>
  */
 function defaultMap(callback) {
   const result = []

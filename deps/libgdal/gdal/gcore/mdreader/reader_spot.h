@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: reader_spot.h 2c3d60220a2d6b41496ded571e231b96435bffa0 2016-11-25 14:09:24Z Even Rouault $
+ * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Read metadata from Spot imagery.
@@ -45,16 +45,16 @@ Common metadata (from metadata filename):
     AcquisitionDateTime: IMAGING_DATE, IMAGING_TIME
 */
 
-class GDALMDReaderSpot: public GDALMDReaderPleiades
+class GDALMDReaderSpot : public GDALMDReaderPleiades
 {
-public:
+  public:
     GDALMDReaderSpot(const char *pszPath, char **papszSiblingFiles);
     virtual ~GDALMDReaderSpot();
-protected:
+
+  protected:
     virtual void LoadMetadata() override;
-    virtual char** ReadXMLToList(CPLXMLNode* psNode, char** papszList,
-                                 const char* pszName = "") override;
+    virtual char **ReadXMLToList(CPLXMLNode *psNode, char **papszList,
+                                 const char *pszName = "") override;
 };
 
-#endif // READER_SPOT_H_INCLUDED
-
+#endif  // READER_SPOT_H_INCLUDED

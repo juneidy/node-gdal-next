@@ -29,8 +29,6 @@
 #include "ogr_attrind.h"
 #include "cpl_conv.h"
 
-CPL_CVSID("$Id: ogr_attrind.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12-11 19:08:47Z Even Rouault $")
-
 //! @cond Doxygen_Suppress
 
 /************************************************************************/
@@ -43,10 +41,9 @@ CPL_CVSID("$Id: ogr_attrind.cpp 7e07230bbff24eb333608de4dbd460b7312839d0 2017-12
 /*                         OGRLayerAttrIndex()                          */
 /************************************************************************/
 
-OGRLayerAttrIndex::OGRLayerAttrIndex() :
-    poLayer(nullptr),
-    pszIndexPath(nullptr)
-{}
+OGRLayerAttrIndex::OGRLayerAttrIndex() : poLayer(nullptr), pszIndexPath(nullptr)
+{
+}
 
 /************************************************************************/
 /*                         ~OGRLayerAttrIndex()                         */
@@ -55,7 +52,7 @@ OGRLayerAttrIndex::OGRLayerAttrIndex() :
 OGRLayerAttrIndex::~OGRLayerAttrIndex()
 
 {
-    CPLFree( pszIndexPath );
+    CPLFree(pszIndexPath);
     pszIndexPath = nullptr;
 }
 
@@ -69,12 +66,16 @@ OGRLayerAttrIndex::~OGRLayerAttrIndex()
 /*                            OGRAttrIndex()                            */
 /************************************************************************/
 
-OGRAttrIndex::OGRAttrIndex() {}
+OGRAttrIndex::OGRAttrIndex()
+{
+}
 
 /************************************************************************/
 /*                           ~OGRAttrIndex()                            */
 /************************************************************************/
 
-OGRAttrIndex::~OGRAttrIndex() {}
+OGRAttrIndex::~OGRAttrIndex()
+{
+}
 
 //! @endcond

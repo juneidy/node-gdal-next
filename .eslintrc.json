@@ -195,10 +195,19 @@
         "lib/readable.js",
         "lib/writable.js",
         "lib/multiplexer.js",
-        "bench/*.js"
+        "bench/*.js",
+        "examples/serve-async.js"
       ],
       "parserOptions": {
         "ecmaVersion": 2018
+      }
+    },
+    {
+      "files": [
+        "examples/electron/*"
+      ],
+      "env": {
+        "browser": true
       }
     }
   ]

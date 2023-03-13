@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gdaljp2metadatagenerator.h a340ddc9f053a5fd00cde76090d5664875f134f0 2016-10-24 05:49:15Z Kurt Schwehr $
+ * $Id$
  *
  * Project:  GDAL
  * Purpose:  GDALJP2Metadata: metadata generator
@@ -33,7 +33,7 @@
 #include "cpl_string.h"
 #include "cpl_minixml.h"
 
-CPLXMLNode* GDALGMLJP2GenerateMetadata(const CPLString& osTemplateFile,
-                                       const CPLString& osSourceFile);
+CPLXMLNode *GDALGMLJP2GenerateMetadata(const CPLString &osTemplateFile,
+                                       const CPLString &osSourceFile);
 
 #endif /* GDAL_JP2METADATA_GENERATOR_H_INCLUDED */

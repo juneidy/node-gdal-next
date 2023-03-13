@@ -1,5 +1,5 @@
 /*
- * $Id: keamaskband.h 980fee897f6fd8cf10fa0f62936cca216cd76cf7 2020-04-03 17:54:46 +1000 Sam Gillingham $
+ * $Id$
  *  keamaskband.h
  *
  *  Created by Pete Bunting on 01/08/2012.
@@ -36,19 +36,25 @@
 #include "libkea_headers.h"
 #include "keadataset.h"
 
-class KEAMaskBand final: public GDALRasterBand
+class KEAMaskBand final : public GDALRasterBand
 {
     int m_nSrcBand;
-    kealib::KEAImageIO  *m_pImageIO; // our image access pointer - refcounted
-    LockedRefCount      *m_pRefCount; // reference count of m_pImageIO
-public:
-    KEAMaskBand(GDALRasterBand *pParent, kealib::KEAImageIO *pImageIO, LockedRefCount *pRefCount );
+    kealib::KEAImageIO *m_pImageIO;  // our image access pointer - refcounted
+    LockedRefCount *m_pRefCount;     // reference count of m_pImageIO
+  public:
+    KEAMaskBand(GDALRasterBand *pParent, kealib::KEAImageIO *pImageIO,
+                LockedRefCount *pRefCount);
     ~KEAMaskBand();
 
-protected:
+    virtual bool IsMaskBand() const override
+    {
+        return true;
+    }
+
+  protected:
     // we just override these functions from GDALRasterBand
-    virtual CPLErr IReadBlock( int, int, void * ) override;
-    virtual CPLErr IWriteBlock( int, int, void * ) override;
+    virtual CPLErr IReadBlock(int, int, void *) override;
+    virtual CPLErr IWriteBlock(int, int, void *) override;
 };
 
-#endif //KEAMASKBAND_H
+#endif  // KEAMASKBAND_H

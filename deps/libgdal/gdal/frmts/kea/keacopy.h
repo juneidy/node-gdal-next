@@ -1,5 +1,5 @@
 /*
- * $Id: keacopy.h bde879dd6c2dd67ecf317ad588846089f0905cb9 2016-03-15 00:39:53Z Kurt Schwehr $
+ * $Id$
  *  keacopy.h
  *
  *  Created by Pete Bunting on 01/08/2012.
@@ -35,6 +35,7 @@
 
 #include "libkea_headers.h"
 
-bool KEACopyFile( GDALDataset *pDataset, kealib::KEAImageIO *pImageIO, GDALProgressFunc pfnProgress, void *pProgressData );
+bool KEACopyFile(GDALDataset *pDataset, kealib::KEAImageIO *pImageIO,
+                 GDALProgressFunc pfnProgress, void *pProgressData);
 
 #endif

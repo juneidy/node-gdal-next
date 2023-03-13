@@ -1,9 +1,10 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import { assert } from 'chai'
 import * as semver from 'semver'
 
 describe('gdal', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('suggestedWarpOutput()', () => {
     let src: gdal.Dataset

@@ -109,6 +109,7 @@
 			"product_extension": "node",
 			"sources": [ "<@(sources_node_gdal)" ],
 			"include_dirs": [
+        "include",
 				"<!(node -e \"require('nan')\")"
 			],
 			"defines": [
@@ -130,7 +131,8 @@
 						"BUNDLED_GDAL=1"
 					],
 					"dependencies": [
-						"deps/libgdal/libgdal.gyp:libgdal"
+						"deps/libgdal/libgdal.gyp:libgdal",
+						"deps/libproj/libproj.gyp:libproj"
 					]
 				}, {
 					"conditions": [
@@ -143,7 +145,6 @@
 								"deps/libgdal/gdal/port",
 								"deps/libgdal/gdal/bridge",
 								"deps/libgdal/gdal/frmts",
-								"deps/libgdal/gdal/frmts/zlib",
 								"deps/libgdal/gdal/ogr",
 								"deps/libgdal/gdal/ogr/ogrsf_frmts",
 								"deps/libgdal/gdal/ogr/ogrsf_frmts/mem"

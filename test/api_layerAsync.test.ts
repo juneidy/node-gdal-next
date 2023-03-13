@@ -1,13 +1,14 @@
 import * as chaiAsPromised from 'chai-as-promised'
 import * as chai from 'chai'
 const assert = chai.assert
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as fileUtils from './utils/file'
 
 chai.use(chaiAsPromised)
 
 describe('gdal.LayerAsync', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('instance', () => {
     const cleanupWrite = (ds: gdal.Dataset, file: string) => {

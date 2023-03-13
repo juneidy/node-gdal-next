@@ -1,7 +1,7 @@
 import { assert } from 'chai'
 import * as semver from 'semver'
 import * as path from 'path'
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 
 // create = function -> class cannot be directly instantiated
 // create = array -> these are the arguments for the new
@@ -58,7 +58,8 @@ const create31 = {
 }
 
 describe('Class semantics', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   const klasses = create
   if (semver.gte(gdal.version, '3.1.0')) {

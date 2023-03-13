@@ -1,5 +1,5 @@
 /**********************************************************************
- * $Id: cpl_error_internal.h eec9443f62fa2493c49130b8d21527739153ca6e 2019-08-14 13:08:30 +0200 Even Rouault $
+ * $Id$
  *
  * Name:     cpl_error_internal.h
  * Project:  CPL - Common Portability Library
@@ -49,14 +49,20 @@ class CPL_DLL CPLErrorHandlerAccumulatorStruct
     CPLErrorNum no;
     CPLString msg{};
 
-    CPLErrorHandlerAccumulatorStruct() : type(CE_None), no(CPLE_None) {}
-    CPLErrorHandlerAccumulatorStruct(CPLErr eErrIn, CPLErrorNum noIn, const char* msgIn) :
-        type(eErrIn), no(noIn), msg(msgIn) {}
+    CPLErrorHandlerAccumulatorStruct() : type(CE_None), no(CPLE_None)
+    {
+    }
+    CPLErrorHandlerAccumulatorStruct(CPLErr eErrIn, CPLErrorNum noIn,
+                                     const char *msgIn)
+        : type(eErrIn), no(noIn), msg(msgIn)
+    {
+    }
 };
 
-void CPL_DLL CPLInstallErrorHandlerAccumulator(std::vector<CPLErrorHandlerAccumulatorStruct>& aoErrors);
+void CPL_DLL CPLInstallErrorHandlerAccumulator(
+    std::vector<CPLErrorHandlerAccumulatorStruct> &aoErrors);
 void CPL_DLL CPLUninstallErrorHandlerAccumulator();
 
 #endif
 
-#endif // CPL_ERROR_INTERNAL_H_INCLUDED
+#endif  // CPL_ERROR_INTERNAL_H_INCLUDED

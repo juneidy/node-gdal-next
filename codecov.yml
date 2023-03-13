@@ -9,6 +9,11 @@ coverage:
       default:
         target: auto
         base: auto
-        threshold: 1%
+        threshold: 2%
         paths:
           - "src"
+          - "lib"
+    patch:
+      default:
+        target: auto
+        threshold: 2%

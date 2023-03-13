@@ -5,9 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.4.1] WIP
+## [3.6.2] WIP
 
 ### Added
+ - GDAL 3.6.2
+ - `gdal.dem{Async}`, library version of `gdaldem`
+
+### Changed
+ - Fix [#56](https://github.com/mmomtchev/node-gdal-async/issues/56), propagate input errors in `calcAsync` and `RasterMuxStream`
+
+## [3.6.1] 2022-12-21
+
+### Added
+ - GDAL 3.6.1
+ - Fix [#53](https://github.com/mmomtchev/node-gdal-async/issues/53), rebuilding from source fails
+
+## [3.6.0] 201-12-21
+### Added
+ - GDAL 3.6.0
+ - Node.js 19.x
+ - Drop support for glibc < 2.28 distributions (not supported by recent Node.js versions)
+ - Drop support for all Amazon Linux 2, replacing it with Amazon Linux 2022
+ - Drop support for Ubuntu 16.04 and 18.04
+ - Ubuntu 22.04
+
+## [3.5.3] 2022-11-02
+### Added
+ - GDAL 3.5.3
+
+### Changed
+ - Fix #43, wrong TypeScript type for `data_type` in `gdal.Driver.create`
+
+## [3.5.2] 2022-09-23
+
+### Added
+ - GDAL 3.5.2
+
+### Changed
+ - Fix #38, integrate the fix for GDAL[#5028] (https://github.com/OSGeo/gdal/issues/5028)
+
+## [3.5.1] 2022-07-09
+
+### Added
+ - GDAL 3.5.1
+ - Add Electron support
+
+# [3.5.0] 2022-05-18
+
+### Added
+ - GDAL 3.5.0
+ - PROJ 9.0.0
+ - NetCDF 4.8.1
+ - GEOS 3.10.2
+ - Node 18 support
+ - API documentation now uses `documentation.js` with `documentation-polyglot`
+ - Add `gdal.addPixelFunc` for registering a native code pixel function
+ - Add `gdal.toPixelFunc` and `gdal.createPixelFunc` allowing to use a JavaScript function as a pixel function
+ - `gdal.calcAsync` can now convert input data to the output type before applying the user function
+ - `gdal.calcAsync` can now call a progress callback
+ - Add `gdal.buildVRT` and `gdal.rasterize`, library versions of the GDAL CLI tools
+ - Add `gdal.wrapVRT` allowing wrapping a regular Dataset inside a VRT Dataset
+ - Support using driver-specific open options in `gdal.Driver.open`
+
+### Changed
+ - All `gdal.Driver` methods now throw an exception if the parsing of the driver-specific options fails
+
+## [3.4.3] 2021-05-04
+
+### Added
+ - Bundled GDAL 3.4.3
+
+## [3.4.2] 2021-03-15
+
+### Added
+ - Bundled GDAL 3.4.2
+
+### Changed
+ - Fix #27, rebuilding by `npm --build-from-source` fails
+ - Fix #25, always close open Datasets when the process exits
+ - `gdal.calcAsync` now correctly returns a rejected Promise instead of triggering an uncatchable error when handling an exception in the user-supplied transformation function
+ - Fix #26, some methods do not check the passed object class
+
+## [3.4.1] 2021-01-05
+
+### Added
+ - Bundled GDAL 3.4.1
  - Bundled OpenJPEG and enabled the JPEG2000 driver
 
 ### Changed
@@ -17,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Remove the documentation reference to the non-existing `copy` argument of `vsimem.set`, use `vsimem.copy` instead
  - Fix a memory leak when throwing an exception in `gdal.Geometry.exportToWKB{Async}`
 
-## [3.4.0] 2021-11-08
+# [3.4.0] 2021-11-08
 
 ### Added
  - Bundled GDAL 3.4.0
@@ -136,7 +218,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Fix several potential race conditions in `gdal.RasterBand`
  - Correctly throw an `Error` with an empty message if a GDAL method fails without setting the error message instead of the last previously encountered error
 
-## [3.3.0] 2021-06-15
+# [3.3.0] 2021-06-15
 
 ### Added
   - GDAL 3.3.0
@@ -182,7 +264,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
  - Fix a number of memory leaks (exception throwing paths in all `gdal.SpatialReference.from*`, `gdal.DatasetBands.create`)
 
-## [3.2.0] 2021-05-21
+# [3.2.0] 2021-05-21
 
 ### Added
  - GDAL 3.2.3

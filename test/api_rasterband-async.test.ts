@@ -1,12 +1,14 @@
 import * as chaiAsPromised from 'chai-as-promised'
 import * as chai from 'chai'
 const assert = chai.assert
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
+import * as semver from 'semver'
 
 chai.use(chaiAsPromised)
 
 describe('gdal.RasterBandAsync', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   it('should not be instantiable', () => {
     assert.throws(() => {
@@ -688,6 +690,9 @@ describe('gdal.RasterBandAsync', () => {
         it('should return number', () => {
           const ds = gdal.open('temp', 'w', 'MEM', 256, 256, 1, gdal.GDT_Byte)
           const band = ds.bands.get(1)
+          if (semver.gt(gdal.version, '3.4.999')) {
+            return assert.eventually.isNull(band.offsetAsync)
+          }
           return assert.eventually.equal(band.offsetAsync, 0)
         })
         it('should throw error if dataset already closed', () => {
@@ -703,6 +708,9 @@ describe('gdal.RasterBandAsync', () => {
         it('should return number', () => {
           const ds = gdal.open('temp', 'w', 'MEM', 256, 256, 1, gdal.GDT_Byte)
           const band = ds.bands.get(1)
+          if (semver.gt(gdal.version, '3.4.999')) {
+            return assert.eventually.isNull(band.scaleAsync)
+          }
           return assert.eventually.equal(band.scaleAsync, 1)
         })
         it('should throw error if dataset already closed', () => {
@@ -804,7 +812,8 @@ describe('gdal.RasterBandAsync', () => {
           const band = ds.bands.get(1)
           return assert.isFulfilled(Promise.all([
             assert.eventually.instanceOf(band.colorTableAsync, gdal.ColorTable),
-            assert.deepEqual(band.colorTable?.get(1), { c1: 7, c2: 8, c3: 45, c4: 255 })
+            assert.eventually.deepEqual(band.colorTableAsync.then((c) => c?.get(1)),
+              { c1: 7, c2: 8, c3: 45, c4: 255 })
           ]))
         })
         it('should reject if dataset already closed', () => {

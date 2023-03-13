@@ -1,11 +1,12 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chai from 'chai'
 const assert = chai.assert
 import * as chaiAsPromised from 'chai-as-promised'
 chai.use(chaiAsPromised)
 
 describe('Open', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('vsicurl w/Net', () => {
     let ds: gdal.Dataset

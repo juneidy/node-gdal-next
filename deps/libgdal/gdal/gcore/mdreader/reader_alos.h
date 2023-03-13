@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: reader_alos.h e37e476c4cf8f4b0df8995e0d95d5d672fca1a9b 2018-05-05 16:54:18 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Read metadata from Alos imagery.
@@ -48,22 +48,24 @@ Common metadata (from metadata filename):
     CloudCover:          Img_CloudQuantityOfAllImage
 */
 
-class GDALMDReaderALOS: public GDALMDReaderBase
+class GDALMDReaderALOS : public GDALMDReaderBase
 {
-public:
+  public:
     GDALMDReaderALOS(const char *pszPath, char **papszSiblingFiles);
     virtual ~GDALMDReaderALOS();
     virtual bool HasRequiredFiles() const override;
-    virtual char** GetMetadataFiles() const override;
-protected:
+    virtual char **GetMetadataFiles() const override;
+
+  protected:
     virtual void LoadMetadata() override;
-    char** LoadRPCTxtFile();
-    virtual time_t GetAcquisitionTimeFromString(const char* pszDateTime) override;
-protected:
+    char **LoadRPCTxtFile();
+    virtual GIntBig
+    GetAcquisitionTimeFromString(const char *pszDateTime) override;
+
+  protected:
     CPLString m_osIMDSourceFilename{};
     CPLString m_osHDRSourceFilename{};
     CPLString m_osRPBSourceFilename{};
 };
 
-#endif // READER_ALOS_H_INCLUDED
-
+#endif  // READER_ALOS_H_INCLUDED

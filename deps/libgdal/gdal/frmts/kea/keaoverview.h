@@ -1,5 +1,5 @@
 /*
- * $Id: keaoverview.h 980fee897f6fd8cf10fa0f62936cca216cd76cf7 2020-04-03 17:54:46 +1000 Sam Gillingham $
+ * $Id$
  *  keaoverview.h
  *
  *  Created by Pete Bunting on 01/08/2012.
@@ -36,13 +36,13 @@
 
 // overview class. Derives from our band class
 // and just overrides the read/write block functions
-class KEAOverview final: public KEARasterBand
+class KEAOverview final : public KEARasterBand
 {
-    int         m_nOverviewIndex; // the index of this overview
-public:
+    int m_nOverviewIndex;  // the index of this overview
+  public:
     KEAOverview(KEADataset *pDataset, int nSrcBand, GDALAccess eAccess,
                 kealib::KEAImageIO *pImageIO, LockedRefCount *pRefCount,
-                int nOverviewIndex, uint64_t nXSize, uint64_t nYSize );
+                int nOverviewIndex, uint64_t nXSize, uint64_t nYSize);
     ~KEAOverview();
 
     // virtual methods for RATs - not implemented for overviews
@@ -53,10 +53,10 @@ public:
     // note that Color Table stuff implemented in base class
     // so could be some duplication if overview asked for color table
 
-protected:
+  protected:
     // we just override these functions from KEARasterBand
-    virtual CPLErr IReadBlock( int, int, void * ) override;
-    virtual CPLErr IWriteBlock( int, int, void * ) override;
+    virtual CPLErr IReadBlock(int, int, void *) override;
+    virtual CPLErr IWriteBlock(int, int, void *) override;
 };
 
-#endif //KEAOVERVIEW_H
+#endif  // KEAOVERVIEW_H

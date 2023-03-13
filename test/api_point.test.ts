@@ -1,8 +1,9 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import { assert } from 'chai'
 
 describe('gdal.Point', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   let point2d: gdal.Point
   let point3d: gdal.Point

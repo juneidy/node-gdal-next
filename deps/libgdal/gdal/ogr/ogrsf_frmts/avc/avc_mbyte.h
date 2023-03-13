@@ -1,5 +1,5 @@
 /**********************************************************************
- * $Id: avc_mbyte.h 3d704e3dd0aad44ff466e20c7f200a9593994e88 2016-10-24 12:09:43Z Kurt Schwehr $
+ * $Id$
  *
  * Name:     avc.h
  * Project:  Arc/Info Vector coverage (AVC) BIN<->E00 conversion library
@@ -53,26 +53,26 @@ CPL_C_START
 /*---------------------------------------------------------------------
  * Supported multibyte codepage numbers
  *--------------------------------------------------------------------*/
-#define AVC_DBCS_JAPANESE       932
+#define AVC_DBCS_JAPANESE 932
 
-#define AVC_CODE_UNKNOWN        0
+#define AVC_CODE_UNKNOWN 0
 
 /*---------------------------------------------------------------------
  * Definitions for Japanese encodings  (AVC_DBCS_JAPANESE)
  *--------------------------------------------------------------------*/
-#define AVC_CODE_JAP_UNKNOWN    0
-#define AVC_CODE_JAP_SHIFTJIS   1
-#define AVC_CODE_JAP_EUC        2
+#define AVC_CODE_JAP_UNKNOWN 0
+#define AVC_CODE_JAP_SHIFTJIS 1
+#define AVC_CODE_JAP_EUC 2
 
 /*---------------------------------------------------------------------
  * We use the following structure to keep track of DBCS info.
  *--------------------------------------------------------------------*/
 typedef struct AVCDBCSInfo_t
 {
-    int         nDBCSCodePage;
-    int         nDBCSEncoding;
+    int nDBCSCodePage;
+    int nDBCSEncoding;
     unsigned char *pszDBCSBuf;
-    int         nDBCSBufSize;
+    int nDBCSBufSize;
 } AVCDBCSInfo;
 
 /*---------------------------------------------------------------------
@@ -84,11 +84,9 @@ void AVCFreeDBCSInfo(AVCDBCSInfo *psInfo);
 int AVCGetDBCSCodePage(void);
 GBool AVCE00DetectEncoding(AVCDBCSInfo *psDBCSInfo, const GByte *pszLine);
 const GByte *AVCE00Convert2ArcDBCS(AVCDBCSInfo *psDBCSInfo,
-                                   const GByte *pszLine,
-                                   int nMaxOutputLen);
+                                   const GByte *pszLine, int nMaxOutputLen);
 const GByte *AVCE00ConvertFromArcDBCS(AVCDBCSInfo *psDBCSInfo,
-                                      const GByte *pszLine,
-                                      int nMaxOutputLen);
+                                      const GByte *pszLine, int nMaxOutputLen);
 
 CPL_C_END
 

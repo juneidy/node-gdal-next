@@ -1,9 +1,10 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as path from 'path'
 import { assert } from 'chai'
 
 describe('Open', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('JPG', () => {
     let filename, ds: gdal.Dataset

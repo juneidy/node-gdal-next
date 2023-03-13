@@ -3320,6 +3320,9 @@ static bool createPROJ4WebMercator(const Conversion *conv,
     formatter->addParam("k", 1.0);
     formatter->addParam("units", units);
     formatter->addParam("nadgrids", "@null");
+    if (targetProjCRS && targetProjCRS->hasOver()) {
+        formatter->addParam("over");
+    }
     formatter->addParam("wktext");
     formatter->addParam("no_defs");
     return true;
@@ -3839,6 +3842,28 @@ void Conversion::_exportToPROJString(
         formatter->addParam("x_0", falseEasting);
         formatter->addParam("y_0", falseNorthing);
         bConversionDone = true;
+    } else if (ci_equal(methodName,
+                        PROJ_WKT2_NAME_METHOD_PEIRCE_QUINCUNCIAL_SQUARE) ||
+               ci_equal(methodName,
+                        PROJ_WKT2_NAME_METHOD_PEIRCE_QUINCUNCIAL_DIAMOND)) {
+        const auto &scaleFactor = parameterValueMeasure(
+            EPSG_CODE_PARAMETER_SCALE_FACTOR_AT_NATURAL_ORIGIN);
+        if (scaleFactor.unit().type() != common::UnitOfMeasure::Type::UNKNOWN &&
+            std::fabs(scaleFactor.getSIValue() - 1.0) > 1e-10) {
+            throw io::FormattingException(
+                "Only scale factor = 1 handled for Peirce Quincuncial");
+        }
+        const auto &latitudeOfOriginDeg = parameterValueMeasure(
+            EPSG_CODE_PARAMETER_LATITUDE_OF_NATURAL_ORIGIN);
+        if (latitudeOfOriginDeg.unit().type() !=
+                common::UnitOfMeasure::Type::UNKNOWN &&
+            std::fabs(parameterValueNumeric(
+                          EPSG_CODE_PARAMETER_LATITUDE_OF_NATURAL_ORIGIN,
+                          common::UnitOfMeasure::DEGREE) -
+                      90.0) > 1e-10) {
+            throw io::FormattingException("Only latitude of natural origin = "
+                                          "90 handled for Peirce Quincuncial");
+        }
     } else if (formatter->convention() ==
                    io::PROJStringFormatter::Convention::PROJ_5 &&
                isZUnitConversion) {
@@ -4005,6 +4030,16 @@ void Conversion::_exportToPROJString(
                         EPSG_CODE_PARAMETER_SCALE_FACTOR_AT_NATURAL_ORIGIN) {
                         valueConverted = 1.0;
                     }
+                    if ((mapping->epsg_code ==
+                             EPSG_CODE_METHOD_HOTINE_OBLIQUE_MERCATOR_VARIANT_A ||
+                         mapping->epsg_code ==
+                             EPSG_CODE_METHOD_HOTINE_OBLIQUE_MERCATOR_VARIANT_B) &&
+                        param->epsg_code ==
+                            EPSG_CODE_PARAMETER_ANGLE_RECTIFIED_TO_SKEW_GRID) {
+                        // Do not use 0 as the default value for +gamma of
+                        // proj=omerc
+                        continue;
+                    }
                 } else if (param->unit_type ==
                            common::UnitOfMeasure::Type::ANGULAR) {
                     valueConverted =
@@ -4063,6 +4098,9 @@ void Conversion::_exportToPROJString(
             formatter->pushOmitZUnitConversion();
             projCRS->addUnitConvertAndAxisSwap(formatter, bAxisSpecFound);
             formatter->popOmitZUnitConversion();
+            if (projCRS->hasOver()) {
+                formatter->addParam("over");
+            }
         }
 
         auto derivedGeographicCRS =

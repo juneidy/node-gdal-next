@@ -1,7 +1,11 @@
 {
+  "extends": "./test/tsconfig.test.json",
   "compilerOptions": {
-    "downlevelIteration": true,
-    "strict": true,
-    "strictNullChecks": true
+    "baseUrl": "./",
+    "paths": {
+      "gdal-async": [
+        "."
+      ]
+    }
   }
 }

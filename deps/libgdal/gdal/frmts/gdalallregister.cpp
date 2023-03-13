@@ -32,10 +32,8 @@
 #include "ogrsf_frmts.h"
 
 #ifdef GNM_ENABLED
-   #include "gnm_frmts.h"
+#include "gnm_frmts.h"
 #endif
-
-CPL_CVSID("$Id: gdalallregister.cpp ea49437af39fa2738de924701b87ad701d6530c2 2021-07-25 18:25:48 +0200 Even Rouault $")
 
 #ifdef notdef
 // we may have a use for this some day
@@ -62,8 +60,12 @@ static char *szConfiguredFormats = "GDAL_FORMATS";
 void CPL_STDCALL GDALAllRegister()
 
 {
+    auto poDriverManager = GetGDALDriverManager();
     // AutoLoadDrivers is a no-op if compiled with GDAL_NO_AUTOLOAD defined.
-    GetGDALDriverManager()->AutoLoadDrivers();
+    poDriverManager->AutoLoadDrivers();
+
+    // NOTE: frmts/drivers.ini in the same directory should be kept in same
+    // order as this file
 
 #ifdef FRMT_vrt
     GDALRegister_VRT();
@@ -110,7 +112,7 @@ void CPL_STDCALL GDALAllRegister()
 #endif
 
 #ifdef FRMT_aigrid
-//    GDALRegister_AIGrid2();
+    //    GDALRegister_AIGrid2();
     GDALRegister_AIGrid();
 #endif
 
@@ -226,7 +228,6 @@ void CPL_STDCALL GDALAllRegister()
 #endif
 
 #ifdef FRMT_netcdf
-    GDALRegister_GMT();
     GDALRegister_netCDF();
 #endif
 
@@ -292,17 +293,6 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_MrSID();
 #endif
 
-#ifdef FRMT_jpeg2000
-    // JPEG2000 support using JasPer toolkit
-    // This one should always be placed after other JasPer supported formats,
-    // such as BMP or PNM. In other case we will get bad side effects.
-    GDALRegister_JPEG2000();
-#endif
-
-#ifdef FRMT_mrsid_lidar
-    GDALRegister_MG4Lidar();
-#endif
-
 #ifdef FRMT_rmf
     GDALRegister_RMF();
 #endif
@@ -327,10 +317,6 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_IDRISI();
 #endif
 
-#ifdef FRMT_ingr
-    GDALRegister_INGR();
-#endif
-
 #ifdef FRMT_gsg
     GDALRegister_GSAG();
     GDALRegister_GSBG();
@@ -347,10 +333,6 @@ void CPL_STDCALL GDALAllRegister()
 
 #ifdef FRMT_coasp
     GDALRegister_COASP();
-#endif
-
-#ifdef FRMT_tms
-    GDALRegister_TMS();
 #endif
 
 #ifdef FRMT_r
@@ -408,12 +390,12 @@ void CPL_STDCALL GDALAllRegister()
 #ifdef FRMT_rdb
     GDALRegister_RDB();
 #endif
-/* -------------------------------------------------------------------- */
-/*      Put raw formats at the end of the list. These drivers support   */
-/*      various ASCII-header labeled formats, so the driver could be    */
-/*      confused if you have files in some of above formats and such    */
-/*      ASCII-header in the same directory.                             */
-/* -------------------------------------------------------------------- */
+    /* -------------------------------------------------------------------- */
+    /*      Put raw formats at the end of the list. These drivers support   */
+    /*      various ASCII-header labeled formats, so the driver could be    */
+    /*      confused if you have files in some of above formats and such    */
+    /*      ASCII-header in the same directory.                             */
+    /* -------------------------------------------------------------------- */
 
 #ifdef FRMT_raw
     GDALRegister_PNM();
@@ -422,13 +404,11 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_PAux();
     GDALRegister_MFF();
     GDALRegister_HKV();
-    GDALRegister_FujiBAS();
     GDALRegister_GSC();
     GDALRegister_FAST();
     GDALRegister_BT();
     GDALRegister_LAN();
     GDALRegister_CPG();
-    GDALRegister_IDA();
     GDALRegister_NDF();
     GDALRegister_EIR();
     GDALRegister_DIPEx();
@@ -449,10 +429,10 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_ARG();
 #endif
 
-/* -------------------------------------------------------------------- */
-/*      Our test for the following is weak or expensive so we try       */
-/*      them last.                                                      */
-/* -------------------------------------------------------------------- */
+    /* -------------------------------------------------------------------- */
+    /*      Our test for the following is weak or expensive so we try       */
+    /*      them last.                                                      */
+    /* -------------------------------------------------------------------- */
 
 #ifdef FRMT_rik
     GDALRegister_RIK();
@@ -464,14 +444,6 @@ void CPL_STDCALL GDALAllRegister()
 
 #ifdef FRMT_gxf
     GDALRegister_GXF();
-#endif
-
-#ifdef FRMT_grass
-    GDALRegister_GRASS();
-#endif
-
-#ifdef FRMT_dods
-    GDALRegister_DODS();
 #endif
 
 /* Register KEA before HDF5 */
@@ -519,10 +491,6 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_HF2();
 #endif
 
-#ifdef FRMT_jpegls
-    GDALRegister_JPEGLS();
-#endif
-
 #ifdef FRMT_ozi
     GDALRegister_OZI();
 #endif
@@ -545,10 +513,6 @@ void CPL_STDCALL GDALAllRegister()
 
 #ifdef FRMT_prf
     GDALRegister_PRF();
-#endif
-
-#ifdef FRMT_rda
-    GDALRegister_RDA();
 #endif
 
 #ifdef FRMT_eeda
@@ -592,7 +556,19 @@ void CPL_STDCALL GDALAllRegister()
     GDALRegister_STACIT();
 #endif
 
-    // NOTE: you need to generally your own driver before that line.
+#ifdef FRMT_jpegxl
+    GDALRegister_JPEGXL();
+#endif
+
+#ifdef FRMT_basisu_ktx2
+    GDALRegister_BASISU();
+    GDALRegister_KTX2();
+#endif
+
+    // NOTE: you need to generally insert your own driver before that line.
+
+    // NOTE: frmts/drivers.ini in the same directory should be kept in same
+    // order as this file
 
 /* -------------------------------------------------------------------- */
 /*     GNM and OGR drivers                                              */
@@ -603,10 +579,10 @@ void CPL_STDCALL GDALAllRegister()
 
     OGRRegisterAllInternal();
 
-/* -------------------------------------------------------------------- */
-/*      Put here drivers that absolutely need to look for side car      */
-/*      files in their Identify()/Open() procedure.                     */
-/* -------------------------------------------------------------------- */
+    /* -------------------------------------------------------------------- */
+    /*      Put here drivers that absolutely need to look for side car      */
+    /*      files in their Identify()/Open() procedure.                     */
+    /* -------------------------------------------------------------------- */
 
 #ifdef FRMT_raw
     GDALRegister_GenBin();
@@ -623,15 +599,17 @@ void CPL_STDCALL GDALAllRegister()
 /*      Register GDAL HTTP last, to let a chance to other drivers       */
 /*      accepting URL to handle them before.                            */
 /* -------------------------------------------------------------------- */
-#ifdef FRMT_wcs
+#ifdef FRMT_http
     GDALRegister_HTTP();
 #endif
 
-    GetGDALDriverManager()->AutoLoadPythonDrivers();
+    poDriverManager->AutoLoadPythonDrivers();
 
-/* -------------------------------------------------------------------- */
-/*      Deregister any drivers explicitly marked as suppressed by the   */
-/*      GDAL_SKIP environment variable.                                 */
-/* -------------------------------------------------------------------- */
-    GetGDALDriverManager()->AutoSkipDrivers();
+    /* -------------------------------------------------------------------- */
+    /*      Deregister any drivers explicitly marked as suppressed by the   */
+    /*      GDAL_SKIP environment variable.                                 */
+    /* -------------------------------------------------------------------- */
+    poDriverManager->AutoSkipDrivers();
+
+    poDriverManager->ReorderDrivers();
 }

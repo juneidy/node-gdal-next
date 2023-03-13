@@ -30,8 +30,6 @@
 #include "ogr_geometry.h"
 #include "ogr_p.h"
 
-CPL_CVSID("$Id: ogrsurface.cpp ff8146d84de7cba8e09d212d5481ea7d2ede3e98 2017-06-27 20:47:31Z Even Rouault $")
-
 /**
  * \fn double OGRSurface::get_Area() const;
  *
@@ -74,7 +72,7 @@ CPL_CVSID("$Id: ogrsurface.cpp ff8146d84de7cba8e09d212d5481ea7d2ede3e98 2017-06-
  * @return new geometry.
  */
 
-OGRPolygon* OGRSurface::CastToPolygon( OGRSurface* poSurface )
+OGRPolygon *OGRSurface::CastToPolygon(OGRSurface *poSurface)
 {
     OGRSurfaceCasterToPolygon pfn = poSurface->GetCasterToPolygon();
     return pfn(poSurface);
@@ -94,7 +92,7 @@ OGRPolygon* OGRSurface::CastToPolygon( OGRSurface* poSurface )
  * @return new geometry.
  */
 
-OGRCurvePolygon* OGRSurface::CastToCurvePolygon( OGRSurface* poSurface )
+OGRCurvePolygon *OGRSurface::CastToCurvePolygon(OGRSurface *poSurface)
 {
     OGRSurfaceCasterToCurvePolygon pfn = poSurface->GetCasterToCurvePolygon();
     return pfn(poSurface);

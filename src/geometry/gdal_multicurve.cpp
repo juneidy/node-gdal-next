@@ -29,8 +29,8 @@ void MultiCurve::Initialize(Local<Object> target) {
 
 /**
  * @constructor
- * @class gdal.MultiCurve
- * @extends gdal.GeometryCollection
+ * @class MultiCurve
+ * @extends GeometryCollection
  */
 
 NAN_METHOD(MultiCurve::toString) {
@@ -41,7 +41,9 @@ NAN_METHOD(MultiCurve::toString) {
  * Converts it to a polygon.
  *
  * @method polygonize
- * @return {gdal.Polygon}
+ * @instance
+ * @memberof MultiCurve
+ * @return {Polygon}
  */
 NAN_METHOD(MultiCurve::polygonize) {
 

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: cpl_vsi_error.h 1515758e53dd91f1c7f21f1e075e0c88e0e17fea 2016-12-10 01:44:43Z Kurt Schwehr $
+ * $Id$
  *
  * Project:  VSI Virtual File System
  * Purpose:  Implement an error system for reporting file system errors.
@@ -43,27 +43,26 @@ CPL_C_START
 
 typedef int VSIErrorNum;
 
-#define VSIE_None                       0
-#define VSIE_FileError                  1
-#define VSIE_HttpError                  2
+#define VSIE_None 0
+#define VSIE_FileError 1
+#define VSIE_HttpError 2
 
-#define VSIE_AWSError                   5
-#define VSIE_AWSAccessDenied            6
-#define VSIE_AWSBucketNotFound          7
-#define VSIE_AWSObjectNotFound          8
-#define VSIE_AWSInvalidCredentials      9
-#define VSIE_AWSSignatureDoesNotMatch   10
+#define VSIE_AWSError 5
+#define VSIE_AWSAccessDenied 6
+#define VSIE_AWSBucketNotFound 7
+#define VSIE_AWSObjectNotFound 8
+#define VSIE_AWSInvalidCredentials 9
+#define VSIE_AWSSignatureDoesNotMatch 10
 
-void CPL_DLL VSIError( VSIErrorNum err_no,
-                       CPL_FORMAT_STRING(const char *fmt), ... )
-    CPL_PRINT_FUNC_FORMAT (2, 3);
+void CPL_DLL VSIError(VSIErrorNum err_no, CPL_FORMAT_STRING(const char *fmt),
+                      ...) CPL_PRINT_FUNC_FORMAT(2, 3);
 
-void CPL_DLL CPL_STDCALL VSIErrorReset( void );
-VSIErrorNum CPL_DLL CPL_STDCALL VSIGetLastErrorNo( void );
-const char CPL_DLL * CPL_STDCALL VSIGetLastErrorMsg( void );
+void CPL_DLL CPL_STDCALL VSIErrorReset(void);
+VSIErrorNum CPL_DLL CPL_STDCALL VSIGetLastErrorNo(void);
+const char CPL_DLL *CPL_STDCALL VSIGetLastErrorMsg(void);
 
-int CPL_DLL CPL_STDCALL VSIToCPLError( CPLErr eErrClass,
-                                       CPLErrorNum eDefaultErrorNo );
+int CPL_DLL CPL_STDCALL VSIToCPLError(CPLErr eErrClass,
+                                      CPLErrorNum eDefaultErrorNo);
 
 CPL_C_END
 

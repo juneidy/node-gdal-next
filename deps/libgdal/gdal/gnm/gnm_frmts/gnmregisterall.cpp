@@ -30,8 +30,6 @@
 
 #include "gnm_frmts.h"
 
-CPL_CVSID("$Id: gnmregisterall.cpp 98a60d744b13223d27fa49e36781d99c949a3cdd 2019-01-21 15:18:45Z Robert Coup $")
-
 void GNMRegisterAllInternal()
 {
 #ifdef GNMFILE_ENABLED
@@ -42,10 +40,10 @@ void GNMRegisterAllInternal()
     RegisterGNMDatabase();
 #endif
 
-//TODO:
-// * pgRouting driver
-// * OSRM driver
-// * GraphHopper driver
-// * ArcGIS geometric networks
+    // TODO:
+    //  * pgRouting driver
+    //  * OSRM driver
+    //  * GraphHopper driver
+    //  * ArcGIS geometric networks
 
 } /* GNMRegisterAll */

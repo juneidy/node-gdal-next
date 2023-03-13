@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 /******************************************************************************
- * $Id: nitf_spec.xml 3cff1e81746abaf4f030b46c64242f0e6818e631 2021-08-19 10:20:33 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  NITF Library
  * Purpose:  Description of NITF TREs
@@ -370,7 +370,7 @@
         <field name="SOFTWARE_VERSION_NUMBER" length="10"/>
     </tre>
 
-    <tre name="CSEPHA" minlength="257" maxlength="36005" location="des">
+    <tre name="CSEPHA" minlength="77" maxlength="36005" location="des">
         <field name="EPHEM_FLAG" length="12"/>
         <field name="DT_EPHEM" length="5"/>
         <field name="DATE_EPHEM" length="8"/>

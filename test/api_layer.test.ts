@@ -1,9 +1,10 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import { assert } from 'chai'
 import * as fileUtils from './utils/file'
 
 describe('gdal.Layer', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('instance', () => {
     type prepareCb = (ds: gdal.Dataset, l: gdal.Layer) => void

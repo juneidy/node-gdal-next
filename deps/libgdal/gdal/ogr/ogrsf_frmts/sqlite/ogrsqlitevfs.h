@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogrsqlitevfs.h 0b9fb262654e49df9fbd344f3b2397322ff8d74e 2021-08-15 12:04:53 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  OpenGIS Simple Features Reference Implementation
  * Purpose:  Creation of a SQLite3 VFS
@@ -34,8 +34,9 @@
 
 #include <sqlite3.h>
 
-typedef void (*pfnNotifyFileOpenedType)(void* pfnUserData, const char* pszFilename, VSILFILE* fp);
+typedef void (*pfnNotifyFileOpenedType)(void *pfnUserData,
+                                        const char *pszFilename, VSILFILE *fp);
 
-sqlite3_vfs* OGRSQLiteCreateVFS(pfnNotifyFileOpenedType pfn, void* pfnUserData);
+sqlite3_vfs *OGRSQLiteCreateVFS(pfnNotifyFileOpenedType pfn, void *pfnUserData);
 
-#endif // OGR_SQLITE_VFS_H_INCLUDED
+#endif  // OGR_SQLITE_VFS_H_INCLUDED

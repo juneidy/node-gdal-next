@@ -1,8 +1,9 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import { assert } from 'chai'
 
 describe('gdal.LineString', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   it('should be instantiable', () => {
     new gdal.LineString()

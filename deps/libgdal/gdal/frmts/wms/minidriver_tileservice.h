@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: minidriver_tileservice.h be6f8002d1253901a0ec7357a01e6c72f8e99210 2017-02-26 02:16:35Z Kurt Schwehr $
+ * $Id$
  *
  * Project:  WMS Client Driver
  * Purpose:  Implementation of Dataset and RasterBand classes for WMS
@@ -28,14 +28,17 @@
  * DEALINGS IN THE SOFTWARE.
  ****************************************************************************/
 
-class WMSMiniDriver_TileService : public WMSMiniDriver {
-public:
+class WMSMiniDriver_TileService : public WMSMiniDriver
+{
+  public:
     WMSMiniDriver_TileService();
     virtual ~WMSMiniDriver_TileService();
 
-public:
-    virtual CPLErr Initialize(CPLXMLNode *config, char **papszOpenOptions) override;
-    virtual CPLErr TiledImageRequest(WMSHTTPRequest &request,
-                                const GDALWMSImageRequestInfo &iri,
-                                const GDALWMSTiledImageRequestInfo &tiri) override;
+  public:
+    virtual CPLErr Initialize(CPLXMLNode *config,
+                              char **papszOpenOptions) override;
+    virtual CPLErr
+    TiledImageRequest(WMSHTTPRequest &request,
+                      const GDALWMSImageRequestInfo &iri,
+                      const GDALWMSTiledImageRequestInfo &tiri) override;
 };

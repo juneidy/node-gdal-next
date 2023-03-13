@@ -6,6 +6,10 @@
 		{
 			"target_name": "libgdal_png_frmt",
 			"type": "static_library",
+      "defines": [
+        "PNG_ARM_NEON_IMPLEMENTATION=0",
+        "PNG_ARM_NEON_OPT=0"
+      ],
 			"sources": [
 				"../gdal/frmts/png/pngdataset.cpp",
 				"../gdal/frmts/png/libpng/pngpread.c",
@@ -27,7 +31,6 @@
 			"include_dirs": [
 				"../gdal/frmts/png",
 				"../gdal/frmts/png/libpng",
-				"../gdal/frmts/zlib"
 			]
 		}
 	]

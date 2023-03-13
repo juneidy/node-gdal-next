@@ -29,8 +29,8 @@ void MultiPoint::Initialize(Local<Object> target) {
 
 /**
  * @constructor
- * @class gdal.MultiPoint
- * @extends gdal.GeometryCollection
+ * @class MultiPoint
+ * @extends GeometryCollection
  */
 
 NAN_METHOD(MultiPoint::toString) {

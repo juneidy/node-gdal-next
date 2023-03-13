@@ -14,8 +14,8 @@ Nan::Persistent<FunctionTemplate> GeometryCollection::constructor;
  * A collection of 1 or more geometry objects.
  *
  * @constructor
- * @class gdal.GeometryCollection
- * @extends gdal.Geometry
+ * @class GeometryCollection
+ * @extends Geometry
  */
 void GeometryCollection::Initialize(Local<Object> target) {
   Nan::HandleScope scope;
@@ -44,6 +44,8 @@ NAN_METHOD(GeometryCollection::toString) {
  * Computes the combined area of the geometries.
  *
  * @method getArea
+ * @instance
+ * @memberof GeometryCollection
  * @return {number}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(GeometryCollection, getArea, Number, get_Area);
@@ -52,6 +54,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(GeometryCollection, getArea, Number, get_Area);
  * Compute the length of a multicurve.
  *
  * @method getLength
+ * @instance
+ * @memberof GeometryCollection
  * @return {number}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(GeometryCollection, getLength, Number, get_Length);
@@ -59,8 +63,11 @@ NODE_WRAPPED_METHOD_WITH_RESULT(GeometryCollection, getLength, Number, get_Lengt
 /**
  * All geometries represented by this collection.
  *
- * @attribute children
- * @type {gdal.GeometryCollectionChildren}
+ * @kind member
+ * @name children
+ * @instance
+ * @memberof GeometryCollection
+ * @type {GeometryCollectionChildren}
  */
 NAN_GETTER(GeometryCollection::childrenGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("children_").ToLocalChecked()).ToLocalChecked());

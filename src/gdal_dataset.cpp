@@ -74,16 +74,16 @@ void Dataset::dispose(bool manual) {
 /**
  * A set of associated raster bands and/or vector layers, usually from one file.
  *
- * ```
+ * @example
  * // raster dataset:
  * dataset = gdal.open('file.tif');
  * bands = dataset.bands;
  *
  * // vector dataset:
  * dataset = gdal.open('file.shp');
- * layers = dataset.layers;```
+ * layers = dataset.layers;
  *
- * @class gdal.Dataset
+ * @class Dataset
  */
 NAN_METHOD(Dataset::New) {
 
@@ -158,17 +158,21 @@ NAN_METHOD(Dataset::toString) {
  * Fetch metadata.
  *
  * @method getMetadata
+ * @instance
+ * @memberof Dataset
  * @param {string} [domain]
  * @return {any}
  */
 
 /**
  * Fetch metadata.
- * {{{async}}}
+ * @async
  *
  * @method getMetadataAsync
+ * @instance
+ * @memberof Dataset
  * @param {string} [domain]
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<any>}
  */
 GDAL_ASYNCABLE_DEFINE(Dataset::getMetadata) {
@@ -190,6 +194,8 @@ GDAL_ASYNCABLE_DEFINE(Dataset::getMetadata) {
  * Set metadata. Can return a warning (false) for formats not supporting persistent metadata.
  *
  * @method setMetadata
+ * @instance
+ * @memberof Dataset
  * @param {object|string[]} metadata
  * @param {string} [domain]
  * @return {boolean}
@@ -197,12 +203,14 @@ GDAL_ASYNCABLE_DEFINE(Dataset::getMetadata) {
 
 /**
  * Set metadata. Can return a warning (false) for formats not supporting persistent metadata.
- * {{{async}}}
+ * @async
  *
  * @method setMetadataAsync
+ * @instance
+ * @memberof Dataset
  * @param {object|string[]} metadata
  * @param {string} [domain]
- * @param {callback<boolean>} [callback=undefined] {{{cb}}}
+ * @param {callback<boolean>} [callback=undefined]
  * @return {Promise<boolean>}
  */
 GDAL_ASYNCABLE_DEFINE(Dataset::setMetadata) {
@@ -232,8 +240,9 @@ GDAL_ASYNCABLE_DEFINE(Dataset::setMetadata) {
  * Determines if the dataset supports the indicated operation.
  *
  * @method testCapability
- * @param {string} capability (see {{#crossLink "Constants (ODsC)"}}capability
- * list{{/crossLink}})
+ * @instance
+ * @memberof Dataset
+ * @param {string} capability {@link ODsC|capability list}
  * @return {boolean}
  */
 NAN_METHOD(Dataset::testCapability) {
@@ -257,6 +266,8 @@ NAN_METHOD(Dataset::testCapability) {
  * Get output projection for GCPs.
  *
  * @method getGCPProjection
+ * @instance
+ * @memberof Dataset
  * @return {string}
  */
 NAN_METHOD(Dataset::getGCPProjection) {
@@ -275,6 +286,7 @@ NAN_METHOD(Dataset::getGCPProjection) {
 /**
  * Closes the dataset to further operations. It releases all memory and ressources held
  * by the dataset.
+ *
  * This is normally an instantenous atomic operation that won't block the event loop
  * except if there is an operation running on this dataset in asynchronous context - in this case
  * this call will block until that operation finishes.
@@ -286,9 +298,11 @@ NAN_METHOD(Dataset::getGCPProjection) {
  * Implementing an asynchronous delete is difficult since all V8 object creation/deletion
  * must take place on the main thread.
  *
- * flush[Async]() ensures that, when writing, all data has been written.
+ * flush()/flushAsync() ensure that, when writing, all data has been written.
  *
  * @method close
+ * @instance
+ * @memberof Dataset
  */
 NAN_METHOD(Dataset::close) {
   Dataset *ds = Nan::ObjectWrap::Unwrap<Dataset>(info.This());
@@ -306,17 +320,21 @@ NAN_METHOD(Dataset::close) {
 /**
  * Flushes all changes to disk.
  *
- * @throws Error
+ * @throws {Error}
  * @method flush
+ * @instance
+ * @memberof Dataset
  */
 
 /**
  * Flushes all changes to disk.
- * {{{async}}}
+ * @async
  *
  * @method flushAsync
- * @throws Error
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @instance
+ * @memberof Dataset
+ * @throws {Error}
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<void>}
  */
 GDAL_ASYNCABLE_DEFINE(Dataset::flush) {
@@ -336,35 +354,39 @@ GDAL_ASYNCABLE_DEFINE(Dataset::flush) {
 /**
  * Execute an SQL statement against the data store.
  *
- * @throws Error
+ * @throws {Error}
  * @method executeSQL
+ * @instance
+ * @memberof Dataset
  * @param {string} statement SQL statement to execute.
- * @param {gdal.Geometry} [spatial_filter=null] Geometry which represents a
+ * @param {Geometry} [spatial_filter=null] Geometry which represents a
  * spatial filter.
  * @param {string} [dialect=null] Allows control of the statement dialect. If
  * set to `null`, the OGR SQL engine will be used, except for RDBMS drivers that
  * will use their dedicated SQL engine, unless `"OGRSQL"` is explicitely passed
  * as the dialect. Starting with OGR 1.10, the `"SQLITE"` dialect can also be
  * used.
- * @return {gdal.Layer}
+ * @return {Layer}
  */
 
 /**
  * Execute an SQL statement against the data store.
- * {{{async}}}
+ * @async
  *
- * @throws Error
+ * @throws {Error}
  * @method executeSQLAsync
+ * @instance
+ * @memberof Dataset
  * @param {string} statement SQL statement to execute.
- * @param {gdal.Geometry} [spatial_filter=null] Geometry which represents a
+ * @param {Geometry} [spatial_filter=null] Geometry which represents a
  * spatial filter.
  * @param {string} [dialect=null] Allows control of the statement dialect. If
  * set to `null`, the OGR SQL engine will be used, except for RDBMS drivers that
  * will use their dedicated SQL engine, unless `"OGRSQL"` is explicitely passed
  * as the dialect. Starting with OGR 1.10, the `"SQLITE"` dialect can also be
  * used.
- * @param {callback<gdal.Layer>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.Layer>}
+ * @param {callback<Layer>} [callback=undefined]
+ * @return {Promise<Layer>}
  */
 GDAL_ASYNCABLE_DEFINE(Dataset::executeSQL) {
   Dataset *ds = Nan::ObjectWrap::Unwrap<Dataset>(info.This());
@@ -407,6 +429,8 @@ GDAL_ASYNCABLE_DEFINE(Dataset::executeSQL) {
  * Returns an empty array for vector datasets if GDAL version is below 2.0
  *
  * @method getFileList
+ * @instance
+ * @memberof Dataset
  * @return {string[]}
  */
 NAN_METHOD(Dataset::getFileList) {
@@ -447,6 +471,8 @@ NAN_METHOD(Dataset::getFileList) {
  * Fetches GCPs.
  *
  * @method getGCPs
+ * @instance
+ * @memberof Dataset
  * @return {any[]}
  */
 NAN_METHOD(Dataset::getGCPs) {
@@ -493,8 +519,10 @@ NAN_METHOD(Dataset::getGCPs) {
 /**
  * Sets GCPs.
  *
- * @throws Error
+ * @throws {Error}
  * @method setGCPs
+ * @instance
+ * @memberof Dataset
  * @param {object[]} gcps
  * @param {string} [projection]
  */
@@ -557,29 +585,33 @@ NAN_METHOD(Dataset::setGCPs) {
 /**
  * Builds dataset overviews.
  *
- * @throws Error
+ * @throws {Error}
  * @method buildOverviews
+ * @instance
+ * @memberof Dataset
  * @param {string} resampling `"NEAREST"`, `"GAUSS"`, `"CUBIC"`, `"AVERAGE"`,
  * `"MODE"`, `"AVERAGE_MAGPHASE"` or `"NONE"`
  * @param {number[]} overviews
  * @param {number[]} [bands] Note: Generation of overviews in external TIFF currently only supported when operating on all bands.
  * @param {ProgressOptions} [options] options
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
+ * @param {ProgressCb} [options.progress_cb]
  */
 
 /**
  * Builds dataset overviews.
- * {{{async}}}
+ * @async
  *
- * @throws Error
+ * @throws {Error}
  * @method buildOverviewsAsync
+ * @instance
+ * @memberof Dataset
  * @param {string} resampling `"NEAREST"`, `"GAUSS"`, `"CUBIC"`, `"AVERAGE"`,
  * `"MODE"`, `"AVERAGE_MAGPHASE"` or `"NONE"`
  * @param {number[]} overviews
  * @param {number[]} [bands] Note: Generation of overviews in external TIFF currently only supported when operating on all bands.
  * @param {ProgressOptions} [options] options
- * @param {ProgressCb} [options.progress_cb] {{{progress_cb}}}
- * @param {callback<void>} [callback=undefined] {{{cb}}}
+ * @param {ProgressCb} [options.progress_cb]
+ * @param {callback<void>} [callback=undefined]
  * @return {Promise<void>}
  */
 GDAL_ASYNCABLE_DEFINE(Dataset::buildOverviews) {
@@ -656,8 +688,11 @@ GDAL_ASYNCABLE_DEFINE(Dataset::buildOverviews) {
 }
 
 /**
- * @readOnly
- * @attribute description
+ * @readonly
+ * @kind member
+ * @name description
+ * @instance
+ * @memberof Dataset
  * @type {string}
  */
 NAN_GETTER(Dataset::descriptionGetter) {
@@ -680,17 +715,23 @@ NAN_GETTER(Dataset::descriptionGetter) {
 /**
  * Raster dimensions. An object containing `x` and `y` properties.
  *
- * @readOnly
- * @attribute rasterSize
+ * @readonly
+ * @kind member
+ * @name rasterSize
+ * @instance
+ * @memberof Dataset
  * @type {xyz}
  */
 
 /**
  * Raster dimensions. An object containing `x` and `y` properties.
- * {{async_getter}}
+ * @asyncGetter
  *
- * @readOnly
- * @attribute rasterSizeAsync
+ * @readonly
+ * @kind member
+ * @name rasterSizeAsync
+ * @instance
+ * @memberof Dataset
  * @type {Promise<xyz>}
  */
 GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::rasterSizeGetter) {
@@ -737,21 +778,27 @@ GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::rasterSizeGetter) {
 }
 
 /**
- * Spatial reference associated with raster dataset
+ * Spatial reference associated with raster dataset.
  *
- * @throws Error
- * @attribute srs
- * @type {gdal.SpatialReference|null}
+ * @throws {Error}
+ * @kind member
+ * @name srs
+ * @instance
+ * @memberof Dataset
+ * @type {SpatialReference|null}
  */
 
 /**
- * Spatial reference associated with raster dataset
- * {{async_getter}}
+ * Spatial reference associated with raster dataset.
+ * @asyncGetter
  *
- * @throws Error
- * @attribute srsAsync
- * @readOnly
- * @type {Promise<gdal.SpatialReference|null>}
+ * @throws {Error}
+ * @kind member
+ * @name srsAsync
+ * @instance
+ * @memberof Dataset
+ * @readonly
+ * @type {Promise<SpatialReference|null>}
  */
 GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::srsGetter) {
   Dataset *ds = Nan::ObjectWrap::Unwrap<Dataset>(info.This());
@@ -793,12 +840,15 @@ GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::srsGetter) {
  * space using the following relationship:
  *
  * @example
- * ```
+ *
  * var GT = dataset.geoTransform;
  * var Xgeo = GT[0] + Xpixel*GT[1] + Yline*GT[2];
- * var Ygeo = GT[3] + Xpixel*GT[4] + Yline*GT[5];```
+ * var Ygeo = GT[3] + Xpixel*GT[4] + Yline*GT[5];
  *
- * @attribute geoTransform
+ * @kind member
+ * @name geoTransform
+ * @instance
+ * @memberof Dataset
  * @type {number[]|null}
  */
 
@@ -807,14 +857,17 @@ GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::srsGetter) {
  * space using the following relationship:
  *
  * @example
- * ```
+ *
  * var GT = dataset.geoTransform;
  * var Xgeo = GT[0] + Xpixel*GT[1] + Yline*GT[2];
- * var Ygeo = GT[3] + Xpixel*GT[4] + Yline*GT[5];```
+ * var Ygeo = GT[3] + Xpixel*GT[4] + Yline*GT[5];
  *
- * {{async_getter}}
- * @readOnly
- * @attribute geoTransformAsync
+ * @asyncGetter
+ * @readonly
+ * @kind member
+ * @name geoTransformAsync
+ * @instance
+ * @memberof Dataset
  * @type {Promise<number[]|null>}
  */
 GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::geoTransformGetter) {
@@ -854,9 +907,12 @@ GDAL_ASYNCABLE_GETTER_DEFINE(Dataset::geoTransformGetter) {
 }
 
 /**
- * @readOnly
- * @attribute driver
- * @type {gdal.Driver}
+ * @readonly
+ * @kind member
+ * @name driver
+ * @instance
+ * @memberof Dataset
+ * @type {Driver}
  */
 NAN_GETTER(Dataset::driverGetter) {
   Dataset *ds = Nan::ObjectWrap::Unwrap<Dataset>(info.This());
@@ -942,27 +998,36 @@ NAN_SETTER(Dataset::geoTransformSetter) {
 }
 
 /**
- * @readOnly
- * @attribute bands
- * @type {gdal.DatasetBands}
+ * @readonly
+ * @kind member
+ * @name bands
+ * @instance
+ * @memberof Dataset
+ * @type {DatasetBands}
  */
 NAN_GETTER(Dataset::bandsGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("bands_").ToLocalChecked()).ToLocalChecked());
 }
 
 /**
- * @readOnly
- * @attribute layers
- * @type {gdal.DatasetLayers}
+ * @readonly
+ * @kind member
+ * @name layers
+ * @instance
+ * @memberof Dataset
+ * @type {DatasetLayers}
  */
 NAN_GETTER(Dataset::layersGetter) {
   info.GetReturnValue().Set(Nan::GetPrivate(info.This(), Nan::New("layers_").ToLocalChecked()).ToLocalChecked());
 }
 
 /**
- * @readOnly
- * @attribute root
- * @type {gdal.Group}
+ * @readonly
+ * @kind member
+ * @name root
+ * @instance
+ * @memberof Dataset
+ * @type {Group}
  */
 NAN_GETTER(Dataset::rootGetter) {
   Local<Value> rootObj = Nan::GetPrivate(info.This(), Nan::New("root_").ToLocalChecked()).ToLocalChecked();

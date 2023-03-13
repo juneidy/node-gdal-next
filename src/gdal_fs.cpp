@@ -3,9 +3,9 @@
 namespace node_gdal {
 
 /**
- * GDAL VSI layer file operations
+ * GDAL VSI layer file operations.
  *
- * @class gdal.fs
+ * @namespace fs
  */
 
 void VSI::Initialize(Local<Object> target) {
@@ -16,24 +16,60 @@ void VSI::Initialize(Local<Object> target) {
 }
 
 /**
+ * @typedef {object} VSIStat
+ * @memberof fs
+ * @property {number} dev
+ * @property {number} mode
+ * @property {number} nlink
+ * @property {number} uid
+ * @property {number} gid
+ * @property {number} rdev
+ * @property {number} blksize
+ * @property {number} ino
+ * @property {number} size
+ * @property {number} blocks
+ * @property {Date} atime
+ * @property {Date} mtime
+ * @property {Date} ctime
+ */
+
+/**
+ * @typedef {object} VSIStat64
+ * @memberof fs
+ * @property {BigInt} dev
+ * @property {BigInt} mode
+ * @property {BigInt} nlink
+ * @property {BigInt} uid
+ * @property {BigInt} gid
+ * @property {BigInt} rdev
+ * @property {BigInt} blksize
+ * @property {BigInt} ino
+ * @property {BigInt} size
+ * @property {BigInt} blocks
+ * @property {Date} atime
+ * @property {Date} mtime
+ * @property {Date} ctime
+ */
+
+/**
  * Get VSI file info.
  *
  * @example
- * ```
+ *
  * const gdalStats = gdal.fs.stat('/vsis3/noaa-gfs-bdp-pds/gfs.20210918/06/atmos/gfs.t06z.pgrb2.0p25.f010')
  * if ((gdalStats.mode & fs.constants.S_IFREG) === fs.constants.S_IFREG) console.log('is regular file')
  *
  * // convert to Node.js fs.Stats
  * const fsStats = new (Function.prototype.bind.apply(fs.Stats, [null, ...Object.keys(s).map(k => s[k])]))
  * if (fsStats.isFile) console.log('is regular file')
- * ```
  *
  * @static
  * @method stat
+ * @memberof fs
  * @param {string} filename
- * @param {boolean} [bigint=false] Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
- * @throws Error
- * @returns {gdal.VSIStat}
+ * @param {false} [bigint=false] Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
+ * @throws {Error}
+ * @returns {VSIStat}
  */
 
 /**
@@ -41,36 +77,39 @@ void VSI::Initialize(Local<Object> target) {
  *
  * @static
  * @method stat
+ * @memberof fs
  * @param {string} filename
  * @param {true} True Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
- * @throws Error
- * @returns {gdal.VSIStat64}
+ * @throws {Error}
+ * @returns {VSIStat64}
  */
 
 /**
  * Get VSI file info.
- * {{{async}}}
+ * @async
  *
  * @static
  * @method statAsync
+ * @memberof fs
  * @param {string} filename
- * @param {boolean} [bigint=false] Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
- * @throws Error
- * @param {callback<gdal.VSIStat>} [callback=undefined] {{{cb}}}
- * @returns {Promise<gdal.VSIStat>}
+ * @param {false} [bigint=false] Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
+ * @throws {Error}
+ * @param {callback<VSIStat>} [callback=undefined]
+ * @returns {Promise<VSIStat>}
  */
 
 /**
  * Get VSI file info.
- * {{{async}}}
+ * @async
  *
  * @static
  * @method statAsync
+ * @memberof fs
  * @param {string} filename
  * @param {true} True Return BigInt numbers. JavaScript numbers are safe for integers up to 2^53.
- * @throws Error
- * @param {callback<gdal.VSIStat>} [callback=undefined] {{{cb}}}
- * @returns {Promise<gdal.VSIStat>}
+ * @throws {Error}
+ * @param {callback<VSIStat>} [callback=undefined]
+ * @returns {Promise<VSIStat>}
  */
 
 GDAL_ASYNCABLE_DEFINE(VSI::stat) {
@@ -163,20 +202,22 @@ GDAL_ASYNCABLE_DEFINE(VSI::stat) {
  *
  * @static
  * @method readDir
+ * @memberof fs
  * @param {string} directory
- * @throws Error
+ * @throws {Error}
  * @returns {string[]}
  */
 
 /**
  * Read file names in a directory.
- * {{{async_}}}
+ * @async
  *
  * @static
  * @method readDirAsync
+ * @memberof fs
  * @param {string} directory
- * @throws Error
- * @param {callback<string[]>} [callback=undefined] {{{cb}}}
+ * @throws {Error}
+ * @param {callback<string[]>} [callback=undefined]
  * @returns {Promise<string[]>}
  */
 GDAL_ASYNCABLE_DEFINE(VSI::readDir) {

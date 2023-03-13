@@ -1,4 +1,4 @@
-name: Test published packages
+name: Test release
 
 on:
   release:
@@ -15,26 +15,25 @@ jobs:
     strategy:
       matrix:
         linux-version:
-        - ubuntu:16.04
-        - ubuntu:18.04
         - ubuntu:20.04
-        - ubuntu:21.10
-        - centos:8
+        - ubuntu:22.04
         - debian:buster
         - debian:bullseye
         - fedora:33
         - fedora:34
-        - archlinux:latest
-        - amazonlinux:latest
-        node-version: [ 12, 14, 16, 17 ]
-
+        - centos:stream8
+        - amazonlinux:2022
+        node-version: [ 14, 16, 18, 19 ]
+        exclude:
+          - linux-version: fedora:33
+            node-version: 19
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js 14.x
-      uses: actions/setup-node@v1
+    - uses: actions/checkout@v3
+    - name: Use Node.js 16.x
+      uses: actions/setup-node@v3
       with:
-        node-version: 14.x
+        node-version: 16.x
     - run: npm run container release ${{ matrix.linux-version }} ${{ matrix.node-version }}
       env:
         MOCHA_TEST_NETWORK: 1
@@ -46,16 +45,17 @@ jobs:
 
     strategy:
       matrix:
-        platforms: [ windows-2019, macos-10.15 ]
-        node-version: [ 12.x, 14.x, 16.x, 17.x ]
+        platforms: [ windows-2019, macos-11 ]
+        node-version: [ 14.x, 16.x, 18.x, 19.x ]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v3
       with:
         node-version: ${{ matrix.node-version }}
     - run: npm install --ignore-scripts
+    - run: npm install node-gyp
     - run: npx @mapbox/node-pre-gyp install
     - run: npx yatag
     - run: npm test

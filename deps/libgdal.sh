@@ -5,7 +5,7 @@ set -eu
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR/libgdal"
 
-GDAL_VERSION=3.4.0
+GDAL_VERSION=3.6.2
 GDAL_VERSION_SUFFIX=
 dir_gdal=./gdal
 dir_formats_gyp=./gyp-formats
@@ -38,15 +38,16 @@ done
 GDAL_FORMATS="gtiff hfa aigrid aaigrid ceos ceos2 iso8211 xpm
 	sdts raw dted mem jdem envisat elas fit vrt usgsdem l1b
 	nitf bmp pcidsk airsar rs2 ilwis rmf leveller sgi srtmhgt
-	idrisi gsg ingr ers jaxapalsar dimap gff cosar pds adrg
+	idrisi gsg ers jaxapalsar dimap gff cosar pds adrg
 	coasp tsx terragen blx til r northwood saga xyz hf2
 	kmlsuperoverlay ctg zmap ngsgeoid iris map
 	jpeg openjpeg png mbtiles wms wmts hdf5 grib netcdf wcs
+  zlib
 	${OPT_GDAL_FORMATS:-}"
 
 OGR_FORMATS="shape vrt avc geojson mem mitab kml gpx
-	dxf csv edigeo geoconcept georss gml gmt gpsbabel gtm
-	idrisi dgn openfilegdb pds pgdump rec s57 sdts
+	dxf csv edigeo geoconcept georss gml gmt gpsbabel
+	idrisi dgn openfilegdb pds pgdump s57 sdts
 	svg sxf ntf wasp sqlite gpkg mvt osm flatgeobuf carto"
 
 mkdir -p $dir_formats_gyp
@@ -101,7 +102,7 @@ function generate_formats() {
 		files_src_all=`find ${dir_format} | egrep '\.(c|cpp)$' | awk '{print "." $0}'`
 		files_src=''
 		# check to see which .c/.cpp files are mentioned in the makefile
-		makefiles=`find ${dir_format} -name GNUmakefile`
+		makefiles=`find ${dir_format} -name CMakeLists.txt`
 		for file in $files_src_all; do
 			base=`basename $file | cut -f 1 -d '.'`
 			if grep -q ${base}.o ${makefiles}; then
@@ -109,7 +110,7 @@ function generate_formats() {
 			fi
 		done
 		# check for additional include directories
-		add_includes=`cat ${dir_format}/GNUmakefile | grep -oE -- '-I\S+' | sed 's#-I#../gdal/frmts/#g'`
+		add_includes=`cat ${dir_format}/CMakeLists.txt | grep -oE -- '-I\S+' | sed 's#-I#../gdal/frmts/#g'`
 		relative_dir_format="${relative_dir_format}"$'\n'"${add_includes}"
 
 		gyp_template="${format_gyp_template}"
@@ -140,6 +141,9 @@ function generate_formats() {
 		format_list_gyps="$format_list_gyps"$'\n'"$file_gyp:$target_name"
 	done
 }
+
+mkdir -p gdal/gcore/gdal_version_full
+cp gdal/gcore/gdal_version.h gdal/gcore/gdal_version_full/
 
 generate_formats "$GDAL_FORMATS" "${dir_gdal}/frmts"
 generate_formats "$OGR_FORMATS" "${dir_gdal}/ogr/ogrsf_frmts" "ogr_"

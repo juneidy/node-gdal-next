@@ -52,6 +52,7 @@
 
 #include "DbPolyline.h"
 #include "Db2dPolyline.h"
+#include "DbAttributeDefinition.h"
 #include "Db3dPolyline.h"
 #include "Db3dPolylineVertex.h"
 #include "DbLine.h"
@@ -62,6 +63,7 @@
 #include "DbText.h"
 #include "DbCircle.h"
 #include "DbSpline.h"
+#include "DbFace.h"
 #include "DbBlockReference.h"
 #include "DbAttribute.h"
 #include "DbFiler.h"
@@ -77,7 +79,6 @@
 #include "Ge/GeCircArc2d.h"
 #include "Ge/GeEllipArc2d.h"
 
-
 #include "OdCharMapper.h"
 #include "RxObjectImpl.h"
 
@@ -87,4 +88,4 @@
 #include "RxDynamicModule.h"
 #include "FdField.h"
 
-#endif // TEIGHA_HEADERS_H
+#endif  // TEIGHA_HEADERS_H

@@ -1,4 +1,4 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as fs from 'fs'
 import * as path from 'path'
 import { assert } from 'chai'
@@ -49,8 +49,7 @@ describe('gdal.fs', () => {
   describe('readDirAsync()', () => {
     it('should return all files in a directory', () => {
       const list = gdal.fs.readDirAsync(path.resolve(__dirname, 'data'))
-      // There seems to be a bug in the TS typing of assert.eventually.include
-      return assert.eventually.include(list as unknown as string[], 'sample.tif')
+      return assert.eventually.include(list, 'sample.tif')
     })
     it('should throw on non-existent directories', () =>
       assert.isRejected(gdal.fs.readDirAsync(path.resolve(__dirname, 'data2')))

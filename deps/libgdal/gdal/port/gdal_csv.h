@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gdal_csv.h b1c9c12ad373e40b955162b45d704070d4ebf7b0 2019-06-19 16:50:15 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  Common Portability Library
  * Purpose:  Functions for reading and scanning CSV (comma separated,
@@ -35,7 +35,7 @@
 #include "cpl_port.h"
 
 CPL_C_START
-const char * GDALDefaultCSVFilename( const char *pszBasename );
+const char *GDALDefaultCSVFilename(const char *pszBasename);
 CPL_C_END
 
 #endif

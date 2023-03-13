@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: reader_geo_eye.h e37e476c4cf8f4b0df8995e0d95d5d672fca1a9b 2018-05-05 16:54:18 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Read metadata from GeoEye imagery.
@@ -47,21 +47,24 @@ Common metadata (from metadata filename):
 
 */
 
-class GDALMDReaderGeoEye: public GDALMDReaderBase
+class GDALMDReaderGeoEye : public GDALMDReaderBase
 {
-public:
+  public:
     GDALMDReaderGeoEye(const char *pszPath, char **papszSiblingFiles);
     virtual ~GDALMDReaderGeoEye();
     virtual bool HasRequiredFiles() const override;
-    virtual char** GetMetadataFiles() const override;
-protected:
+    virtual char **GetMetadataFiles() const override;
+
+  protected:
     virtual void LoadMetadata() override;
-    virtual time_t GetAcquisitionTimeFromString(const char* pszDateTime) override;
+    virtual GIntBig
+    GetAcquisitionTimeFromString(const char *pszDateTime) override;
     char **LoadRPCWktFile() const;
     char **LoadIMDWktFile() const;
-protected:
+
+  protected:
     CPLString m_osIMDSourceFilename{};
     CPLString m_osRPBSourceFilename{};
 };
 
-#endif // READER_GEO_EYE_H_INCLUDED
+#endif  // READER_GEO_EYE_H_INCLUDED

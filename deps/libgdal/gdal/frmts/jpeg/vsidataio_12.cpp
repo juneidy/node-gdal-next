@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: vsidataio_12.cpp bde879dd6c2dd67ecf317ad588846089f0905cb9 2016-03-15 00:39:53Z Kurt Schwehr $
+ * $Id$
  *
  * Project:  JPEG JFIF Driver
  * Purpose:  Implement JPEG read/write io indirection through VSI.
@@ -29,14 +29,14 @@
  ****************************************************************************/
 
 #if defined(JPEG_DUAL_MODE_8_12)
-#define LIBJPEG_12_PATH   "libjpeg12/jpeglib.h"
+#define LIBJPEG_12_PATH "libjpeg12/jpeglib.h"
 
-#define jpeg_vsiio_src    jpeg_vsiio_src_12
-#define jpeg_vsiio_dest   jpeg_vsiio_dest_12
-#define my_source_mgr     my_source_mgr_12
-#define my_src_ptr        my_src_ptr_12
+#define jpeg_vsiio_src jpeg_vsiio_src_12
+#define jpeg_vsiio_dest jpeg_vsiio_dest_12
+#define my_source_mgr my_source_mgr_12
+#define my_src_ptr my_src_ptr_12
 #define my_destination_mgr my_destination_mgr_12
-#define my_dest_ptr      my_dest_ptr_12
+#define my_dest_ptr my_dest_ptr_12
 
 #include "vsidataio.cpp"
 

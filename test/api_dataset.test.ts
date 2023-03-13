@@ -1,5 +1,7 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as path from 'path'
+import * as fs from 'fs'
+import * as cp from 'child_process'
 import { assert } from 'chai'
 import * as fileUtils from './utils/file'
 import * as chai from 'chai'
@@ -18,7 +20,8 @@ const NAD83_WKT =
   'UNIT["Meter",1.0]]'
 
 describe('gdal.Dataset', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   let ds: gdal.Dataset
   before(() => {
@@ -34,6 +37,29 @@ describe('gdal.Dataset', () => {
   })
 
   describe('instance', () => {
+
+    it('properly close open Datasets when exiting the process', () => {
+      const tempFile = path.join(__dirname, 'data', 'temp', 'destructor_close.tiff').replace(/\\/g, '/')
+      const gdalJS = fs.existsSync('./lib/gdal.js') ? './lib/gdal.js' : 'gdal-async'
+      const command =
+          `"const gdal = require('${gdalJS}'); gdal.open('${tempFile}', 'w', 'GTiff', 100, 100, 1, gdal.GDT_Float64);"`
+      let execPath = process.execPath
+      if (process.platform === 'win32') {
+        // quotes to avoid errors like ''C:\Program' is not recognized as an internal or external command'
+        execPath = `"${execPath}"`
+      }
+      try {
+        cp.execSync(`${execPath} ${[ '-e', command ].join(' ')}`)
+      } catch (e) {
+        // This test will return an error when built with ASAN
+        console.warn(e)
+      }
+      const ds = gdal.open(tempFile)
+      assert.instanceOf(ds.bands.get(1).pixels.read(0, 0, 100, 100), Float64Array)
+      ds.close()
+      fs.unlinkSync(tempFile)
+    })
+
     describe('"bands" property', () => {
       it('should exist', () => {
         assert.instanceOf(ds.bands, gdal.DatasetBands)
@@ -780,22 +806,13 @@ describe('gdal.Dataset', () => {
           gdal.vsimem.release(tempFile)
         })
         it('should throw if dataset doesnt support setting geotransform', () => {
-          let ds: gdal.Dataset
           const transform = [ 0, 2, 0, 0, 0, 2 ]
 
-          let tempFile = fileUtils.clone(`${__dirname}/data/park.geo.json`)
-          ds = gdal.open(tempFile)
+          const tempFile = fileUtils.clone(`${__dirname}/data/park.geo.json`)
+          const ds = gdal.open(tempFile)
           assert.throws(() => {
             ds.geoTransform = transform
-          })
-          ds.close()
-          gdal.vsimem.release(tempFile)
-
-          tempFile = fileUtils.clone(`${__dirname}/data/sample.tif`)
-          ds = gdal.open(tempFile)
-          assert.throws(() => {
-            ds.geoTransform = transform
-          })
+          }, /not supported for this dataset/)
           ds.close()
           gdal.vsimem.release(tempFile)
         })

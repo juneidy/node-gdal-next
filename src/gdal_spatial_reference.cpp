@@ -94,7 +94,7 @@ void SpatialReference::dispose() {
  * (WKT) format.
  *
  * @constructor
- * @class gdal.SpatialReference
+ * @class SpatialReference
  * @param {string} [wkt]
  */
 NAN_METHOD(SpatialReference::New) {
@@ -177,6 +177,8 @@ NAN_METHOD(SpatialReference::toString) {
  * Set a GeogCS based on well known name.
  *
  * @method setWellKnownGeogCS
+ * @instance
+ * @memberof SpatialReference
  * @param {string} name
  */
 NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT_1_STRING_PARAM(
@@ -185,16 +187,20 @@ NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT_1_STRING_PARAM(
 /**
  * Convert in place to ESRI WKT format.
  *
- * @throws Error
+ * @throws {Error}
  * @method morphToESRI
+ * @instance
+ * @memberof SpatialReference
  */
 NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT(SpatialReference, morphToESRI, morphToESRI);
 
 /**
  * Convert in place from ESRI WKT format.
  *
- * @throws Error
+ * @throws {Error}
  * @method morphFromESRI
+ * @instance
+ * @memberof SpatialReference
  */
 NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT(SpatialReference, morphFromESRI, morphFromESRI);
 
@@ -211,6 +217,8 @@ NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT(SpatialReference, morphFromESRI, morphFro
  * or that do not have an EPSG code set.
  *
  * @method EPSGTreatsAsLatLong
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, EPSGTreatsAsLatLong, Boolean, EPSGTreatsAsLatLong);
@@ -220,6 +228,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, EPSGTreatsAsLatLong, Boolean, 
  * should be treated as having northing/easting coordinate ordering.
  *
  * @method EPSGTreatsAsNorthingEasting
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, EPSGTreatsAsNorthingEasting, Boolean, EPSGTreatsAsNorthingEasting);
@@ -228,6 +238,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, EPSGTreatsAsNorthingEasting, B
  * Check if geocentric coordinate system.
  *
  * @method isGeocentric
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isGeocentric, Boolean, IsGeocentric);
@@ -236,6 +248,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isGeocentric, Boolean, IsGeoce
  * Check if geographic coordinate system.
  *
  * @method isGeographic
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isGeographic, Boolean, IsGeographic);
@@ -244,6 +258,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isGeographic, Boolean, IsGeogr
  * Check if projected coordinate system.
  *
  * @method isProjected
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isProjected, Boolean, IsProjected);
@@ -252,6 +268,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isProjected, Boolean, IsProjec
  * Check if local coordinate system.
  *
  * @method isLocal
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isLocal, Boolean, IsLocal);
@@ -260,6 +278,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isLocal, Boolean, IsLocal);
  * Check if vertical coordinate system.
  *
  * @method isVertical
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isVertical, Boolean, IsVertical);
@@ -268,6 +288,8 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isVertical, Boolean, IsVertica
  * Check if compound coordinate system.
  *
  * @method isCompound
+ * @instance
+ * @memberof SpatialReference
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isCompound, Boolean, IsCompound);
@@ -276,7 +298,9 @@ NODE_WRAPPED_METHOD_WITH_RESULT(SpatialReference, isCompound, Boolean, IsCompoun
  * Do the GeogCS'es match?
  *
  * @method isSameGeogCS
- * @param {gdal.SpatialReference} srs
+ * @instance
+ * @memberof SpatialReference
+ * @param {SpatialReference} srs
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(
@@ -286,7 +310,9 @@ NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(
  * Do the VertCS'es match?
  *
  * @method isSameVertCS
- * @param {gdal.SpatialReference} srs
+ * @instance
+ * @memberof SpatialReference
+ * @param {SpatialReference} srs
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(
@@ -296,7 +322,9 @@ NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(
  * Do these two spatial references describe the same system?
  *
  * @method isSame
- * @param {gdal.SpatialReference} srs
+ * @instance
+ * @memberof SpatialReference
+ * @param {SpatialReference} srs
  * @return {boolean}
  */
 NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(SpatialReference, isSame, Boolean, IsSame, SpatialReference, "srs");
@@ -304,8 +332,10 @@ NODE_WRAPPED_METHOD_WITH_RESULT_1_WRAPPED_PARAM(SpatialReference, isSame, Boolea
 /**
  * Set EPSG authority info if possible.
  *
- * @throws Error
+ * @throws {Error}
  * @method autoIdentifyEPSG
+ * @instance
+ * @memberof SpatialReference
  */
 NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT(SpatialReference, autoIdentifyEPSG, AutoIdentifyEPSG);
 
@@ -313,7 +343,9 @@ NODE_WRAPPED_METHOD_WITH_OGRERR_RESULT(SpatialReference, autoIdentifyEPSG, AutoI
  * Clones the spatial reference.
  *
  * @method clone
- * @return {gdal.SpatialReference}
+ * @instance
+ * @memberof SpatialReference
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::clone) {
   SpatialReference *srs = Nan::ObjectWrap::Unwrap<SpatialReference>(info.This());
@@ -324,7 +356,9 @@ NAN_METHOD(SpatialReference::clone) {
  * Make a duplicate of the GEOGCS node of this OGRSpatialReference object.
  *
  * @method cloneGeogCS
- * @return {gdal.SpatialReference}
+ * @instance
+ * @memberof SpatialReference
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::cloneGeogCS) {
   SpatialReference *srs = Nan::ObjectWrap::Unwrap<SpatialReference>(info.This());
@@ -335,6 +369,8 @@ NAN_METHOD(SpatialReference::cloneGeogCS) {
  * Get the authority name for a node. The most common authority is "EPSG".
  *
  * @method getAuthorityName
+ * @instance
+ * @memberof SpatialReference
  * @param {string|null} [target_key] The partial or complete path to the node to get an authority from. ie. `"PROJCS"`, `"GEOGCS"`, "`GEOGCS|UNIT"` or `null` to search for an authority node on the root element.
  * @return {string}
  */
@@ -352,6 +388,8 @@ NAN_METHOD(SpatialReference::getAuthorityName) {
  * Get the authority code for a node.
  *
  * @method getAuthorityCode
+ * @instance
+ * @memberof SpatialReference
  * @param {string|null} [target_key] The partial or complete path to the node to get an authority from. ie. `"PROJCS"`, `"GEOGCS"`, "`GEOGCS|UNIT"` or `null` to search for an authority node on the root element.
  * @return {string}
  */
@@ -368,8 +406,10 @@ NAN_METHOD(SpatialReference::getAuthorityCode) {
 /**
  * Convert this SRS into WKT format.
  *
- * @throws Error
+ * @throws {Error}
  * @method toWKT
+ * @instance
+ * @memberof SpatialReference
  * @return {string}
  */
 NAN_METHOD(SpatialReference::exportToWKT) {
@@ -393,8 +433,10 @@ NAN_METHOD(SpatialReference::exportToWKT) {
  * Convert this SRS into a a nicely formatted WKT string for display to a
  * person.
  *
- * @throws Error
+ * @throws {Error}
  * @method toPrettyWKT
+ * @instance
+ * @memberof SpatialReference
  * @param {boolean} [simplify=false]
  * @return {string}
  */
@@ -421,8 +463,10 @@ NAN_METHOD(SpatialReference::exportToPrettyWKT) {
 /**
  * Export coordinate system in PROJ.4 format.
  *
- * @throws Error
+ * @throws {Error}
  * @method toProj4
+ * @instance
+ * @memberof SpatialReference
  * @return {string}
  */
 NAN_METHOD(SpatialReference::exportToProj4) {
@@ -450,8 +494,10 @@ NAN_METHOD(SpatialReference::exportToProj4) {
 /**
  * Export coordinate system in XML format.
  *
- * @throws Error
+ * @throws {Error}
  * @method toXML
+ * @instance
+ * @memberof SpatialReference
  * @return {string}
  */
 NAN_METHOD(SpatialReference::exportToXML) {
@@ -475,6 +521,8 @@ NAN_METHOD(SpatialReference::exportToXML) {
  * Fetch indicated attribute of named node.
  *
  * @method getAttrValue
+ * @instance
+ * @memberof SpatialReference
  * @param {string} node_name
  * @param {number} [attr_index=0]
  * @return {string}
@@ -493,10 +541,12 @@ NAN_METHOD(SpatialReference::getAttrValue) {
  * Creates a spatial reference from a WKT string.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromWKT
+ * @instance
+ * @memberof SpatialReference
  * @param {string} wkt
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromWKT) {
 
@@ -519,10 +569,12 @@ NAN_METHOD(SpatialReference::fromWKT) {
  * Creates a spatial reference from a Proj.4 string.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromProj4
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromProj4) {
 
@@ -547,15 +599,17 @@ NAN_METHOD(SpatialReference::fromProj4) {
  * apparently earlier specs do. GDAL tries to guess around this.
  *
  * @example
- * ```
+ *
  * var wms = 'AUTO:42001,99,8888';
- * var ref = gdal.SpatialReference.fromWMSAUTO(wms);```
+ * var ref = gdal.SpatialReference.fromWMSAUTO(wms);
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromWMSAUTO
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromWMSAUTO) {
 
@@ -577,10 +631,12 @@ NAN_METHOD(SpatialReference::fromWMSAUTO) {
  * Import coordinate system from XML format (GML only currently).
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromXML
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromXML) {
 
@@ -606,10 +662,12 @@ NAN_METHOD(SpatialReference::fromXML) {
  * including OGC auto codes, but not including CRS1 or CRS88 (NAVD88).
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromURN
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromURN) {
 
@@ -635,26 +693,30 @@ NAN_METHOD(SpatialReference::fromURN) {
  * including OGC auto codes, but not including CRS1 or CRS88 (NAVD88).
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromCRSURL
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 
 /**
  * Initialize from OGC URL.
- * {{{async}}}
+ * @async
  *
  * The OGC URL should be prefixed with "http://opengis.net/def/crs" per best
  * practice paper 11-135. Currently EPSG and OGC authority values are supported,
  * including OGC auto codes, but not including CRS1 or CRS88 (NAVD88).
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromCRSURLAsync
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @param {callback<gdal.SpatialReference>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.SpatialReference>}
+ * @param {callback<SpatialReference>} [callback=undefined]
+ * @return {Promise<SpatialReference>}
  */
 GDAL_ASYNCABLE_DEFINE(SpatialReference::fromCRSURL) {
 
@@ -682,10 +744,12 @@ GDAL_ASYNCABLE_DEFINE(SpatialReference::fromCRSURL) {
  * This method will download the spatial reference from the given URL.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromURL
+ * @instance
+ * @memberof SpatialReference
  * @param {string} url
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 
 /**
@@ -695,11 +759,13 @@ GDAL_ASYNCABLE_DEFINE(SpatialReference::fromCRSURL) {
  * This method will download the spatial reference from the given URL.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromURLAsync
+ * @instance
+ * @memberof SpatialReference
  * @param {string} url
- * @param {callback<gdal.SpatialReference>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.SpatialReference>}
+ * @param {callback<SpatialReference>} [callback=undefined]
+ * @return {Promise<SpatialReference>}
  */
 
 GDAL_ASYNCABLE_DEFINE(SpatialReference::fromURL) {
@@ -726,10 +792,12 @@ GDAL_ASYNCABLE_DEFINE(SpatialReference::fromURL) {
  * Initialize from a Mapinfo style CoordSys definition.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromMICoordSys
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromMICoordSys) {
 
@@ -754,10 +822,12 @@ NAN_METHOD(SpatialReference::fromMICoordSys) {
  * and then use it to initialize the spatial reference system.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromUserInput
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 
 /**
@@ -765,14 +835,16 @@ NAN_METHOD(SpatialReference::fromMICoordSys) {
  *
  * This method will examine the provided input, and try to deduce the format,
  * and then use it to initialize the spatial reference system.
- * {{{async}}}
+ * @async
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromUserInputAsync
+ * @instance
+ * @memberof SpatialReference
  * @param {string} input
- * @param {callback<gdal.SpatialReference>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.SpatialReference>}
+ * @param {callback<SpatialReference>} [callback=undefined]
+ * @return {Promise<SpatialReference>}
  */
 GDAL_ASYNCABLE_DEFINE(SpatialReference::fromUserInput) {
 
@@ -798,14 +870,16 @@ GDAL_ASYNCABLE_DEFINE(SpatialReference::fromUserInput) {
  * Initialize from EPSG GCS or PCS code.
  *
  * @example
- * ```
- * var ref = gdal.SpatialReference.fromEPSGA(4326);```
+ *
+ * var ref = gdal.SpatialReference.fromEPSGA(4326);
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromEPSG
+ * @instance
+ * @memberof SpatialReference
  * @param {number} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromEPSG) {
 
@@ -833,14 +907,16 @@ NAN_METHOD(SpatialReference::fromEPSG) {
  * order contrary to typical GIS use).
  *
  * @example
- * ```
- * var ref = gdal.SpatialReference.fromEPSGA(26910);```
+ *
+ * var ref = gdal.SpatialReference.fromEPSGA(26910);
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromEPSGA
+ * @instance
+ * @memberof SpatialReference
  * @param {number} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromEPSGA) {
 
@@ -874,10 +950,12 @@ NAN_METHOD(SpatialReference::fromEPSGA) {
  * projections are supported from old style files.
  *
  * @static
- * @throws Error
+ * @throws {Error}
  * @method fromESRI
+ * @instance
+ * @memberof SpatialReference
  * @param {object|string[]} input
- * @return {gdal.SpatialReference}
+ * @return {SpatialReference}
  */
 NAN_METHOD(SpatialReference::fromESRI) {
 
@@ -904,9 +982,17 @@ NAN_METHOD(SpatialReference::fromESRI) {
 }
 
 /**
+ * @typedef {object} units
+ * @property {string} units
+ * @property {number} value
+ */
+
+/**
  * Fetch linear geographic coordinate system units.
  *
  * @method getLinearUnits
+ * @instance
+ * @memberof SpatialReference
  * @return {units} An object containing `value` and `unit` properties.
  */
 NAN_METHOD(SpatialReference::getLinearUnits) {
@@ -927,6 +1013,8 @@ NAN_METHOD(SpatialReference::getLinearUnits) {
  * Fetch angular geographic coordinate system units.
  *
  * @method getAngularUnits
+ * @instance
+ * @memberof SpatialReference
  * @return {units} An object containing `value` and `unit` properties.
  */
 NAN_METHOD(SpatialReference::getAngularUnits) {
@@ -950,6 +1038,8 @@ NAN_METHOD(SpatialReference::getAngularUnits) {
  * formed, and consists of known tokens. The validation is not comprehensive.
  *
  * @method validate
+ * @instance
+ * @memberof SpatialReference
  * @return {string|null} `"corrupt"`, '"unsupported"', `null` (if fine)
  */
 NAN_METHOD(SpatialReference::validate) {

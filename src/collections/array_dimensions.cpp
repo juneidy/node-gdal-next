@@ -46,71 +46,88 @@ int ArrayDimensions::__count(std::shared_ptr<GDALMDArray> parent) {
 }
 
 /**
- * An encapsulation of a {{#crossLink "gdal.Group"}}Group{{/crossLink}}'s
+ * An encapsulation of a {@link MDArray}
  * descendant dimensions.
  *
- * ```
- * const dimensions = group.dimensions;```
+ * @example
+ * const dimensions = group.dimensions;
  *
- * @class gdal.ArrayDimensions
+ * @class ArrayDimensions
  */
 
 /**
  * Returns the array with the given name/index.
  *
  * @method get
+ * @instance
+ * @memberof ArrayDimensions
  * @param {string|number} array
- * @return {gdal.Dimension}
+ * @return {Dimension}
  */
 
 /**
  * Returns the array with the given name/index.
- * {{{async}}}
+ * @async
  *
  * @method getAsync
- *
+ * @instance
+ * @memberof ArrayDimensions
  * @param {string|number} array
- * @param {callback<gdal.Dimension>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.Dimension>}
+ * @param {callback<Dimension>} [callback=undefined]
+ * @return {Promise<Dimension>}
  */
 
 /**
  * Returns the number of dimensions in the collection.
  *
  * @method count
- * @return {number}
+ * @instance
+ * @memberof ArrayDimensions
+* @return {number}
  */
 
 /**
  * Returns the number of dimensions in the collection.
- * {{{async}}}
+ * @async
  *
  * @method countAsync
- *
- * @param {callback<number>} [callback=undefined] {{{cb}}}
+ * @instance
+ * @memberof ArrayDimensions
+ * @param {callback<number>} [callback=undefined]
  * @return {Promise<number>}
  */
 
 /**
- * @readOnly
- * @attribute names
+ * Dimensions' names.
+ *
+ * @readonly
+ * @kind member
+ * @instance
+ * @memberof ArrayDimensions
+ * @name names
  * @type {string[]}
  */
 
 /**
- * Parent group
+ * Returns the parent group.
  *
- * @readOnly
- * @attribute ds
- * @type {gdal.Group}
+ * @readonly
+ * @kind member
+ * @instance
+ * @memberof ArrayDimensions
+ * @name parent
+ * @type {Group}
  */
 
 /**
- * Parent dataset
+ * Returns the parent dataset.
  *
- * @readOnly
- * @attribute ds
- * @type {gdal.Dataset}
+ * @readonly
+ * @kind member
+ * @instance
+ * @memberof ArrayDimensions
+ * @name ds
+ * @type {Dataset}
  */
 #endif
 

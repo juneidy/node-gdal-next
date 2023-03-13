@@ -35,13 +35,22 @@
 #pragma GCC system_header
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996) /* XXXX was deprecated */
+#endif
+
 #include "tiledb/tiledb"
 
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
-typedef enum {
-    BAND=0,
-    PIXEL=1,
-    ATTRIBUTES=2
+typedef enum
+{
+    BAND = 0,
+    PIXEL = 1,
+    ATTRIBUTES = 2
 } TILEDB_INTERLEAVE_MODE;
 
-#endif // TILEDB_HEADERS_H
+#endif  // TILEDB_HEADERS_H

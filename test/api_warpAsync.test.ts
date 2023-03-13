@@ -1,4 +1,4 @@
-import * as gdal from '..'
+import * as gdal from 'gdal-async'
 import * as chaiAsPromised from 'chai-as-promised'
 import * as chai from 'chai'
 const assert = chai.assert
@@ -6,7 +6,8 @@ chai.use(chaiAsPromised)
 import * as semver from 'semver'
 
 describe('gdal', () => {
-  afterEach(global.gc)
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  afterEach(global.gc!)
 
   describe('suggestedWarpOutputAsync()', () => {
     let src: gdal.Dataset

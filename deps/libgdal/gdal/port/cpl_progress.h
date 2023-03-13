@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: cpl_progress.h bc89bc87f0d97aea76ed8642d92f686ce256f7c0 2013-01-25 17:55:47Z Frank Warmerdam $
+ * $Id$
  *
  * Project:  CPL - Common Portability Library
  * Author:   Frank Warmerdam, warmerdam@pobox.com
@@ -34,14 +34,16 @@
 
 CPL_C_START
 
-typedef int (CPL_STDCALL *GDALProgressFunc)(double dfComplete, const char *pszMessage, void *pProgressArg);
+typedef int(CPL_STDCALL *GDALProgressFunc)(double dfComplete,
+                                           const char *pszMessage,
+                                           void *pProgressArg);
 
-int CPL_DLL CPL_STDCALL GDALDummyProgress( double, const char *, void *);
-int CPL_DLL CPL_STDCALL GDALTermProgress( double, const char *, void *);
-int CPL_DLL CPL_STDCALL GDALScaledProgress( double, const char *, void *);
-void CPL_DLL * CPL_STDCALL GDALCreateScaledProgress( double, double,
-                                        GDALProgressFunc, void * );
-void CPL_DLL CPL_STDCALL GDALDestroyScaledProgress( void * );
+int CPL_DLL CPL_STDCALL GDALDummyProgress(double, const char *, void *);
+int CPL_DLL CPL_STDCALL GDALTermProgress(double, const char *, void *);
+int CPL_DLL CPL_STDCALL GDALScaledProgress(double, const char *, void *);
+void CPL_DLL *CPL_STDCALL GDALCreateScaledProgress(double, double,
+                                                   GDALProgressFunc, void *);
+void CPL_DLL CPL_STDCALL GDALDestroyScaledProgress(void *);
 CPL_C_END
 
 #endif /* ndef CPL_PROGRESS_H_INCLUDED */

@@ -61,7 +61,7 @@ void Driver::dispose() {
  * This roughly corresponds to a file format, though some drivers may
  * be gateways to many formats through a secondary multi-library.
  *
- * @class gdal.Driver
+ * @class Driver
  */
 NAN_METHOD(Driver::New) {
 
@@ -107,8 +107,11 @@ NAN_METHOD(Driver::toString) {
 }
 
 /**
- * @readOnly
- * @attribute description
+ * @readonly
+ * @kind member
+ * @name description
+ * @instance
+ * @memberof Driver
  * @type {string}
  */
 NAN_GETTER(Driver::descriptionGetter) {
@@ -118,8 +121,10 @@ NAN_GETTER(Driver::descriptionGetter) {
 }
 
 /**
- * @throws Error
+ * @throws {Error}
  * @method deleteDataset
+ * @instance
+ * @memberof Driver
  * @param {string} filename
  */
 NAN_METHOD(Driver::deleteDataset) {
@@ -143,42 +148,44 @@ auto DatasetRval = [](GDALDataset *ds, const GetFromPersistentFunc &) { return D
 /**
  * Create a new dataset with this driver.
  *
- * @throws Error
+ * @throws {Error}
  * @method create
+ * @instance
+ * @memberof Driver
  * @param {string} filename
  * @param {number} [x_size=0] raster width in pixels (ignored for vector
  * datasets)
  * @param {number} [y_size=0] raster height in pixels (ignored for vector
  * datasets)
  * @param {number} [band_count=0]
- * @param {number} [data_type=gdal.GDT_Byte] pixel data type (ignored for
- * vector datasets) (see {{#crossLink "Constants (GDT)"}}data
- * types{{/crossLink}})
- * @param {string[]|object} [creation_options] An array or object containing
+ * @param {string} [data_type=GDT_Byte] pixel data type (ignored for
+ * vector datasets) (see {@link GDT|data types}
+ * @param {StringOptions} [creation_options] An array or object containing
  * driver-specific dataset creation options
- * @throws
- * @return {gdal.Dataset}
+ * @throws {Error}
+ * @return {Dataset}
  */
 
 /**
  * Asynchronously create a new dataset with this driver.
  *
- * @throws Error
+ * @throws {Error}
  * @method createAsync
+ * @instance
+ * @memberof Driver
  * @param {string} filename
  * @param {number} [x_size=0] raster width in pixels (ignored for vector
  * datasets)
  * @param {number} [y_size=0] raster height in pixels (ignored for vector
  * datasets)
  * @param {number} [band_count=0]
- * @param {number} [data_type=gdal.GDT_Byte] pixel data type (ignored for
- * vector datasets) (see {{#crossLink "Constants (GDT)"}}data
- * types{{/crossLink}})
- * @param {string[]|object} [creation_options] An array or object containing
+ * @param {string} [data_type=GDT_Byte] pixel data type (ignored for
+ * vector datasets) (see {@link GDT|data types}
+ * @param {StringOptions} [creation_options] An array or object containing
  * driver-specific dataset creation options
- * @param {callback<gdal.Dataset>} [callback=undefined] {{{cb}}}
- * @throws
- * @return {Promise<gdal.Dataset>}
+ * @param {callback<Dataset>} [callback=undefined]
+ * @throws {Error}
+ * @return {Promise<Dataset>}
  */
 GDAL_ASYNCABLE_DEFINE(Driver::create) {
   Driver *driver = Nan::ObjectWrap::Unwrap<Driver>(info.This());
@@ -193,6 +200,7 @@ GDAL_ASYNCABLE_DEFINE(Driver::create) {
 
   if (info.Length() < 3) {
     if (info.Length() > 1 && options->parse(info[1])) {
+      Nan::ThrowError("Failed parsing options");
       return; // error parsing string list
     }
   } else {
@@ -226,32 +234,41 @@ GDAL_ASYNCABLE_DEFINE(Driver::create) {
 }
 
 /**
+ * @typedef {object} CreateOptions
+ * @property {ProgressCb} [progress_cb]
+ */
+
+/**
  * Create a copy of a dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method createCopy
+ * @instance
+ * @memberof Driver
  * @param {string} filename
- * @param {gdal.Dataset} src
- * @param {string[]|object} [options=null] An array or object containing driver-specific dataset creation options
+ * @param {Dataset} src
+ * @param {StringOptions} [options=null] An array or object containing driver-specific dataset creation options
  * @param {boolean} [strict=false] strict mode
  * @param {CreateOptions} [jsoptions] additional options
- * @param {ProgressCb} [jsoptions.progress_cb] {{{progress_cb}}}
- * @return {gdal.Dataset}
+ * @param {ProgressCb} [jsoptions.progress_cb]
+ * @return {Dataset}
  */
 
 /**
  * Asynchronously create a copy of a dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method createCopyAsync
+ * @instance
+ * @memberof Driver
  * @param {string} filename
- * @param {gdal.Dataset} src
- * @param {string[]|object} [options=null] An array or object containing driver-specific dataset creation options
+ * @param {Dataset} src
+ * @param {StringOptions} [options=null] An array or object containing driver-specific dataset creation options
  * @param {boolean} [strict=false] strict mode
  * @param {CreateOptions} [jsoptions] additional options
- * @param {ProgressCb} [jsoptions.progress_cb] {{{progress_cb}}}
- * @param {callback<gdal.Dataset>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.Dataset>}
+ * @param {ProgressCb} [jsoptions.progress_cb]
+ * @param {callback<Dataset>} [callback=undefined]
+ * @return {Promise<Dataset>}
  */
 GDAL_ASYNCABLE_DEFINE(Driver::createCopy) {
   Driver *driver = Nan::ObjectWrap::Unwrap<Driver>(info.This());
@@ -281,6 +298,7 @@ GDAL_ASYNCABLE_DEFINE(Driver::createCopy) {
 
   options = new StringList;
   if (info.Length() > 2 && options->parse(info[2])) {
+    Nan::ThrowError("Failed parsing options");
     return; // error parsing string list
   }
 
@@ -313,8 +331,10 @@ GDAL_ASYNCABLE_DEFINE(Driver::createCopy) {
 /**
  * Copy the files of a dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method copyFiles
+ * @instance
+ * @memberof Driver
  * @param {string} name_old New name for the dataset.
  * @param {string} name_new Old name of the dataset.
  */
@@ -338,8 +358,10 @@ NAN_METHOD(Driver::copyFiles) {
 /**
  * Renames the dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method rename
+ * @instance
+ * @memberof Driver
  * @param {string} new_name New name for the dataset.
  * @param {string} old_name Old name of the dataset.
  */
@@ -363,8 +385,10 @@ NAN_METHOD(Driver::rename) {
 /**
  * Returns metadata about the driver.
  *
- * @throws Error
+ * @throws {Error}
  * @method getMetadata
+ * @instance
+ * @memberof Driver
  * @param {string} [domain]
  * @return {any}
  */
@@ -385,24 +409,30 @@ NAN_METHOD(Driver::getMetadata) {
 /**
  * Opens a dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method open
+ * @instance
+ * @memberof Driver
  * @param {string} path
  * @param {string} [mode="r"] The mode to use to open the file: `"r"` or
  * `"r+"`
- * @return {gdal.Dataset}
+ * @param {StringOptions} [options] Driver-specific open options
+ * @return {Dataset}
  */
 
 /**
  * Opens a dataset.
  *
- * @throws Error
+ * @throws {Error}
  * @method openAsync
+ * @instance
+ * @memberof Driver
  * @param {string} path
  * @param {string} [mode="r"] The mode to use to open the file: `"r"` or
  * `"r+"`
- * @param {callback<gdal.Dataset>} [callback=undefined] {{{cb}}}
- * @return {Promise<gdal.Dataset>}
+ * @param {StringOptions} [options] Driver-specific open options
+ * @param {callback<Dataset>} [callback=undefined]
+ * @return {Promise<Dataset>}
  */
 GDAL_ASYNCABLE_DEFINE(Driver::open) {
   Driver *driver = Nan::ObjectWrap::Unwrap<Driver>(info.This());
@@ -421,14 +451,21 @@ GDAL_ASYNCABLE_DEFINE(Driver::open) {
     return;
   }
 
+  StringList *options = new StringList;
+  if (info.Length() > 2 && options->parse(info[2])) {
+    Nan::ThrowError("Failed parsing options");
+    return; // error parsing string list
+  }
+
   GDALDriver *raw = driver->getGDALDriver();
 
   GDALAsyncableJob<GDALDataset *> job(0);
   job.persist(driver->handle());
-  job.main = [raw, path, access](const GDALExecutionProgress &) {
+  job.main = [raw, path, access, options](const GDALExecutionProgress &) {
+    std::unique_ptr<StringList> options_ptr(options);
     const char *driver_list[2] = {raw->GetDescription(), nullptr};
     CPLErrorReset();
-    GDALDataset *ds = (GDALDataset *)GDALOpenEx(path.c_str(), access, driver_list, NULL, NULL);
+    GDALDataset *ds = (GDALDataset *)GDALOpenEx(path.c_str(), access, driver_list, options->get(), NULL);
     if (!ds) throw CPLGetLastErrorMsg();
     return ds;
   };

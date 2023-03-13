@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: ogrgeopackageutility.h fc13138b976f8277cffa2f11b7c2a95811aa7ed6 2017-03-20 14:59:36Z Even Rouault $
+ * $Id$
  *
  * Project:  GeoPackage Translator
  * Purpose:  Utility header for OGR GeoPackage driver.
@@ -50,13 +50,19 @@ typedef struct
     size_t nHeaderLen;
 } GPkgHeader;
 
-OGRFieldType        GPkgFieldToOGR(const char *pszGpkgType, OGRFieldSubType& eSubType, int& nMaxWidth);
-const char*         GPkgFieldFromOGR(OGRFieldType eType, OGRFieldSubType eSubType, int nMaxWidth);
-OGRwkbGeometryType  GPkgGeometryTypeToWKB(const char *pszGpkgType, bool bHasZ, bool bHasM);
+OGRFieldType GPkgFieldToOGR(const char *pszGpkgType, OGRFieldSubType &eSubType,
+                            int &nMaxWidth);
+const char *GPkgFieldFromOGR(OGRFieldType eType, OGRFieldSubType eSubType,
+                             int nMaxWidth);
+OGRwkbGeometryType GPkgGeometryTypeToWKB(const char *pszGpkgType, bool bHasZ,
+                                         bool bHasM);
 
-GByte*              GPkgGeometryFromOGR(const OGRGeometry *poGeometry, int iSrsId, size_t *pnWkbLen);
-OGRGeometry*        GPkgGeometryToOGR(const GByte *pabyGpkg, size_t nGpkgLen, OGRSpatialReference *poSrs);
+GByte *GPkgGeometryFromOGR(const OGRGeometry *poGeometry, int iSrsId,
+                           size_t *pnWkbLen);
+OGRGeometry *GPkgGeometryToOGR(const GByte *pabyGpkg, size_t nGpkgLen,
+                               OGRSpatialReference *poSrs);
 
-OGRErr              GPkgHeaderFromWKB(const GByte *pabyGpkg, size_t nGpkgLen, GPkgHeader *poHeader);
+OGRErr GPkgHeaderFromWKB(const GByte *pabyGpkg, size_t nGpkgLen,
+                         GPkgHeader *poHeader);
 
 #endif

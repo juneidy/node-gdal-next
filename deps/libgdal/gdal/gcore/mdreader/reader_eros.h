@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: reader_eros.h e37e476c4cf8f4b0df8995e0d95d5d672fca1a9b 2018-05-05 16:54:18 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  GDAL Core
  * Purpose:  Read metadata from EROS imagery.
@@ -44,21 +44,23 @@ Common metadata (from metadata filename):
     AcquisitionDateTime: sweep_start_utc, sweep_end_utc
 */
 
-class GDALMDReaderEROS: public GDALMDReaderBase
+class GDALMDReaderEROS : public GDALMDReaderBase
 {
-public:
+  public:
     GDALMDReaderEROS(const char *pszPath, char **papszSiblingFiles);
     virtual ~GDALMDReaderEROS();
     virtual bool HasRequiredFiles() const override;
-    virtual char** GetMetadataFiles() const override;
-protected:
+    virtual char **GetMetadataFiles() const override;
+
+  protected:
     virtual void LoadMetadata() override;
-    char** LoadImdTxtFile();
-    virtual time_t GetAcquisitionTimeFromString(const char* pszDateTime) override;
-protected:
+    char **LoadImdTxtFile();
+    virtual GIntBig
+    GetAcquisitionTimeFromString(const char *pszDateTime) override;
+
+  protected:
     CPLString m_osIMDSourceFilename{};
     CPLString m_osRPBSourceFilename{};
 };
 
-#endif // READER_EROS_H_INCLUDED
-
+#endif  // READER_EROS_H_INCLUDED

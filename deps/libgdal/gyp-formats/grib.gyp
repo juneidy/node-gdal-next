@@ -42,7 +42,7 @@
 				"../gdal/frmts/grib/degrib/degrib/grib2api.c",
 				"../gdal/frmts/grib/degrib/degrib/myutil.c",
 				"../gdal/frmts/grib/degrib/degrib/metaparse.cpp",
-				"../gdal/frmts/grib/degrib/degrib/myerror.c",
+				"../gdal/frmts/grib/degrib/degrib/myerror.cpp",
 				"../gdal/frmts/grib/degrib/degrib/tendian.cpp",
 				"../gdal/frmts/grib/degrib/degrib/inventory.cpp",
 				"../gdal/frmts/grib/degrib/degrib/metaprint.cpp",
@@ -64,7 +64,6 @@
 				"../gdal/frmts/degrib/degrib",
 				"../gdal/frmts/mem",
 				"../gdal/frmts/png/libpng",
-				"../gdal/frmts/zlib",
 				"../gdal/frmts/degrib/g2clib",
 				"../gdal/frmts/degrib/g2clib"
 			]

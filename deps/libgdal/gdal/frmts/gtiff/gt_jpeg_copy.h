@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: gt_jpeg_copy.h 355b41831cd2685c85d1aabe5b95665a2c6e99b7 2019-06-19 17:07:04 +0200 Even Rouault $
+ * $Id$
  *
  * Project:  GeoTIFF Driver
  * Purpose:  Specialized copy of JPEG content into TIFF.
@@ -36,29 +36,29 @@
 
 #ifdef JPEG_DIRECT_COPY
 
-int GTIFF_CanDirectCopyFromJPEG( GDALDataset* poSrcDS,
-                                 char** &papszCreateOptions );
+int GTIFF_CanDirectCopyFromJPEG(GDALDataset *poSrcDS,
+                                char **&papszCreateOptions);
 
-CPLErr GTIFF_DirectCopyFromJPEG( GDALDataset* poDS, GDALDataset* poSrcDS,
-                                 GDALProgressFunc pfnProgress,
-                                 void * pProgressData,
-                                 bool& bShouldFallbackToNormalCopyIfFail );
+CPLErr GTIFF_DirectCopyFromJPEG(GDALDataset *poDS, GDALDataset *poSrcDS,
+                                GDALProgressFunc pfnProgress,
+                                void *pProgressData,
+                                bool &bShouldFallbackToNormalCopyIfFail);
 
-#endif // JPEG_DIRECT_COPY
+#endif  // JPEG_DIRECT_COPY
 
 #ifdef HAVE_LIBJPEG
 
 #include "tiffio.h"
 
-int GTIFF_CanCopyFromJPEG( GDALDataset* poSrcDS, char** &papszCreateOptions );
+int GTIFF_CanCopyFromJPEG(GDALDataset *poSrcDS, char **&papszCreateOptions);
 
-CPLErr GTIFF_CopyFromJPEG_WriteAdditionalTags( TIFF* hTIFF,
-                                               GDALDataset* poSrcDS );
+CPLErr GTIFF_CopyFromJPEG_WriteAdditionalTags(TIFF *hTIFF,
+                                              GDALDataset *poSrcDS);
 
-CPLErr GTIFF_CopyFromJPEG( GDALDataset* poDS, GDALDataset* poSrcDS,
-                           GDALProgressFunc pfnProgress, void * pProgressData,
-                           bool& bShouldFallbackToNormalCopyIfFail );
+CPLErr GTIFF_CopyFromJPEG(GDALDataset *poDS, GDALDataset *poSrcDS,
+                          GDALProgressFunc pfnProgress, void *pProgressData,
+                          bool &bShouldFallbackToNormalCopyIfFail);
 
-#endif // HAVE_LIBJPEG
+#endif  // HAVE_LIBJPEG
 
-#endif // GT_JPEG_COPY_H_INCLUDED
+#endif  // GT_JPEG_COPY_H_INCLUDED
