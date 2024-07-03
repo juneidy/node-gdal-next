@@ -31,6 +31,7 @@
 #include "keaband.h"
 #include "keacopy.h"
 #include "../frmts/hdf5/hdf5vfl.h"
+#include "cpl_vsi_virtual.h"
 
 /************************************************************************/
 /*                     KEADatasetDriverUnload()                        */
@@ -48,6 +49,8 @@ GDALDataType KEA_to_GDAL_Type(kealib::KEADataType ekeaType)
     switch (ekeaType)
     {
         case kealib::kea_8int:
+            egdalType = GDT_Int8;
+            break;
         case kealib::kea_8uint:
             egdalType = GDT_Byte;
             break;
@@ -88,6 +91,9 @@ kealib::KEADataType GDAL_to_KEA_Type(GDALDataType egdalType)
     kealib::KEADataType ekeaType = kealib::kea_undefined;
     switch (egdalType)
     {
+        case GDT_Int8:
+            ekeaType = kealib::kea_8int;
+            break;
         case GDT_Byte:
             ekeaType = kealib::kea_8uint;
             break;
@@ -174,6 +180,14 @@ GDALDataset *KEADataset::Open(GDALOpenInfo *poOpenInfo)
                      poOpenInfo->pszFilename, e.what());
             return nullptr;
         }
+        catch (...)
+        {
+            // was a problem - can't be a valid file
+            CPLError(CE_Failure, CPLE_OpenFailed,
+                     "Attempt to open file `%s' failed. Error: unknown\n",
+                     poOpenInfo->pszFilename);
+            return nullptr;
+        }
     }
     else
     {
@@ -225,6 +239,20 @@ H5::H5File *KEADataset::CreateLL(const char *pszFilename, int nXSize,
             pszFilename);
         return nullptr;
     }
+
+    // This helps avoiding issues with H5File handles in a bad state, that
+    // may cause crashes at process termination
+    // Cf https://github.com/OSGeo/gdal/issues/8743
+    if (VSIFileManager::GetHandler(pszFilename) !=
+        VSIFileManager::GetHandler(""))
+    {
+        CPLError(CE_Failure, CPLE_OpenFailed,
+                 "Attempt to create file `%s' failed. /vsi file systems not "
+                 "supported\n",
+                 pszFilename);
+        return nullptr;
+    }
+
     // process any creation options in papszParamList
     // default value
     unsigned int nimageblockSize = kealib::KEA_IMAGE_CHUNK_SIZE;
@@ -296,6 +324,13 @@ H5::H5File *KEADataset::CreateLL(const char *pszFilename, int nXSize,
         CPLError(CE_Failure, CPLE_OpenFailed,
                  "Attempt to create file `%s' failed. Error: %s\n", pszFilename,
                  e.what());
+        return nullptr;
+    }
+    catch (...)
+    {
+        CPLError(CE_Failure, CPLE_OpenFailed,
+                 "Attempt to create file `%s' failed. Error: unknown\n",
+                 pszFilename);
         return nullptr;
     }
 }

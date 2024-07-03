@@ -76,8 +76,28 @@ OGRGeoJSONDataSource::OGRGeoJSONDataSource()
 
 OGRGeoJSONDataSource::~OGRGeoJSONDataSource()
 {
-    OGRGeoJSONDataSource::FlushCache(true);
-    OGRGeoJSONDataSource::Clear();
+    OGRGeoJSONDataSource::Close();
+}
+
+/************************************************************************/
+/*                              Close()                                 */
+/************************************************************************/
+
+CPLErr OGRGeoJSONDataSource::Close()
+{
+    CPLErr eErr = CE_None;
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        if (OGRGeoJSONDataSource::FlushCache(true) != CE_None)
+            eErr = CE_Failure;
+
+        if (!OGRGeoJSONDataSource::Clear())
+            eErr = CE_Failure;
+
+        if (GDALDataset::Close() != CE_None)
+            eErr = CE_Failure;
+    }
+    return eErr;
 }
 
 /************************************************************************/
@@ -235,7 +255,7 @@ OGRLayer *OGRGeoJSONDataSource::GetLayer(int nLayer)
 /************************************************************************/
 
 OGRLayer *OGRGeoJSONDataSource::ICreateLayer(const char *pszNameIn,
-                                             OGRSpatialReference *poSRS,
+                                             const OGRSpatialReference *poSRS,
                                              OGRwkbGeometryType eGType,
                                              char **papszOptions)
 {
@@ -481,7 +501,8 @@ int OGRGeoJSONDataSource::TestCapability(const char *pszCap)
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
         return fpOut_ != nullptr && nLayers_ == 0;
-    else if (EQUAL(pszCap, ODsCZGeometries))
+    else if (EQUAL(pszCap, ODsCZGeometries) ||
+             EQUAL(pszCap, ODsCMeasuredGeometries))
         return TRUE;
 
     return FALSE;
@@ -553,7 +574,7 @@ void OGRGeoJSONDataSource::SetAttributesTranslation(AttributesTranslation type)
 /*                  PRIVATE FUNCTIONS IMPLEMENTATION                    */
 /************************************************************************/
 
-void OGRGeoJSONDataSource::Clear()
+bool OGRGeoJSONDataSource::Clear()
 {
     for (int i = 0; i < nLayers_; i++)
     {
@@ -576,11 +597,14 @@ void OGRGeoJSONDataSource::Clear()
     pszGeoData_ = nullptr;
     nGeoDataLen_ = 0;
 
+    bool bRet = true;
     if (fpOut_)
     {
-        VSIFCloseL(fpOut_);
+        if (VSIFCloseL(fpOut_) != 0)
+            bRet = false;
         fpOut_ = nullptr;
     }
+    return bRet;
 }
 
 /************************************************************************/
@@ -715,7 +739,7 @@ int OGRGeoJSONDataSource::ReadFromService(GDALOpenInfo *poOpenInfo,
         {
             if (ESRIJSONIsObject(pszGeoData_) ||
                 TopoJSONIsObject(pszGeoData_) ||
-                GeoJSONSeqIsObject(pszGeoData_))
+                GeoJSONSeqIsObject(pszGeoData_) || JSONFGIsObject(pszGeoData_))
             {
                 OGRGeoJSONDriverStoreContent(pszSource, pszGeoData_);
                 pszGeoData_ = nullptr;
@@ -1014,11 +1038,15 @@ void OGRGeoJSONDataSource::AddLayer(OGRGeoJSONLayer *poLayer)
 /*                            FlushCache()                              */
 /************************************************************************/
 
-void OGRGeoJSONDataSource::FlushCache(bool /*bAtClosing*/)
+CPLErr OGRGeoJSONDataSource::FlushCache(bool /*bAtClosing*/)
 {
     if (papoLayersWriter_ != nullptr)
-        return;
+    {
+        return papoLayersWriter_[0]->SyncToDisk() == OGRERR_NONE ? CE_None
+                                                                 : CE_Failure;
+    }
 
+    CPLErr eErr = CE_None;
     for (int i = 0; i < nLayers_; i++)
     {
         if (papoLayers_[i]->HasBeenUpdated())
@@ -1112,9 +1140,10 @@ void OGRGeoJSONDataSource::FlushCache(bool /*bAtClosing*/)
                         }
                         else
                         {
-                            const bool bCopyOK = CPL_TO_BOOL(
+                            bool bCopyOK = CPL_TO_BOOL(
                                 VSIOverwriteFile(fpTarget, osNewFilename));
-                            VSIFCloseL(fpTarget);
+                            if (VSIFCloseL(fpTarget) != 0)
+                                bCopyOK = false;
                             if (bCopyOK)
                             {
                                 VSIUnlink(osNewFilename);
@@ -1149,10 +1178,13 @@ void OGRGeoJSONDataSource::FlushCache(bool /*bAtClosing*/)
                     }
                 }
             }
+            if (!bOK)
+                eErr = CE_Failure;
 
             // Restore filters.
             papoLayers_[i]->m_poAttrQuery = poAttrQueryBak;
             papoLayers_[i]->m_poFilterGeom = poFilterGeomBak;
         }
     }
+    return eErr;
 }

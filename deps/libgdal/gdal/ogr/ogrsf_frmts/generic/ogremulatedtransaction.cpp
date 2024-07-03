@@ -117,10 +117,11 @@ class OGRDataSourceWithTransaction final : public OGRDataSource
 
     virtual int TestCapability(const char *) override;
 
-    virtual OGRLayer *ICreateLayer(const char *pszName,
-                                   OGRSpatialReference *poSpatialRef = nullptr,
-                                   OGRwkbGeometryType eGType = wkbUnknown,
-                                   char **papszOptions = nullptr) override;
+    virtual OGRLayer *
+    ICreateLayer(const char *pszName,
+                 const OGRSpatialReference *poSpatialRef = nullptr,
+                 OGRwkbGeometryType eGType = wkbUnknown,
+                 char **papszOptions = nullptr) override;
     virtual OGRLayer *CopyLayer(OGRLayer *poSrcLayer, const char *pszNewName,
                                 char **papszOptions = nullptr) override;
 
@@ -134,7 +135,7 @@ class OGRDataSourceWithTransaction final : public OGRDataSource
                                  const char *pszDialect) override;
     virtual void ReleaseResultSet(OGRLayer *poResultsSet) override;
 
-    virtual void FlushCache(bool bAtClosing) override;
+    virtual CPLErr FlushCache(bool bAtClosing) override;
 
     virtual OGRErr StartTransaction(int bForce = FALSE) override;
     virtual OGRErr CommitTransaction() override;
@@ -324,7 +325,7 @@ int OGRDataSourceWithTransaction::TestCapability(const char *pszCap)
 }
 
 OGRLayer *OGRDataSourceWithTransaction::ICreateLayer(
-    const char *pszName, OGRSpatialReference *poSpatialRef,
+    const char *pszName, const OGRSpatialReference *poSpatialRef,
     OGRwkbGeometryType eGType, char **papszOptions)
 {
     if (!m_poBaseDataSource)
@@ -386,10 +387,10 @@ void OGRDataSourceWithTransaction::ReleaseResultSet(OGRLayer *poResultsSet)
     m_poBaseDataSource->ReleaseResultSet(poResultsSet);
 }
 
-void OGRDataSourceWithTransaction::FlushCache(bool bAtClosing)
+CPLErr OGRDataSourceWithTransaction::FlushCache(bool bAtClosing)
 {
     if (!m_poBaseDataSource)
-        return;
+        return CE_None;
     return m_poBaseDataSource->FlushCache(bAtClosing);
 }
 
@@ -683,6 +684,7 @@ OGRErr OGRLayerWithTransaction::AlterFieldDefn(int iField,
         poDstFieldDefn->SetNullable(poSrcFieldDefn->IsNullable());
         poDstFieldDefn->SetUnique(poSrcFieldDefn->IsUnique());
         poDstFieldDefn->SetDomainName(poSrcFieldDefn->GetDomainName());
+        poDstFieldDefn->SetComment(poSrcFieldDefn->GetComment());
     }
     return eErr;
 }

@@ -177,7 +177,7 @@ GDALDataset *OGRJMLDataset::Create(const char *pszFilename, int /* nXSize */,
 /************************************************************************/
 
 OGRLayer *OGRJMLDataset::ICreateLayer(const char *pszLayerName,
-                                      OGRSpatialReference *poSRS,
+                                      const OGRSpatialReference *poSRS,
                                       OGRwkbGeometryType /* eType */,
                                       char **papszOptions)
 {
@@ -190,10 +190,10 @@ OGRLayer *OGRJMLDataset::ICreateLayer(const char *pszLayerName,
         CSLFetchNameValueDef(papszOptions, "CREATE_OGR_STYLE_FIELD", "NO"));
     bool bClassicGML =
         CPLTestBool(CSLFetchNameValueDef(papszOptions, "CLASSIC_GML", "NO"));
-    auto poSRSClone = poSRS;
-    if (poSRSClone)
+    OGRSpatialReference *poSRSClone = nullptr;
+    if (poSRS)
     {
-        poSRSClone = poSRSClone->Clone();
+        poSRSClone = poSRS->Clone();
         poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
     poLayer =
@@ -227,6 +227,8 @@ void RegisterOGRJML()
 
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES_READ, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_FEATURE_STYLES_WRITE, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
 
     poDriver->SetMetadataItem(

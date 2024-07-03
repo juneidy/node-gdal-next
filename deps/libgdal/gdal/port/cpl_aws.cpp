@@ -30,6 +30,7 @@
 //! @cond Doxygen_Suppress
 
 #include "cpl_aws.h"
+#include "cpl_json.h"
 #include "cpl_vsi_error.h"
 #include "cpl_sha256.h"
 #include "cpl_time.h"
@@ -376,6 +377,7 @@ VSIS3HandleHelper::VSIS3HandleHelper(
       m_bUseVirtualHosting(bUseVirtualHosting),
       m_eCredentialsSource(eCredentialsSource)
 {
+    VSIS3UpdateParams::UpdateHandleFromMap(this);
 }
 
 /************************************************************************/
@@ -505,47 +507,6 @@ CPLString IVSIS3LikeHandleHelper::GetRFC822DateTime()
 }
 
 /************************************************************************/
-/*                          ParseSimpleJson()                           */
-/*                                                                      */
-/*      Return a string list of name/value pairs extracted from a       */
-/*      JSON doc.  The EC2 IAM web service returns simple JSON          */
-/*      responses.  The parsing as done currently is very fragile       */
-/*      and depends on JSON documents being in a very very simple       */
-/*      form.                                                           */
-/************************************************************************/
-
-static CPLStringList ParseSimpleJson(const char *pszJson)
-
-{
-    /* -------------------------------------------------------------------- */
-    /*      We are expecting simple documents like the following with no    */
-    /*      hierarchy or complex structure.                                 */
-    /* -------------------------------------------------------------------- */
-    /*
-        {
-        "Code" : "Success",
-        "LastUpdated" : "2017-07-03T16:20:17Z",
-        "Type" : "AWS-HMAC",
-        "AccessKeyId" : "bla",
-        "SecretAccessKey" : "bla",
-        "Token" : "bla",
-        "Expiration" : "2017-07-03T22:42:58Z"
-        }
-    */
-
-    CPLStringList oWords(
-        CSLTokenizeString2(pszJson, " \n\t,:{}", CSLT_HONOURSTRINGS));
-    CPLStringList oNameValue;
-
-    for (int i = 0; i < oWords.size(); i += 2)
-    {
-        oNameValue.SetNameValue(oWords[i], oWords[i + 1]);
-    }
-
-    return oNameValue;
-}
-
-/************************************************************************/
 /*                        Iso8601ToUnixTime()                           */
 /************************************************************************/
 
@@ -577,7 +538,14 @@ static bool Iso8601ToUnixTime(const char *pszDT, GIntBig *pnUnixTime)
 /*                  IsMachinePotentiallyEC2Instance()                   */
 /************************************************************************/
 
-static bool IsMachinePotentiallyEC2Instance()
+enum class EC2InstanceCertainty
+{
+    YES,
+    NO,
+    MAYBE
+};
+
+static EC2InstanceCertainty IsMachinePotentiallyEC2Instance()
 {
 #if defined(__linux) || defined(WIN32)
     const auto IsMachinePotentiallyEC2InstanceFromLinuxHost = []()
@@ -599,7 +567,8 @@ static bool IsMachinePotentiallyEC2Instance()
             char uuid[36 + 1] = {0};
             VSIFReadL(uuid, 1, sizeof(uuid) - 1, fp);
             VSIFCloseL(fp);
-            return EQUALN(uuid, "ec2", 3);
+            return EQUALN(uuid, "ec2", 3) ? EC2InstanceCertainty::YES
+                                          : EC2InstanceCertainty::NO;
         }
 
         // Check for Nitro Hypervisor instances
@@ -611,11 +580,12 @@ static bool IsMachinePotentiallyEC2Instance()
             char buf[10 + 1] = {0};
             VSIFReadL(buf, 1, sizeof(buf) - 1, fp);
             VSIFCloseL(fp);
-            return EQUALN(buf, "Amazon EC2", 10);
+            return EQUALN(buf, "Amazon EC2", 10) ? EC2InstanceCertainty::YES
+                                                 : EC2InstanceCertainty::NO;
         }
 
         // Fallback: Check via the network
-        return true;
+        return EC2InstanceCertainty::MAYBE;
     };
 #endif
 
@@ -629,7 +599,7 @@ static bool IsMachinePotentiallyEC2Instance()
 
     if (!CPLTestBool(CPLGetConfigOption("CPL_AWS_AUTODETECT_EC2", "YES")))
     {
-        return true;
+        return EC2InstanceCertainty::MAYBE;
     }
     else
     {
@@ -640,7 +610,7 @@ static bool IsMachinePotentiallyEC2Instance()
                             "CPL_AWS_AUTODETECT_EC2 instead");
             if (!CPLTestBool(opt))
             {
-                return true;
+                return EC2InstanceCertainty::MAYBE;
             }
         }
     }
@@ -650,7 +620,7 @@ static bool IsMachinePotentiallyEC2Instance()
 #elif defined(WIN32)
     if (!CPLTestBool(CPLGetConfigOption("CPL_AWS_AUTODETECT_EC2", "YES")))
     {
-        return true;
+        return EC2InstanceCertainty::MAYBE;
     }
 
     // Regular UUID is not valid for WINE, fetch from sysfs instead.
@@ -667,26 +637,26 @@ static bool IsMachinePotentiallyEC2Instance()
             if (osMachineUUID.length() >= 3 &&
                 EQUALN(osMachineUUID.c_str(), "EC2", 3))
             {
-                return true;
+                return EC2InstanceCertainty::YES;
             }
             else if (osMachineUUID.length() >= 8 && osMachineUUID[4] == '2' &&
                      osMachineUUID[6] == 'E' && osMachineUUID[7] == 'C')
             {
-                return true;
+                return EC2InstanceCertainty::YES;
             }
             else
             {
-                return false;
+                return EC2InstanceCertainty::NO;
             }
         }
 #endif
     }
 
     // Fallback: Check via the network
-    return true;
+    return EC2InstanceCertainty::MAYBE;
 #else
     // At time of writing EC2 instances can be only Linux or Windows
-    return false;
+    return EC2InstanceCertainty::NO;
 #endif
 }
 
@@ -877,10 +847,21 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
     const CPLString osEC2RootURL(VSIGetPathSpecificOption(
         osPathForOption.c_str(), "CPL_AWS_EC2_API_ROOT_URL", osEC2DefaultURL));
     // coverity[tainted_data]
-    const CPLString osECSRelativeURI(VSIGetPathSpecificOption(
-        osPathForOption.c_str(), "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", ""));
+    const CPLString osECSFullURI(VSIGetPathSpecificOption(
+        osPathForOption.c_str(), "AWS_CONTAINER_CREDENTIALS_FULL_URI", ""));
+    // coverity[tainted_data]
+    const CPLString osECSRelativeURI(
+        osECSFullURI.empty() ? VSIGetPathSpecificOption(
+                                   osPathForOption.c_str(),
+                                   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "")
+                             : std::string());
     CPLString osToken;
-    if (osEC2RootURL == osEC2DefaultURL && !osECSRelativeURI.empty())
+    if (!osECSFullURI.empty())
+    {
+        // Cf https://docs.aws.amazon.com/sdkref/latest/guide/feature-container-credentials.html
+        osURLRefreshCredentials = osECSFullURI;
+    }
+    else if (osEC2RootURL == osEC2DefaultURL && !osECSRelativeURI.empty())
     {
         // See
         // https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
@@ -888,7 +869,8 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
     }
     else
     {
-        if (!IsMachinePotentiallyEC2Instance())
+        const auto eIsEC2 = IsMachinePotentiallyEC2Instance();
+        if (eIsEC2 == EC2InstanceCertainty::NO)
             return false;
 
         // Use IMDSv2 protocol:
@@ -916,8 +898,8 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
                 else
                 {
                     // Failure: either we are not running on EC2 (or something
-                    // emulating it) or this doesn't implement yet IDMSv2 Go on
-                    // trying IDMSv1
+                    // emulating it) or this doesn't implement yet IMDSv2.
+                    // Fallback to IMDSv1
 
                     // /latest/api/token doesn't work inside a Docker container
                     // that has no host networking. Cf
@@ -938,28 +920,15 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
                             if (psResult2->nStatus == 0 &&
                                 psResult2->pabyData != nullptr)
                             {
-                                VSIStatBufL sStat;
-                                if (VSIStatL("/.dockerenv", &sStat) == 0)
-                                {
-                                    CPLDebug("AWS",
-                                             "/latest/api/token EC2 IDMSv2 "
-                                             "request timed out, but "
-                                             "/latest/metadata succeeded. "
-                                             "Trying with IDMSv1. "
-                                             "Try running your Docker "
-                                             "container with --network=host.");
-                                }
-                                else
-                                {
-                                    CPLDebug(
-                                        "AWS",
-                                        "/latest/api/token EC2 IDMSv2 request "
-                                        "timed out, but /latest/metadata "
-                                        "succeeded. "
-                                        "Trying with IDMSv1. "
-                                        "Are you running inside a container "
-                                        "that has no host networking ?");
-                                }
+                                CPLDebug("AWS",
+                                         "/latest/api/token EC2 IMDSv2 request "
+                                         "timed out, but /latest/metadata "
+                                         "succeeded. "
+                                         "Trying with IMDSv1. "
+                                         "Consult "
+                                         "https://gdal.org/user/"
+                                         "virtual_file_systems.html#vsis3_imds "
+                                         "for IMDS related issues.");
                             }
                             CPLHTTPDestroyResult(psResult2);
                         }
@@ -999,7 +968,17 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
             if (gosIAMRole.empty())
             {
                 // We didn't get the IAM role. We are definitely not running
-                // on EC2 or an emulation of it.
+                // on (a correctly configured) EC2 or an emulation of it.
+
+                if (eIsEC2 == EC2InstanceCertainty::YES)
+                {
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "EC2 IMDSv2 and IMDSv1 requests failed. Consult "
+                             "https://gdal.org/user/"
+                             "virtual_file_systems.html#vsis3_imds "
+                             "for IMDS related issues.");
+                }
+
                 return false;
             }
         }
@@ -1022,7 +1001,7 @@ bool VSIS3HandleHelper::GetConfigurationFromEC2(
         {
             const CPLString osJSon =
                 reinterpret_cast<char *>(psResult->pabyData);
-            oResponse = ParseSimpleJson(osJSon);
+            oResponse = CPLParseKeyValueJson(osJSon);
         }
         CPLHTTPDestroyResult(psResult);
     }
@@ -1953,15 +1932,12 @@ struct curl_slist *VSIS3HandleHelper::GetCurlHeaders(
 
 bool VSIS3HandleHelper::CanRestartOnError(const char *pszErrorMsg,
                                           const char *pszHeaders,
-                                          bool bSetError, bool *pbUpdateMap)
+                                          bool bSetError)
 {
 #ifdef DEBUG_VERBOSE
     CPLDebug("S3", "%s", pszErrorMsg);
     CPLDebug("S3", "%s", pszHeaders ? pszHeaders : "");
 #endif
-
-    if (pbUpdateMap != nullptr)
-        *pbUpdateMap = true;
 
     if (!STARTS_WITH(pszErrorMsg, "<?xml") &&
         !STARTS_WITH(pszErrorMsg, "<Error>"))
@@ -2013,6 +1989,9 @@ bool VSIS3HandleHelper::CanRestartOnError(const char *pszErrorMsg,
         SetRegion(pszRegion);
         CPLDebug("S3", "Switching to region %s", m_osRegion.c_str());
         CPLDestroyXMLNode(psTree);
+
+        VSIS3UpdateParams::UpdateMapFromHandle(this);
+
         return true;
     }
 
@@ -2068,8 +2047,8 @@ bool VSIS3HandleHelper::CanRestartOnError(const char *pszErrorMsg,
                          m_osEndpoint.c_str());
                 CPLDebug("S3", "Switching to region %s", m_osRegion.c_str());
                 CPLDestroyXMLNode(psTree);
-                if (bIsTemporaryRedirect && pbUpdateMap != nullptr)
-                    *pbUpdateMap = false;
+                if (!bIsTemporaryRedirect)
+                    VSIS3UpdateParams::UpdateMapFromHandle(this);
                 return true;
             }
 
@@ -2081,8 +2060,8 @@ bool VSIS3HandleHelper::CanRestartOnError(const char *pszErrorMsg,
         CPLDebug("S3", "Switching to endpoint %s", m_osEndpoint.c_str());
         CPLDestroyXMLNode(psTree);
 
-        if (bIsTemporaryRedirect && pbUpdateMap != nullptr)
-            *pbUpdateMap = false;
+        if (!bIsTemporaryRedirect)
+            VSIS3UpdateParams::UpdateMapFromHandle(this);
 
         return true;
     }
@@ -2263,16 +2242,14 @@ CPLString VSIS3HandleHelper::GetSignedURL(CSLConstList papszOptions)
 /************************************************************************/
 
 std::mutex VSIS3UpdateParams::gsMutex{};
+
 std::map<CPLString, VSIS3UpdateParams>
     VSIS3UpdateParams::goMapBucketsToS3Params{};
 
-void VSIS3UpdateParams::UpdateMapFromHandle(
-    IVSIS3LikeHandleHelper *poHandleHelper)
+void VSIS3UpdateParams::UpdateMapFromHandle(VSIS3HandleHelper *poS3HandleHelper)
 {
     std::lock_guard<std::mutex> guard(gsMutex);
 
-    VSIS3HandleHelper *poS3HandleHelper =
-        cpl::down_cast<VSIS3HandleHelper *>(poHandleHelper);
     goMapBucketsToS3Params[poS3HandleHelper->GetBucket()] =
         VSIS3UpdateParams(poS3HandleHelper);
 }
@@ -2281,13 +2258,10 @@ void VSIS3UpdateParams::UpdateMapFromHandle(
 /*                         UpdateHandleFromMap()                        */
 /************************************************************************/
 
-void VSIS3UpdateParams::UpdateHandleFromMap(
-    IVSIS3LikeHandleHelper *poHandleHelper)
+void VSIS3UpdateParams::UpdateHandleFromMap(VSIS3HandleHelper *poS3HandleHelper)
 {
     std::lock_guard<std::mutex> guard(gsMutex);
 
-    VSIS3HandleHelper *poS3HandleHelper =
-        cpl::down_cast<VSIS3HandleHelper *>(poHandleHelper);
     std::map<CPLString, VSIS3UpdateParams>::iterator oIter =
         goMapBucketsToS3Params.find(poS3HandleHelper->GetBucket());
     if (oIter != goMapBucketsToS3Params.end())

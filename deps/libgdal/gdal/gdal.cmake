@@ -6,8 +6,8 @@
 # a new member or virtual function in a public C++ class, etc.
 # This will typically happen for each GDAL feature release (change of X or Y in
 # a X.Y.Z numbering scheme), but should not happen for a bugfix release (change of Z)
-# Previous value: 32 for GDAL 3.6
-set(GDAL_SOVERSION 32)
+# Previous value: 34 for GDAL 3.8
+set(GDAL_SOVERSION 34)
 
 # Switches to control build targets(cached)
 option(ENABLE_GNM "Build GNM (Geography Network Model) component" ON)
@@ -217,8 +217,9 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" OR CMAKE_CXX_COMPILER_ID STREQUAL
     }")
   check_cxx_source_compiles("${TEST_LINK_STDCPP_SOURCE_CODE}" _TEST_LINK_STDCPP)
   if( NOT _TEST_LINK_STDCPP )
-      message(WARNING "Cannot link code using standard C++ library. Automatically adding -lstdc++ to CMAKE_EXE_LINKER_FLAGS AND CMAKE_MODULE_LINKER_FLAGS")
+      message(WARNING "Cannot link code using standard C++ library. Automatically adding -lstdc++ to CMAKE_EXE_LINKER_FLAGS, CMAKE_SHARED_LINKER_FLAGS and CMAKE_MODULE_LINKER_FLAGS")
       set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lstdc++")
+      set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -lstdc++")
       set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -lstdc++")
 
       check_cxx_source_compiles("${TEST_LINK_STDCPP_SOURCE_CODE}" _TEST_LINK_STDCPP_AGAIN)
@@ -459,8 +460,8 @@ else ()
         ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}
         ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
       )
-      if( NOT "${CMAKE_INSTALL_PREFIX}" STREQUAL "" )
-          message(WARNING "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX} will be ignored and replaced with ${base};${base}/${relDir} due to GDAL_SET_INSTALL_RELATIVE_RPATH being set")
+      if( NOT "${CMAKE_INSTALL_RPATH}" STREQUAL "" )
+          message(WARNING "CMAKE_INSTALL_RPATH=${CMAKE_INSTALL_RPATH} will be ignored and replaced with ${base};${base}/${relDir} due to GDAL_SET_INSTALL_RELATIVE_RPATH being set")
       endif()
       set(CMAKE_INSTALL_RPATH ${base} ${base}/${relDir})
   endif()
@@ -479,6 +480,12 @@ if (GDAL_USE_JSONC_INTERNAL)
   add_subdirectory(ogr/ogrsf_frmts/geojson/libjson)
 endif ()
 
+option(ENABLE_DEFLATE64 "Enable Deflate64 decompression" ON)
+mark_as_advanced(ENABLE_DEFLATE64)
+if(ENABLE_DEFLATE64)
+    add_subdirectory(frmts/zlib/contrib/infback9)
+endif()
+
 # Internal zlib and jsonc must be declared before
 add_subdirectory(port)
 
@@ -488,7 +495,11 @@ if (GDAL_USE_JPEG_INTERNAL)
   mark_as_advanced(RENAME_INTERNAL_JPEG_SYMBOLS)
   add_subdirectory(frmts/jpeg/libjpeg)
 endif ()
-option(GDAL_USE_JPEG12_INTERNAL "Set ON to use internal libjpeg12 support" ON)
+if (NOT HAVE_JPEGTURBO_DUAL_MODE_8_12)
+    option(GDAL_USE_JPEG12_INTERNAL "Set ON to use internal libjpeg12 support" ON)
+else()
+    option(GDAL_USE_JPEG12_INTERNAL "Set ON to use internal libjpeg12 support" OFF)
+endif()
 if (GDAL_USE_JPEG12_INTERNAL)
   add_subdirectory(frmts/jpeg/libjpeg12)
 endif ()
@@ -535,12 +546,23 @@ endif ()
 set(GDAL_RASTER_FORMAT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/frmts")
 set(GDAL_VECTOR_FORMAT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/ogr/ogrsf_frmts")
 
+if(OGR_ENABLE_DRIVER_GPKG AND
+   NOT DEFINED OGR_ENABLE_DRIVER_SQLITE AND
+   DEFINED OGR_BUILD_OPTIONAL_DRIVERS AND
+   NOT OGR_BUILD_OPTIONAL_DRIVERS)
+   message(STATUS "Automatically enabling SQLite driver")
+   set(OGR_ENABLE_DRIVER_SQLITE ON CACHE BOOL "Set ON to build OGR SQLite driver")
+endif()
+
 # We need to forward declare a few OGR drivers because raster formats need them
 option(OGR_ENABLE_DRIVER_AVC "Set ON to build OGR AVC driver" ${OGR_BUILD_OPTIONAL_DRIVERS})
+option(OGR_ENABLE_DRIVER_GML "Set ON to build OGR GML driver" ${OGR_BUILD_OPTIONAL_DRIVERS})
 cmake_dependent_option(OGR_ENABLE_DRIVER_SQLITE "Set ON to build OGR SQLite driver" ${OGR_BUILD_OPTIONAL_DRIVERS}
                        "GDAL_USE_SQLITE3" OFF)
 cmake_dependent_option(OGR_ENABLE_DRIVER_GPKG "Set ON to build OGR GPKG driver" ${OGR_BUILD_OPTIONAL_DRIVERS}
                        "GDAL_USE_SQLITE3;OGR_ENABLE_DRIVER_SQLITE" OFF)
+cmake_dependent_option(OGR_ENABLE_DRIVER_MVT "Set ON to build OGR MVT driver" ${OGR_BUILD_OPTIONAL_DRIVERS}
+                       "GDAL_USE_SQLITE3" OFF)
 
 # Build frmts/iso8211 conditionally to drivers requiring it
 if ((GDAL_BUILD_OPTIONAL_DRIVERS AND NOT DEFINED GDAL_ENABLE_DRIVER_ADRG AND NOT DEFINED GDAL_ENABLE_DRIVER_SDTS) OR
@@ -645,9 +667,12 @@ set(GDAL_DATA_FILES
     data/epsg.wkt
     data/esri_StatePlane_extra.wkt
     data/gdalicon.png
+    data/gdalinfo_output.schema.json
     data/gdalmdiminfo_output.schema.json
     data/gdalvrt.xsd
+    data/gfs.xsd
     data/gml_registry.xml
+    data/gml_registry.xsd
     data/gmlasconf.xml
     data/gmlasconf.xsd
     data/grib2_table_versions.csv
@@ -666,6 +691,7 @@ set(GDAL_DATA_FILES
     data/grib2_table_4_2_0_19.csv
     data/grib2_table_4_2_0_1.csv
     data/grib2_table_4_2_0_20.csv
+    data/grib2_table_4_2_0_21.csv
     data/grib2_table_4_2_0_2.csv
     data/grib2_table_4_2_0_3.csv
     data/grib2_table_4_2_0_4.csv
@@ -688,6 +714,7 @@ set(GDAL_DATA_FILES
     data/grib2_table_4_2_2_3.csv
     data/grib2_table_4_2_2_4.csv
     data/grib2_table_4_2_2_5.csv
+    data/grib2_table_4_2_2_6.csv
     data/grib2_table_4_2_3_0.csv
     data/grib2_table_4_2_3_1.csv
     data/grib2_table_4_2_3_2.csv
@@ -752,6 +779,7 @@ set(GDAL_DATA_FILES
     data/nitf_spec.xsd
     data/ogrvrt.xsd
     data/osmconf.ini
+    data/ogrinfo_output.schema.json
     data/ozi_datum.csv
     data/ozi_ellips.csv
     data/pci_datum.txt

@@ -1502,7 +1502,7 @@ OGRErr PDS4FixedWidthTable::CreateField(OGRFieldDefn *poFieldIn, int)
 /*                          InitializeNewLayer()                        */
 /************************************************************************/
 
-bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
+bool PDS4FixedWidthTable::InitializeNewLayer(const OGRSpatialReference *poSRS,
                                              bool bForceGeographic,
                                              OGRwkbGeometryType eGType,
                                              const char *const *papszOptions)
@@ -1551,9 +1551,8 @@ bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
             m_poRawFeatureDefn->AddFieldDefn(&oFieldDefn);
             m_iLongField = m_poRawFeatureDefn->GetFieldCount() - 1;
             Field f;
-            f.m_nOffset = m_aoFields.empty() ? 0
-                                             : m_aoFields.back().m_nOffset +
-                                                   m_aoFields.back().m_nLength;
+            f.m_nOffset =
+                m_aoFields.back().m_nOffset + m_aoFields.back().m_nLength;
             CreateFieldInternal(OFTReal, OFSTNone, 0, f);
             m_aoFields.push_back(f);
             m_nRecordSize += f.m_nLength;
@@ -1565,9 +1564,8 @@ bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
             m_poRawFeatureDefn->AddFieldDefn(&oFieldDefn);
             m_iAltField = m_poRawFeatureDefn->GetFieldCount() - 1;
             Field f;
-            f.m_nOffset = m_aoFields.empty() ? 0
-                                             : m_aoFields.back().m_nOffset +
-                                                   m_aoFields.back().m_nLength;
+            f.m_nOffset =
+                m_aoFields.back().m_nOffset + m_aoFields.back().m_nLength;
             CreateFieldInternal(OFTReal, OFSTNone, 0, f);
             m_aoFields.push_back(f);
             m_nRecordSize += f.m_nLength;
@@ -2487,7 +2485,7 @@ char **PDS4DelimitedTable::GetFileList() const
 /*                          InitializeNewLayer()                        */
 /************************************************************************/
 
-bool PDS4DelimitedTable::InitializeNewLayer(OGRSpatialReference *poSRS,
+bool PDS4DelimitedTable::InitializeNewLayer(const OGRSpatialReference *poSRS,
                                             bool bForceGeographic,
                                             OGRwkbGeometryType eGType,
                                             const char *const *papszOptions)
@@ -2574,6 +2572,16 @@ bool PDS4DelimitedTable::InitializeNewLayer(OGRSpatialReference *poSRS,
 /*                           PDS4EditableSynchronizer                   */
 /* ==================================================================== */
 /************************************************************************/
+
+template <class T>
+class PDS4EditableSynchronizer final : public IOGREditableLayerSynchronizer
+{
+  public:
+    PDS4EditableSynchronizer() = default;
+
+    OGRErr EditableSyncToDisk(OGRLayer *poEditableLayer,
+                              OGRLayer **ppoDecoratedLayer) override;
+};
 
 template <class T>
 OGRErr

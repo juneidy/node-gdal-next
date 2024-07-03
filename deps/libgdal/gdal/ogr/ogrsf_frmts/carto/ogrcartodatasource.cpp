@@ -351,7 +351,7 @@ const char *OGRCARTODataSource::GetAPIURL() const
 /*                             FetchSRSId()                             */
 /************************************************************************/
 
-int OGRCARTODataSource::FetchSRSId(OGRSpatialReference *poSRS)
+int OGRCARTODataSource::FetchSRSId(const OGRSpatialReference *poSRS)
 
 {
     const char *pszAuthorityName;
@@ -408,10 +408,10 @@ int OGRCARTODataSource::FetchSRSId(OGRSpatialReference *poSRS)
 /*                          ICreateLayer()                              */
 /************************************************************************/
 
-OGRLayer *OGRCARTODataSource::ICreateLayer(const char *pszNameIn,
-                                           OGRSpatialReference *poSpatialRef,
-                                           OGRwkbGeometryType eGType,
-                                           char **papszOptions)
+OGRLayer *
+OGRCARTODataSource::ICreateLayer(const char *pszNameIn,
+                                 const OGRSpatialReference *poSpatialRef,
+                                 OGRwkbGeometryType eGType, char **papszOptions)
 {
     if (!bReadWrite)
     {
@@ -492,10 +492,10 @@ OGRLayer *OGRCARTODataSource::ICreateLayer(const char *pszNameIn,
 
     poLayer->SetLaunderFlag(CPLFetchBool(papszOptions, "LAUNDER", true));
 
-    OGRSpatialReference *poSRSClone = poSpatialRef;
-    if (poSRSClone)
+    OGRSpatialReference *poSRSClone = nullptr;
+    if (poSpatialRef)
     {
-        poSRSClone = poSRSClone->Clone();
+        poSRSClone = poSpatialRef->Clone();
         poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
     poLayer->SetDeferredCreation(eGType, poSRSClone, bGeomNullable, bCartoify);

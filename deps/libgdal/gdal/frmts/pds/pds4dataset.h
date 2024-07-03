@@ -106,25 +106,11 @@ class PDS4TableBaseLayer CPL_NON_FINAL : public OGRLayer
 
 /************************************************************************/
 /* ==================================================================== */
-/*                     PDS4EditableSynchronizer                         */
-/* ==================================================================== */
-/************************************************************************/
-
-template <class T>
-class PDS4EditableSynchronizer final : public IOGREditableLayerSynchronizer
-{
-  public:
-    PDS4EditableSynchronizer() = default;
-
-    OGRErr EditableSyncToDisk(OGRLayer *poEditableLayer,
-                              OGRLayer **ppoDecoratedLayer) override;
-};
-
-/************************************************************************/
-/* ==================================================================== */
 /*                        PDS4FixedWidthTable                           */
 /* ==================================================================== */
 /************************************************************************/
+
+template <class T> class PDS4EditableSynchronizer;
 
 class PDS4FixedWidthTable CPL_NON_FINAL : public PDS4TableBaseLayer
 {
@@ -168,8 +154,8 @@ class PDS4FixedWidthTable CPL_NON_FINAL : public PDS4TableBaseLayer
 
     bool ReadTableDef(const CPLXMLNode *psTable);
 
-    bool InitializeNewLayer(OGRSpatialReference *poSRS, bool bForceGeographic,
-                            OGRwkbGeometryType eGType,
+    bool InitializeNewLayer(const OGRSpatialReference *poSRS,
+                            bool bForceGeographic, OGRwkbGeometryType eGType,
                             const char *const *papszOptions);
 
     virtual PDS4FixedWidthTable *NewLayer(PDS4Dataset *poDS,
@@ -276,8 +262,8 @@ class PDS4DelimitedTable CPL_NON_FINAL : public PDS4TableBaseLayer
 
     bool ReadTableDef(const CPLXMLNode *psTable);
 
-    bool InitializeNewLayer(OGRSpatialReference *poSRS, bool bForceGeographic,
-                            OGRwkbGeometryType eGType,
+    bool InitializeNewLayer(const OGRSpatialReference *poSRS,
+                            bool bForceGeographic, OGRwkbGeometryType eGType,
                             const char *const *papszOptions);
 
     void RefreshFileAreaObservational(CPLXMLNode *psFAO) override;
@@ -386,6 +372,8 @@ class PDS4Dataset final : public RawDataset
                                        GDALDataType eType,
                                        const char *const *papszOptions);
 
+    CPLErr Close() override;
+
   public:
     PDS4Dataset();
     virtual ~PDS4Dataset();
@@ -407,7 +395,7 @@ class PDS4Dataset final : public RawDataset
     OGRLayer *GetLayer(int) override;
 
     OGRLayer *ICreateLayer(const char *pszName,
-                           OGRSpatialReference *poSpatialRef,
+                           const OGRSpatialReference *poSpatialRef,
                            OGRwkbGeometryType eGType,
                            char **papszOptions) override;
     int TestCapability(const char *pszCap) override;
@@ -462,7 +450,7 @@ class PDS4RawRasterBand final : public RawRasterBand
     PDS4RawRasterBand(GDALDataset *l_poDS, int l_nBand, VSILFILE *l_fpRaw,
                       vsi_l_offset l_nImgOffset, int l_nPixelOffset,
                       int l_nLineOffset, GDALDataType l_eDataType,
-                      int l_bNativeOrder);
+                      RawRasterBand::ByteOrder eByteOrderIn);
     virtual ~PDS4RawRasterBand()
     {
     }
@@ -513,7 +501,8 @@ class PDS4WrapperRasterBand final : public GDALProxyRasterBand
     double m_dfNoData;
 
   protected:
-    virtual GDALRasterBand *RefUnderlyingRasterBand() const override
+    virtual GDALRasterBand *
+    RefUnderlyingRasterBand(bool /*bForceOpen*/) const override
     {
         return m_poBaseBand;
     }

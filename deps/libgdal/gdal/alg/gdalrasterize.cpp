@@ -74,6 +74,15 @@ template <typename T> static inline T SaturatedAddSigned(T a, T b)
 }
 
 /************************************************************************/
+/*                              MakeKey()                               */
+/************************************************************************/
+
+inline uint64_t MakeKey(int y, int x)
+{
+    return (static_cast<uint64_t>(y) << 32) | static_cast<uint64_t>(x);
+}
+
+/************************************************************************/
 /*                        gvBurnScanlineBasic()                         */
 /************************************************************************/
 template <typename T>
@@ -90,23 +99,43 @@ static inline void gvBurnScanlineBasic(GDALRasterizeInfo *psInfo, int nY,
         unsigned char *pabyInsert =
             psInfo->pabyChunkBuf + iBand * psInfo->nBandSpace +
             nY * psInfo->nLineSpace + nXStart * psInfo->nPixelSpace;
-        int nPixels = nXEnd - nXStart + 1;
         if (psInfo->eMergeAlg == GRMA_Add)
         {
-            while (nPixels-- > 0)
+            if (psInfo->poSetVisitedPoints)
             {
-                double dfVal =
-                    static_cast<double>(*reinterpret_cast<T *>(pabyInsert)) +
-                    burnValue;
-                GDALCopyWord(dfVal, *reinterpret_cast<T *>(pabyInsert));
-                pabyInsert += psInfo->nPixelSpace;
+                CPLAssert(!psInfo->bFillSetVisitedPoints);
+                uint64_t nKey = MakeKey(nY, nXStart);
+                auto &oSetVisitedPoints = *(psInfo->poSetVisitedPoints);
+                for (int nX = nXStart; nX <= nXEnd; ++nX)
+                {
+                    if (oSetVisitedPoints.find(nKey) == oSetVisitedPoints.end())
+                    {
+                        double dfVal = static_cast<double>(
+                                           *reinterpret_cast<T *>(pabyInsert)) +
+                                       burnValue;
+                        GDALCopyWord(dfVal, *reinterpret_cast<T *>(pabyInsert));
+                    }
+                    pabyInsert += psInfo->nPixelSpace;
+                    ++nKey;
+                }
+            }
+            else
+            {
+                for (int nX = nXStart; nX <= nXEnd; ++nX)
+                {
+                    double dfVal = static_cast<double>(
+                                       *reinterpret_cast<T *>(pabyInsert)) +
+                                   burnValue;
+                    GDALCopyWord(dfVal, *reinterpret_cast<T *>(pabyInsert));
+                    pabyInsert += psInfo->nPixelSpace;
+                }
             }
         }
         else
         {
             T nVal;
             GDALCopyWord(burnValue, nVal);
-            while (nPixels-- > 0)
+            for (int nX = nXStart; nX <= nXEnd; ++nX)
             {
                 *reinterpret_cast<T *>(pabyInsert) = nVal;
                 pabyInsert += psInfo->nPixelSpace;
@@ -127,21 +156,41 @@ static inline void gvBurnScanlineInt64UserBurnValue(GDALRasterizeInfo *psInfo,
         unsigned char *pabyInsert =
             psInfo->pabyChunkBuf + iBand * psInfo->nBandSpace +
             nY * psInfo->nLineSpace + nXStart * psInfo->nPixelSpace;
-        int nPixels = nXEnd - nXStart + 1;
         if (psInfo->eMergeAlg == GRMA_Add)
         {
-            while (nPixels-- > 0)
+            if (psInfo->poSetVisitedPoints)
             {
-                *reinterpret_cast<std::int64_t *>(pabyInsert) =
-                    SaturatedAddSigned(
-                        *reinterpret_cast<std::int64_t *>(pabyInsert),
-                        burnValue);
-                pabyInsert += psInfo->nPixelSpace;
+                CPLAssert(!psInfo->bFillSetVisitedPoints);
+                uint64_t nKey = MakeKey(nY, nXStart);
+                auto &oSetVisitedPoints = *(psInfo->poSetVisitedPoints);
+                for (int nX = nXStart; nX <= nXEnd; ++nX)
+                {
+                    if (oSetVisitedPoints.find(nKey) == oSetVisitedPoints.end())
+                    {
+                        *reinterpret_cast<std::int64_t *>(pabyInsert) =
+                            SaturatedAddSigned(
+                                *reinterpret_cast<std::int64_t *>(pabyInsert),
+                                burnValue);
+                    }
+                    pabyInsert += psInfo->nPixelSpace;
+                    ++nKey;
+                }
+            }
+            else
+            {
+                for (int nX = nXStart; nX <= nXEnd; ++nX)
+                {
+                    *reinterpret_cast<std::int64_t *>(pabyInsert) =
+                        SaturatedAddSigned(
+                            *reinterpret_cast<std::int64_t *>(pabyInsert),
+                            burnValue);
+                    pabyInsert += psInfo->nPixelSpace;
+                }
             }
         }
         else
         {
-            while (nPixels-- > 0)
+            for (int nX = nXStart; nX <= nXEnd; ++nX)
             {
                 *reinterpret_cast<std::int64_t *>(pabyInsert) = burnValue;
                 pabyInsert += psInfo->nPixelSpace;
@@ -190,6 +239,9 @@ static void gvBurnScanline(void *pCBData, int nY, int nXStart, int nXEnd,
         case GDT_Byte:
             gvBurnScanlineBasic<GByte>(psInfo, nY, nXStart, nXEnd, dfVariant);
             break;
+        case GDT_Int8:
+            gvBurnScanlineBasic<GInt8>(psInfo, nY, nXStart, nXEnd, dfVariant);
+            break;
         case GDT_Int16:
             gvBurnScanlineBasic<GInt16>(psInfo, nY, nXStart, nXEnd, dfVariant);
             break;
@@ -216,7 +268,12 @@ static void gvBurnScanline(void *pCBData, int nY, int nXStart, int nXEnd,
         case GDT_Float64:
             gvBurnScanlineBasic<double>(psInfo, nY, nXStart, nXEnd, dfVariant);
             break;
-        default:
+        case GDT_CInt16:
+        case GDT_CInt32:
+        case GDT_CFloat32:
+        case GDT_CFloat64:
+        case GDT_Unknown:
+        case GDT_TypeCount:
             CPLAssert(false);
             break;
     }
@@ -277,6 +334,21 @@ static void gvBurnPoint(void *pCBData, int nY, int nX, double dfVariant)
     CPLAssert(nY >= 0 && nY < psInfo->nYSize);
     CPLAssert(nX >= 0 && nX < psInfo->nXSize);
 
+    if (psInfo->poSetVisitedPoints)
+    {
+        const uint64_t nKey = MakeKey(nY, nX);
+        if (psInfo->poSetVisitedPoints->find(nKey) ==
+            psInfo->poSetVisitedPoints->end())
+        {
+            if (psInfo->bFillSetVisitedPoints)
+                psInfo->poSetVisitedPoints->insert(nKey);
+        }
+        else
+        {
+            return;
+        }
+    }
+
     if (psInfo->eBurnValueType == GDT_Int64)
     {
         if (psInfo->eType == GDT_Int64 &&
@@ -295,6 +367,9 @@ static void gvBurnPoint(void *pCBData, int nY, int nX, double dfVariant)
     {
         case GDT_Byte:
             gvBurnPointBasic<GByte>(psInfo, nY, nX, dfVariant);
+            break;
+        case GDT_Int8:
+            gvBurnPointBasic<GInt8>(psInfo, nY, nX, dfVariant);
             break;
         case GDT_Int16:
             gvBurnPointBasic<GInt16>(psInfo, nY, nX, dfVariant);
@@ -320,7 +395,12 @@ static void gvBurnPoint(void *pCBData, int nY, int nX, double dfVariant)
         case GDT_Float64:
             gvBurnPointBasic<double>(psInfo, nY, nX, dfVariant);
             break;
-        default:
+        case GDT_CInt16:
+        case GDT_CInt32:
+        case GDT_CFloat32:
+        case GDT_CFloat64:
+        case GDT_Unknown:
+        case GDT_TypeCount:
             CPLAssert(false);
     }
 }
@@ -536,6 +616,8 @@ static void gv_rasterize_one_shape(
     }
     sInfo.eBurnValueSource = eBurnValueSrc;
     sInfo.eMergeAlg = eMergeAlg;
+    sInfo.bFillSetVisitedPoints = false;
+    sInfo.poSetVisitedPoints = nullptr;
 
     /* -------------------------------------------------------------------- */
     /*      Transform polygon geometries into a set of rings and a part     */
@@ -591,6 +673,11 @@ static void gv_rasterize_one_shape(
         case wkbLineString:
         case wkbMultiLineString:
         {
+            if (eMergeAlg == GRMA_Add)
+            {
+                sInfo.bFillSetVisitedPoints = true;
+                sInfo.poSetVisitedPoints = new std::set<uint64_t>();
+            }
             if (bAllTouched)
                 GDALdllImageLineAllTouched(
                     sInfo.nXSize, nYSize, static_cast<int>(aPartSize.size()),
@@ -610,12 +697,11 @@ static void gv_rasterize_one_shape(
 
         default:
         {
-            GDALdllImageFilledPolygon(
-                sInfo.nXSize, nYSize, static_cast<int>(aPartSize.size()),
-                aPartSize.data(), aPointX.data(), aPointY.data(),
-                (eBurnValueSrc == GBV_UserBurnValue) ? nullptr
-                                                     : aPointVariant.data(),
-                gvBurnScanline, &sInfo);
+            if (eMergeAlg == GRMA_Add)
+            {
+                sInfo.bFillSetVisitedPoints = true;
+                sInfo.poSetVisitedPoints = new std::set<uint64_t>();
+            }
             if (bAllTouched)
             {
                 // Reverting the variants to the first value because the
@@ -646,9 +732,18 @@ static void gv_rasterize_one_shape(
                         gvBurnPoint, &sInfo, eMergeAlg == GRMA_Add, true);
                 }
             }
+            sInfo.bFillSetVisitedPoints = false;
+            GDALdllImageFilledPolygon(
+                sInfo.nXSize, nYSize, static_cast<int>(aPartSize.size()),
+                aPartSize.data(), aPointX.data(), aPointY.data(),
+                (eBurnValueSrc == GBV_UserBurnValue) ? nullptr
+                                                     : aPointVariant.data(),
+                gvBurnScanline, &sInfo, eMergeAlg == GRMA_Add);
         }
         break;
     }
+
+    delete sInfo.poSetVisitedPoints;
 }
 
 /************************************************************************/
@@ -1164,8 +1259,8 @@ static CPLErr GDALRasterizeGeometriesInternal(
         for (int iShape = 0; iShape < nGeomCount; iShape++)
         {
 
-            OGRGeometry *poGeometry =
-                reinterpret_cast<OGRGeometry *>(pahGeometries[iShape]);
+            const OGRGeometry *poGeometry =
+                OGRGeometry::FromHandle(pahGeometries[iShape]);
             if (poGeometry == nullptr || poGeometry->IsEmpty())
                 continue;
             /* --------------------------------------------------------------------
@@ -1375,7 +1470,7 @@ CPLErr GDALRasterizeLayers(GDALDatasetH hDS, int nBandCount, int *panBandList,
     if (nBandCount == 0 || nLayerCount == 0)
         return CE_None;
 
-    GDALDataset *poDS = reinterpret_cast<GDALDataset *>(hDS);
+    GDALDataset *poDS = GDALDataset::FromHandle(hDS);
 
     // Prototype band.
     GDALRasterBand *poBand = poDS->GetRasterBand(panBandList[0]);

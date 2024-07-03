@@ -19,19 +19,24 @@ jobs:
         - ubuntu:22.04
         - debian:buster
         - debian:bullseye
-        - fedora:33
-        - fedora:34
         - centos:stream8
         - amazonlinux:2022
-        node-version: [ 14, 16, 18, 19 ]
+        node-version: [ 16, 18, 20, 21 ]
+        include:
+          - linux-version: fedora:36
+            node-version: 18
+          - linux-version: fedora:37
+            node-version: 18
+          - linux-version: fedora:38
+            node-version: 20
         exclude:
-          - linux-version: fedora:33
-            node-version: 19
+          - linux-version: centos:stream8
+            node-version: 21
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - run: npm run container release ${{ matrix.linux-version }} ${{ matrix.node-version }}
@@ -46,14 +51,17 @@ jobs:
     strategy:
       matrix:
         platforms: [ windows-2019, macos-11 ]
-        node-version: [ 14.x, 16.x, 18.x, 19.x ]
+        node-version: [ 16.x, 18.x, 20.x, 21.x ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
     - run: npm install --ignore-scripts
     - run: npm install node-gyp
     - run: npx @mapbox/node-pre-gyp install

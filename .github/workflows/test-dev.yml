@@ -7,23 +7,23 @@ on:
   push:
     branches: [ '*' ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       testNetwork:
         description: 'Run tests that require network connectivity'
         required: false
-        default: 0
+        default: '0'
 
 jobs:
   bundled_gdal_coverage:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - name: ccache
@@ -60,12 +60,12 @@ jobs:
 
     strategy:
       matrix:
-        linux-version: [ 'ubuntu:22.04', 'ubuntu:20.04', 'debian:bullseye', 'fedora:34', 'centos:stream8' ]
+        linux-version: [ 'ubuntu:22.04', 'ubuntu:20.04', 'debian:bullseye', 'fedora:37', 'centos:stream8' ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - name: ccache
@@ -87,9 +87,9 @@ jobs:
         linux-version: [ 'amazonlinux:2022' ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - name: ccache
@@ -108,13 +108,13 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [ 14, 16, 18, 19 ]
+        node-version: [ 16, 18, 20, 21 ]
         gdal-version: [ 'shared', 'bundled' ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - name: ccache
@@ -132,9 +132,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - name: ccache
@@ -153,14 +153,17 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [ 14.x, 16.x, 18.x, 19.x ]
+        node-version: [ 16.x, 18.x, 20.x, 21.x ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
@@ -186,11 +189,14 @@ jobs:
     runs-on: macos-11
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
@@ -217,12 +223,12 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [ 14.x, 16.x, 18.x, 19.x ]
+        node-version: [ 16.x, 18.x, 20.x, 21.x ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
     - run: npm install --ignore-scripts
@@ -240,9 +246,9 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Use Node.js 16.x
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: 16.x
     - run: npm install --ignore-scripts

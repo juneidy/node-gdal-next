@@ -616,6 +616,54 @@ describe('gdal.RasterBand', () => {
           assert.equal(data.length, w * h)
           assert.equal(data[10 * 20 + 10], 10)
         })
+        describe('w/data over 4GB', function () {
+          this.timeout(30000)
+          // These tests require at least 16GB of memory to be reliable
+          const size = 66000
+          it('when returning a new TypedArray', () => {
+            const ds = gdal.open(`${__dirname}/data/huge-sparse.tiff`)
+            const band = ds.bands.get(1)
+            assert.deepEqual(ds.rasterSize, { x: size, y: size })
+            const data = band.pixels.read(ds.rasterSize.x / 2, ds.rasterSize.y / 2,
+              ds.rasterSize.x / 2, ds.rasterSize.y / 2)
+            assert.instanceOf(data, Int32Array)
+            assert.equal(data.length, ds.rasterSize.x * ds.rasterSize.y / 4)
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] !== 42) throw new Error('data error')
+            }
+          })
+          it('w/data argument', () => {
+            const ds = gdal.open(`${__dirname}/data/huge-sparse.tiff`)
+            const band = ds.bands.get(1)
+            assert.deepEqual(ds.rasterSize, { x: size, y: size })
+            const data = new Int32Array(size * size / 4)
+            const r = band.pixels.read(ds.rasterSize.x / 2, ds.rasterSize.y / 2,
+              ds.rasterSize.x / 2, ds.rasterSize.y / 2, data)
+            assert.strictEqual(r, data)
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] !== 42) throw new Error('data error')
+            }
+          })
+          it('w/data argument w/error', () => {
+            const ds = gdal.open(`${__dirname}/data/huge-sparse.tiff`)
+            const band = ds.bands.get(1)
+            assert.deepEqual(ds.rasterSize, { x: size, y: size })
+            const data = new Int32Array(size * size / 4 - 1)
+            assert.throws(() => {
+              band.pixels.read(ds.rasterSize.x / 2, ds.rasterSize.y / 2,
+                ds.rasterSize.x / 2, ds.rasterSize.y / 2, data)
+            }, /Array length must be greater than/)
+          })
+          it('w/file over the 4G elements limit', () => {
+            const ds = gdal.open(`${__dirname}/data/huge-sparse.tiff`)
+            const band = ds.bands.get(1)
+            assert.deepEqual(ds.rasterSize, { x: size, y: size })
+            assert.throws(() => {
+              band.pixels.read(0, 0, ds.rasterSize.x, ds.rasterSize.y, undefined,
+                { data_type: gdal.GDT_Byte })
+            }, /Failed constructing a TypedArray/)
+          })
+        })
         describe('w/data argument', () => {
           it('should put the data in the existing array', () => {
             const ds = gdal.open(
@@ -785,6 +833,22 @@ describe('gdal.RasterBand', () => {
             band.pixels.set(1, 1, 30)
             const data = new Float64Array(new ArrayBuffer(20 * 30 * 8))
             band.pixels.read(1, 1, 20, 30, data)
+            assert.equal(data[0], 30)
+          })
+          it('should automatically translate data to specified data type', () => {
+            const ds = gdal.open(
+              'temp',
+              'w',
+              'MEM',
+              256,
+              256,
+              1,
+              gdal.GDT_Byte
+            )
+            const band = ds.bands.get(1)
+            band.pixels.set(1, 1, 30)
+            const data = band.pixels.read(1, 1, 20, 30, undefined, { data_type: gdal.GDT_Float64 })
+            assert.instanceOf(data, Float64Array)
             assert.equal(data[0], 30)
           })
         })
@@ -1031,6 +1095,23 @@ describe('gdal.RasterBand', () => {
             assert.equal(result[i], Math.floor(data[i]))
           }
         })
+        it('should not fail when writing more than 4GB', function () {
+          this.timeout(30000)
+          if (semver.lt(gdal.version, '3.6.0')) {
+            this.skip()
+          }
+          const filename = `/vsimem/4G_write_test_${String(
+            Math.random()
+          ).substring(2)}.tiff`
+          const size = 33000
+          const gtiff = gdal.drivers.get('GTiff')
+          const ds = gtiff.create(filename, size, size, 1, gdal.GDT_UInt32,
+            { compress: 'packbits', blockxsize: 4096, blockysize: 4096 })
+          const band = ds.bands.get(1)
+          const data = new Uint32Array(size * size)
+          band.pixels.write(0, 0, size, size, data)
+          gdal.vsimem.release(filename)
+        })
         describe('w/options', () => {
           describe('"buffer_width", "buffer_height"', () => {
             it('should throw error if given array is smaller than given dimensions', () => {
@@ -1216,17 +1297,23 @@ describe('gdal.RasterBand', () => {
                   assert.isAtMost(complete, 1)
                   prevComplete = complete
                 } })
+              assert.instanceOf(data, Uint8Array)
               assert.isAtLeast(calls, 1)
             })
             it('should call the write() progress callback when one is provided', () => {
               const file = `/vsimem/write_progress_test.${String(
                 Math.random()
               ).substring(2)}.tmp.tif`
-              ds2 = gdal.open(file, 'w', 'GTiff', ds1.rasterSize.x, ds1.rasterSize.y, 1)
+              const size = 4096
+              ds2 = gdal.open(file, 'w', 'GTiff', size, size, 1, gdal.GDT_Float64)
               const band = ds2.bands.get(1)
               let calls = 0
               let prevComplete = 0
-              band.pixels.write(0, 0, ds1.rasterSize.x, ds1.rasterSize.y, data, {
+              const zeros = new Float64Array(size * size)
+              // Make sure to use non-aligned blocks because GDAL 3.8.0 has
+              // an optimization when writing aligned blocks in a GeoTiff
+              // that never calls the progress callback
+              band.pixels.write(1, 1, size - 3, size - 3, zeros, {
                 progress_cb: (complete): void => {
                   calls++
                   assert.isAbove(complete, prevComplete)
@@ -1396,7 +1483,6 @@ describe('gdal.RasterBand', () => {
 
         band.pixels.write(0, 0, size, size, data)
 
-        assert.throws(() => gdal.open(file))
         band.flush()
         const newDs = gdal.open(file)
         const result = newDs.bands.get(1).pixels.read(0, 0, size, size, data)

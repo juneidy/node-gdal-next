@@ -289,10 +289,11 @@ int PostGISRasterDataset::CloseDependentDatasets()
 /*                            FlushCache()                              */
 /************************************************************************/
 
-void PostGISRasterDataset::FlushCache(bool bAtClosing)
+CPLErr PostGISRasterDataset::FlushCache(bool bAtClosing)
 {
-    VRTDataset::FlushCache(bAtClosing);
+    const CPLErr eErr = VRTDataset::FlushCache(bAtClosing);
     oOutDBDatasetCache.clear();
+    return eErr;
 }
 
 /************************************************************************/
@@ -766,9 +767,9 @@ PostGISRasterDataset *PostGISRasterDataset::GetOverviewDS(int iOvr)
  *
  * This method is adapted from gdalbuildvrt as is in GDAL 1.10.0
  ***********************************************************************/
-GBool PostGISRasterDataset::GetDstWin(PostGISRasterTileDataset *psDP,
-                                      int *pnDstXOff, int *pnDstYOff,
-                                      int *pnDstXSize, int *pnDstYSize)
+void PostGISRasterDataset::GetDstWin(PostGISRasterTileDataset *psDP,
+                                     int *pnDstXOff, int *pnDstYOff,
+                                     int *pnDstXSize, int *pnDstYSize)
 {
     double we_res = this->adfGeoTransform[GEOTRSFRM_WE_RES];
     double ns_res = this->adfGeoTransform[GEOTRSFRM_NS_RES];
@@ -792,14 +793,12 @@ GBool PostGISRasterDataset::GetDstWin(PostGISRasterTileDataset *psDP,
     *pnDstYSize = static_cast<int>(
         0.5 + psDP->GetRasterYSize() * adfTileGeoTransform[GEOTRSFRM_NS_RES] /
                   ns_res);
-
-    return true;
 }
 
 /***********************************************************************
  * \brief Add tiles bands as complex source for raster bands.
  **********************************************************************/
-GBool PostGISRasterDataset::AddComplexSource(PostGISRasterTileDataset *poRTDS)
+void PostGISRasterDataset::AddComplexSource(PostGISRasterTileDataset *poRTDS)
 {
     // Parameters to add the tile bands as sources
     int nDstXOff = 0;
@@ -808,10 +807,7 @@ GBool PostGISRasterDataset::AddComplexSource(PostGISRasterTileDataset *poRTDS)
     int nDstYSize = 0;
 
     // Get src and dst parameters
-    GBool bValidTile =
-        GetDstWin(poRTDS, &nDstXOff, &nDstYOff, &nDstXSize, &nDstYSize);
-    if (!bValidTile)
-        return false;
+    GetDstWin(poRTDS, &nDstXOff, &nDstYOff, &nDstXSize, &nDstYSize);
 
 #ifdef DEBUG_VERBOSE
     CPLDebug("PostGIS_Raster",
@@ -843,8 +839,6 @@ GBool PostGISRasterDataset::AddComplexSource(PostGISRasterTileDataset *poRTDS)
 
         prtb->poSource = prb->papoSources[prb->nSources - 1];
     }
-
-    return true;
 }
 
 /************************************************************************/
@@ -1399,22 +1393,16 @@ GBool PostGISRasterDataset::LoadSources(int nXOff, int nYOff, int nXSize,
                                                 GetRasterCount(), nullptr);
                 if (poRTDS != nullptr)
                 {
-                    if (AddComplexSource(poRTDS))
-                    {
-                        oMapPKIDToRTDS[poRTDS->pszPKID] = poRTDS;
-                        papoSourcesHolders =
-                            static_cast<PostGISRasterTileDataset **>(
-                                CPLRealloc(papoSourcesHolders,
-                                           sizeof(PostGISRasterTileDataset *) *
-                                               (m_nTiles + 1)));
-                        papoSourcesHolders[m_nTiles++] = poRTDS;
-                        CPLQuadTreeInsert(hQuadTree, poRTDS);
-                    }
-                    else
-                    {
-                        delete poRTDS;
-                        poRTDS = nullptr;
-                    }
+                    AddComplexSource(poRTDS);
+
+                    oMapPKIDToRTDS[poRTDS->pszPKID] = poRTDS;
+                    papoSourcesHolders =
+                        static_cast<PostGISRasterTileDataset **>(
+                            CPLRealloc(papoSourcesHolders,
+                                       sizeof(PostGISRasterTileDataset *) *
+                                           (m_nTiles + 1)));
+                    papoSourcesHolders[m_nTiles++] = poRTDS;
+                    CPLQuadTreeInsert(hQuadTree, poRTDS);
                 }
             }
 
@@ -1651,8 +1639,7 @@ BandMetadata *PostGISRasterDataset::GetBandsMetadata(int *pnBands)
 
         // If the band doesn't have nodata, NULL is returned as nodata
         TranslateDataType(papszParams[POS_PIXELTYPE], &(poBMD[iBand].eDataType),
-                          &(poBMD[iBand].nBitsDepth),
-                          &(poBMD[iBand].bSignedByte));
+                          &(poBMD[iBand].nBitsDepth));
 
         if (papszParams[POS_NODATAVALUE] == nullptr ||
             EQUAL(papszParams[POS_NODATAVALUE], "NULL") ||
@@ -1910,12 +1897,6 @@ void PostGISRasterDataset::BuildBands(BandMetadata *poBandMetaData,
 
         // Set some band metadata items
         GDALRasterBand *b = GetRasterBand(iBand + 1);
-
-        if (poBandMetaData[iBand].bSignedByte)
-        {
-            b->SetMetadataItem("PIXELTYPE", "SIGNEDBYTE", "IMAGE_STRUCTURE");
-        }
-
         if (poBandMetaData[iBand].nBitsDepth < 8)
         {
             b->SetMetadataItem(
@@ -2112,16 +2093,7 @@ GBool PostGISRasterDataset::ConstructOneDatasetFromTiles(PGresult *poResult)
     for (int iSource = 0; iSource < l_nTiles; iSource++)
     {
         PostGISRasterTileDataset *poRTDS = papoSourcesHolders[iSource];
-        if (!AddComplexSource(poRTDS))
-        {
-            CPLDebug("PostGIS_Raster",
-                     "PostGISRasterDataset::ConstructOneDatasetFromTiles:"
-                     "Bounding box of tile %d does not intersect the "
-                     "bounding box of dataset ",
-                     iSource);
-
-            continue;
-        }
+        AddComplexSource(poRTDS);
         if (poRTDS->pszPKID != nullptr)
             oMapPKIDToRTDS[poRTDS->pszPKID] = poRTDS;
         CPLQuadTreeInsert(hQuadTree, poRTDS);
@@ -4120,6 +4092,85 @@ GBool PostGISRasterDataset::PolygonFromCoords(int nXOff, int nYOff,
     return true;
 }
 
+/************************************************************************/
+/*                    PostGISRasterDriverGetSubdatasetInfo()            */
+/************************************************************************/
+
+struct PostGISRasterDriverSubdatasetInfo : public GDALSubdatasetInfo
+{
+  public:
+    explicit PostGISRasterDriverSubdatasetInfo(const std::string &fileName)
+        : GDALSubdatasetInfo(fileName)
+    {
+    }
+
+    // GDALSubdatasetInfo interface
+  private:
+    void parseFileName() override
+    {
+        if (!STARTS_WITH_CI(m_fileName.c_str(), "PG:"))
+        {
+            return;
+        }
+
+        char **papszParams = ParseConnectionString(m_fileName.c_str());
+
+        const int nTableIdx = CSLFindName(papszParams, "table");
+        if (nTableIdx != -1)
+        {
+            size_t nTableStart = m_fileName.find("table=");
+            bool bHasQuotes{false};
+            try
+            {
+                bHasQuotes = m_fileName.at(nTableStart + 6) == '\'';
+            }
+            catch (const std::out_of_range &)
+            {
+                // ignore error
+            }
+
+            m_subdatasetComponent = papszParams[nTableIdx];
+
+            if (bHasQuotes)
+            {
+                m_subdatasetComponent.insert(6, "'");
+                m_subdatasetComponent.push_back('\'');
+            }
+
+            m_driverPrefixComponent = "PG";
+
+            size_t nPathLength = m_subdatasetComponent.length();
+            if (nTableStart != 0)
+            {
+                nPathLength++;
+                nTableStart--;
+            }
+
+            m_pathComponent = m_fileName;
+            m_pathComponent.erase(nTableStart, nPathLength);
+            m_pathComponent.erase(0, 3);
+        }
+
+        CSLDestroy(papszParams);
+    }
+};
+
+static GDALSubdatasetInfo *
+PostGISRasterDriverGetSubdatasetInfo(const char *pszFileName)
+{
+    if (STARTS_WITH_CI(pszFileName, "PG:"))
+    {
+        std::unique_ptr<GDALSubdatasetInfo> info =
+            cpl::make_unique<PostGISRasterDriverSubdatasetInfo>(pszFileName);
+        if (!info->GetSubdatasetComponent().empty() &&
+            !info->GetPathComponent().empty())
+        {
+            return info.release();
+        }
+    }
+    return nullptr;
+}
+
 /***********************************************************************
  * GDALRegister_PostGISRaster()
  **********************************************************************/
@@ -4143,6 +4194,7 @@ void GDALRegister_PostGISRaster()
     poDriver->pfnIdentify = PostGISRasterDataset::Identify;
     poDriver->pfnCreateCopy = PostGISRasterDataset::CreateCopy;
     poDriver->pfnDelete = PostGISRasterDataset::Delete;
+    poDriver->pfnGetSubdatasetInfoFunc = PostGISRasterDriverGetSubdatasetInfo;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
 }

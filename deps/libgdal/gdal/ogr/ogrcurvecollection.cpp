@@ -178,11 +178,16 @@ OGRErr OGRCurveCollection::importPreambleFromWkb(
     size_t &nDataOffset, OGRwkbByteOrder &eByteOrder, size_t nMinSubGeomSize,
     OGRwkbVariant eWkbVariant)
 {
+    int nCurveCountNew = 0;
+
     OGRErr eErr = poGeom->importPreambleOfCollectionFromWkb(
-        pabyData, nSize, nDataOffset, eByteOrder, nMinSubGeomSize, nCurveCount,
-        eWkbVariant);
+        pabyData, nSize, nDataOffset, eByteOrder, nMinSubGeomSize,
+        nCurveCountNew, eWkbVariant);
     if (eErr != OGRERR_NONE)
         return eErr;
+
+    CPLAssert(nCurveCount == 0);
+    nCurveCount = nCurveCountNew;
 
     // coverity[tainted_data]
     papoCurves = static_cast<OGRCurve **>(
@@ -552,7 +557,7 @@ void OGRCurveCollection::setMeasured(OGRGeometry *poGeom,
 /************************************************************************/
 
 void OGRCurveCollection::assignSpatialReference(OGRGeometry *poGeom,
-                                                OGRSpatialReference *poSR)
+                                                const OGRSpatialReference *poSR)
 {
     for (auto &&poSubGeom : *this)
     {

@@ -44,6 +44,11 @@
 #include <utility>
 #include <vector>
 
+// #define HACK_TO_GENERATE_OCMD can be set to produce a (single layer)
+// non-structured vector PDF with a OCMD (Optional Content Group Membership
+// Dictionary) similar to test case of https://github.com/OSGeo/gdal/issues/8372
+// like with "ogr2ogr poly.pdf poly.shp -dsco STREAM_COMPRESS=NONE -limit 1"
+
 /************************************************************************/
 /*                        GDALPDFBaseWriter()                           */
 /************************************************************************/
@@ -587,8 +592,7 @@ void GDALPDFBaseWriter::StartObjWithStream(const GDALPDFObjectNum &nObjectId,
     m_fpBack = m_fp;
     if (bDeflate)
     {
-        m_fpGZip = reinterpret_cast<VSILFILE *>(VSICreateGZipWritable(
-            reinterpret_cast<VSIVirtualHandle *>(m_fp), TRUE, FALSE));
+        m_fpGZip = VSICreateGZipWritable(m_fp, TRUE, FALSE);
         m_fp = m_fpGZip;
     }
 }
@@ -1813,8 +1817,10 @@ bool GDALPDFWriter::StartPage(GDALDataset *poClippingDS, double dfDPI,
         oDictPage.Add("LGIDict", nLGIDictId, 0);
     }
 
+#ifndef HACK_TO_GENERATE_OCMD
     if (bHasOGRData)
         oDictPage.Add("StructParents", 0);
+#endif
 
     VSIFPrintfL(m_fp, "%s\n", oDictPage.Serialize().c_str());
     EndObj();
@@ -2171,9 +2177,6 @@ bool GDALPDFWriter::WriteOGRDataSource(const char *pszOGRDataSource,
                                        const char *pszOGRLinkField,
                                        int bWriteOGRAttributes)
 {
-    if (OGRGetDriverCount() == 0)
-        OGRRegisterAll();
-
     OGRDataSourceH hDS = OGROpen(pszOGRDataSource, 0, nullptr);
     if (hDS == nullptr)
         return false;
@@ -2208,13 +2211,19 @@ bool GDALPDFWriter::WriteOGRDataSource(const char *pszOGRDataSource,
 /*                           StartOGRLayer()                            */
 /************************************************************************/
 
-GDALPDFLayerDesc GDALPDFWriter::StartOGRLayer(CPLString osLayerName,
+GDALPDFLayerDesc GDALPDFWriter::StartOGRLayer(const std::string &osLayerName,
                                               int bWriteOGRAttributes)
 {
     GDALPDFLayerDesc osVectorDesc;
     osVectorDesc.osLayerName = osLayerName;
+#ifdef HACK_TO_GENERATE_OCMD
+    osVectorDesc.bWriteOGRAttributes = false;
+    auto nParentOCGId = WriteOCG("parent");
+    osVectorDesc.nOCGId = WriteOCG(osLayerName.c_str(), nParentOCGId);
+#else
     osVectorDesc.bWriteOGRAttributes = bWriteOGRAttributes;
-    osVectorDesc.nOCGId = WriteOCG(osLayerName);
+    osVectorDesc.nOCGId = WriteOCG(osLayerName.c_str());
+#endif
     if (bWriteOGRAttributes)
         osVectorDesc.nFeatureLayerId = AllocNewObject();
 
@@ -2266,8 +2275,8 @@ void GDALPDFWriter::EndOGRLayer(GDALPDFLayerDesc &osVectorDesc)
 int GDALPDFWriter::WriteOGRLayer(OGRDataSourceH hDS, int iLayer,
                                  const char *pszOGRDisplayField,
                                  const char *pszOGRLinkField,
-                                 CPLString osLayerName, int bWriteOGRAttributes,
-                                 int &iObj)
+                                 const std::string &osLayerName,
+                                 int bWriteOGRAttributes, int &iObj)
 {
     GDALDataset *poClippingDS = oPageContext.poClippingDS;
     double adfGeoTransform[6];
@@ -3963,10 +3972,21 @@ int GDALPDFWriter::EndPage(const char *pszExtraImages,
         if (!m_asOCGs.empty())
         {
             GDALPDFDictionaryRW *poDictProperties = new GDALPDFDictionaryRW();
+#ifdef HACK_TO_GENERATE_OCMD
+            GDALPDFDictionaryRW *poOCMD = new GDALPDFDictionaryRW();
+            poOCMD->Add("Type", GDALPDFObjectRW::CreateName("OCMD"));
+            GDALPDFArrayRW *poArray = new GDALPDFArrayRW();
+            poArray->Add(m_asOCGs[0].nId, 0);
+            poArray->Add(m_asOCGs[1].nId, 0);
+            poOCMD->Add("OCGs", poArray);
+            poDictProperties->Add(CPLSPrintf("Lyr%d", m_asOCGs[1].nId.toInt()),
+                                  poOCMD);
+#else
             for (size_t i = 0; i < m_asOCGs.size(); i++)
                 poDictProperties->Add(
                     CPLSPrintf("Lyr%d", m_asOCGs[i].nId.toInt()),
                     m_asOCGs[i].nId, 0);
+#endif
             oDict.Add("Properties", poDictProperties);
         }
 
@@ -4297,6 +4317,7 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteBlock(
         char szTmp[64];
         char **papszOptions = nullptr;
 
+        bool bEcwEncodeKeyRequiredButNotFound = false;
         if (eCompressMethod == COMPRESS_JPEG)
         {
             poJPEGDriver = (GDALDriver *)GDALGetDriverByName("JPEG");
@@ -4321,6 +4342,19 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteBlock(
                             GDAL_DMD_CREATIONDATATYPES) == nullptr)
                     {
                         poJPEGDriver = nullptr;
+                    }
+                    else if (poJPEGDriver)
+                    {
+                        if (strstr(poJPEGDriver->GetMetadataItem(
+                                       GDAL_DMD_CREATIONOPTIONLIST),
+                                   "ECW_ENCODE_KEY"))
+                        {
+                            if (!CPLGetConfigOption("ECW_ENCODE_KEY", nullptr))
+                            {
+                                bEcwEncodeKeyRequiredButNotFound = true;
+                                poJPEGDriver = nullptr;
+                            }
+                        }
                     }
                 }
                 if (poJPEGDriver)
@@ -4348,8 +4382,18 @@ GDALPDFObjectNum GDALPDFBaseWriter::WriteBlock(
 
         if (poJPEGDriver == nullptr)
         {
-            CPLError(CE_Failure, CPLE_NotSupported, "No %s driver found",
-                     (eCompressMethod == COMPRESS_JPEG) ? "JPEG" : "JPEG2000");
+            if (bEcwEncodeKeyRequiredButNotFound)
+            {
+                CPLError(CE_Failure, CPLE_NotSupported,
+                         "No JPEG2000 driver usable (JP2ECW detected but "
+                         "ECW_ENCODE_KEY configuration option not set");
+            }
+            else
+            {
+                CPLError(CE_Failure, CPLE_NotSupported, "No %s driver found",
+                         (eCompressMethod == COMPRESS_JPEG) ? "JPEG"
+                                                            : "JPEG2000");
+            }
             eErr = CE_Failure;
             goto end;
         }

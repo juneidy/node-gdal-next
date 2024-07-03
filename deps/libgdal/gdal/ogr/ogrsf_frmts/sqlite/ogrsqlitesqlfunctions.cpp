@@ -35,7 +35,6 @@
 #include "ogrsqlitesqlfunctions.h"
 #include "ogr_geocoding.h"
 
-#include "ogrsqliteregexp.cpp" /* yes the .cpp file, to make it work on Windows with load_extension('gdalXX.dll') */
 #include "ogr_swq.h"
 
 #include <limits>
@@ -47,102 +46,11 @@
 #define MINIMAL_SPATIAL_FUNCTIONS
 #endif
 
-class OGRSQLiteExtensionData
-{
-#ifdef DEBUG
-    void *pDummy; /* to track memory leaks */
-#endif
-    std::map<std::pair<int, int>, OGRCoordinateTransformation *>
-        oCachedTransformsMap;
-
-    void *hRegExpCache;
-
-    OGRGeocodingSessionH hGeocodingSession;
-
-  public:
-    explicit OGRSQLiteExtensionData(sqlite3 *hDB);
-    ~OGRSQLiteExtensionData();
-
-    OGRCoordinateTransformation *GetTransform(int nSrcSRSId, int nDstSRSId);
-
-    OGRGeocodingSessionH GetGeocodingSession()
-    {
-        return hGeocodingSession;
-    }
-    void SetGeocodingSession(OGRGeocodingSessionH hGeocodingSessionIn)
-    {
-        hGeocodingSession = hGeocodingSessionIn;
-    }
-
-    void SetRegExpCache(void *hRegExpCacheIn)
-    {
-        hRegExpCache = hRegExpCacheIn;
-    }
-};
+#define DEFINE_OGRSQLiteExtensionData_GetTransform
+#include "ogrsqlitesqlfunctionscommon.cpp"
 
 /************************************************************************/
-/*                     OGRSQLiteExtensionData()                         */
-/************************************************************************/
-
-OGRSQLiteExtensionData::OGRSQLiteExtensionData(CPL_UNUSED sqlite3 *hDB)
-    :
-#ifdef DEBUG
-      pDummy(CPLMalloc(1)),
-#endif
-      hRegExpCache(nullptr), hGeocodingSession(nullptr)
-{
-}
-
-/************************************************************************/
-/*                       ~OGRSQLiteExtensionData()                      */
-/************************************************************************/
-
-OGRSQLiteExtensionData::~OGRSQLiteExtensionData()
-{
-#ifdef DEBUG
-    CPLFree(pDummy);
-#endif
-
-    std::map<std::pair<int, int>, OGRCoordinateTransformation *>::iterator
-        oIter = oCachedTransformsMap.begin();
-    for (; oIter != oCachedTransformsMap.end(); ++oIter)
-        delete oIter->second;
-
-    OGRSQLiteFreeRegExpCache(hRegExpCache);
-
-    OGRGeocodeDestroySession(hGeocodingSession);
-}
-
-/************************************************************************/
-/*                          GetTransform()                              */
-/************************************************************************/
-
-OGRCoordinateTransformation *OGRSQLiteExtensionData::GetTransform(int nSrcSRSId,
-                                                                  int nDstSRSId)
-{
-    std::map<std::pair<int, int>, OGRCoordinateTransformation *>::iterator
-        oIter = oCachedTransformsMap.find(
-            std::pair<int, int>(nSrcSRSId, nDstSRSId));
-    if (oIter == oCachedTransformsMap.end())
-    {
-        OGRCoordinateTransformation *poCT = nullptr;
-        OGRSpatialReference oSrcSRS, oDstSRS;
-        oSrcSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-        oDstSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-        if (oSrcSRS.importFromEPSG(nSrcSRSId) == OGRERR_NONE &&
-            oDstSRS.importFromEPSG(nDstSRSId) == OGRERR_NONE)
-        {
-            poCT = OGRCreateCoordinateTransformation(&oSrcSRS, &oDstSRS);
-        }
-        oCachedTransformsMap[std::pair<int, int>(nSrcSRSId, nDstSRSId)] = poCT;
-        return poCT;
-    }
-    else
-        return oIter->second;
-}
-
-/************************************************************************/
-/*                        OGR2SQLITE_ogr_version()                     */
+/*                        OGR2SQLITE_ogr_version()                      */
 /************************************************************************/
 
 static void OGR2SQLITE_ogr_version(sqlite3_context *pContext, int argc,
@@ -1098,28 +1006,29 @@ static void OGRSQLITE_hstore_get_value(sqlite3_context *pContext,
 #define SQLITE_DETERMINISTIC 0
 #endif
 
+#ifndef SQLITE_INNOCUOUS
+#define SQLITE_INNOCUOUS 0
+#endif
+
+#define UTF8_INNOCUOUS (SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS)
+
 static void *OGRSQLiteRegisterSQLFunctions(sqlite3 *hDB)
 {
-    OGRSQLiteExtensionData *pData = new OGRSQLiteExtensionData(hDB);
+    OGRSQLiteExtensionData *pData = OGRSQLiteRegisterSQLFunctionsCommon(hDB);
 
-    sqlite3_create_function(hDB, "ogr_version", 0,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "ogr_version", 0, UTF8_INNOCUOUS, nullptr,
                             OGR2SQLITE_ogr_version, nullptr, nullptr);
 
-    sqlite3_create_function(hDB, "ogr_version", 1,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "ogr_version", 1, UTF8_INNOCUOUS, nullptr,
                             OGR2SQLITE_ogr_version, nullptr, nullptr);
 
-    sqlite3_create_function(hDB, "ogr_deflate", 1,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "ogr_deflate", 1, UTF8_INNOCUOUS, nullptr,
                             OGR2SQLITE_ogr_deflate, nullptr, nullptr);
 
-    sqlite3_create_function(hDB, "ogr_deflate", 2,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "ogr_deflate", 2, UTF8_INNOCUOUS, nullptr,
                             OGR2SQLITE_ogr_deflate, nullptr, nullptr);
 
-    sqlite3_create_function(hDB, "ogr_inflate", 1,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "ogr_inflate", 1, UTF8_INNOCUOUS, nullptr,
                             OGR2SQLITE_ogr_inflate, nullptr, nullptr);
 
     sqlite3_create_function(hDB, "ogr_geocode", -1, SQLITE_UTF8, pData,
@@ -1149,13 +1058,11 @@ static void *OGRSQLiteRegisterSQLFunctions(sqlite3 *hDB)
 #endif
 
     // Custom and undocumented function, not sure I'll keep it.
-    sqlite3_create_function(hDB, "Transform3", 3,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, pData,
+    sqlite3_create_function(hDB, "Transform3", 3, UTF8_INNOCUOUS, pData,
                             OGR2SQLITE_Transform, nullptr, nullptr);
 
     // HSTORE functions
-    sqlite3_create_function(hDB, "hstore_get_value", 2,
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+    sqlite3_create_function(hDB, "hstore_get_value", 2, UTF8_INNOCUOUS, nullptr,
                             OGRSQLITE_hstore_get_value, nullptr, nullptr);
 
     /* Check if spatialite is available */
@@ -1170,11 +1077,9 @@ static void *OGRSQLiteRegisterSQLFunctions(sqlite3 *hDB)
         CPLTestBool(CPLGetConfigOption("OGR_SQLITE_SPATIAL_FUNCTIONS", "YES"));
 
 #define REGISTER_ST_op(argc, op)                                               \
-    sqlite3_create_function(hDB, #op, argc,                                    \
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,       \
+    sqlite3_create_function(hDB, #op, argc, UTF8_INNOCUOUS, nullptr,           \
                             OGR2SQLITE_ST_##op, nullptr, nullptr);             \
-    sqlite3_create_function(hDB, "ST_" #op, argc,                              \
-                            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,       \
+    sqlite3_create_function(hDB, "ST_" #op, argc, UTF8_INNOCUOUS, nullptr,     \
                             OGR2SQLITE_ST_##op, nullptr, nullptr);
 
 #ifdef MINIMAL_SPATIAL_FUNCTIONS
@@ -1211,7 +1116,7 @@ static void *OGRSQLiteRegisterSQLFunctions(sqlite3 *hDB)
         REGISTER_ST_op(2, Intersection);
         REGISTER_ST_op(2, Difference);
         // Union() is invalid
-        sqlite3_create_function(hDB, "ST_Union", 2, SQLITE_ANY, nullptr,
+        sqlite3_create_function(hDB, "ST_Union", 2, UTF8_INNOCUOUS, nullptr,
                                 OGR2SQLITE_ST_Union, nullptr, nullptr);
         REGISTER_ST_op(2, SymDifference);
 
@@ -1263,17 +1168,5 @@ static void *OGRSQLiteRegisterSQLFunctions(sqlite3 *hDB)
         }
     }
 
-    pData->SetRegExpCache(OGRSQLiteRegisterRegExpFunction(hDB));
-
     return pData;
-}
-
-/************************************************************************/
-/*                   OGRSQLiteUnregisterSQLFunctions()                  */
-/************************************************************************/
-
-static void OGRSQLiteUnregisterSQLFunctions(void *hHandle)
-{
-    OGRSQLiteExtensionData *pData = (OGRSQLiteExtensionData *)hHandle;
-    delete pData;
 }

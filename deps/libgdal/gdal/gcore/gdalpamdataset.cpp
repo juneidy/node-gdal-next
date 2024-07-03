@@ -137,6 +137,18 @@
  *
  *      poDS->TryLoadXML();
  * \endcode
+ *
+ * In some situations where a derived dataset (e.g. used by
+ * GDALMDArray::AsClassicDataset()) is linked to a physical file, the name of
+ * the derived dataset is set with the SetDerivedSubdatasetName() method.
+ *
+ * \code
+ *      poDS->SetDescription( poOpenInfo->pszFilename );
+ *      poDS->SetPhysicalFilename( poDS->pszFilename );
+ *      poDS->SetDerivedDatasetName( osDerivedDatasetName );
+ *
+ *      poDS->TryLoadXML();
+ * \endcode
  */
 class GDALPamDataset;
 
@@ -170,13 +182,32 @@ GDALPamDataset::~GDALPamDataset()
 /*                             FlushCache()                             */
 /************************************************************************/
 
-void GDALPamDataset::FlushCache(bool bAtClosing)
+CPLErr GDALPamDataset::FlushCache(bool bAtClosing)
 
 {
-    GDALDataset::FlushCache(bAtClosing);
+    CPLErr eErr = GDALDataset::FlushCache(bAtClosing);
     if (nPamFlags & GPF_DIRTY)
-        TrySaveXML();
+    {
+        if (TrySaveXML() != CE_None)
+            eErr = CE_Failure;
+    }
+    return eErr;
 }
+
+/************************************************************************/
+/*                            MarkPamDirty()                            */
+/************************************************************************/
+
+//! @cond Doxygen_Suppress
+void GDALPamDataset::MarkPamDirty()
+{
+    if ((nPamFlags & GPF_DIRTY) == 0 &&
+        CPLTestBool(CPLGetConfigOption("GDAL_PAM_ENABLE_MARK_DIRTY", "YES")))
+    {
+        nPamFlags |= GPF_DIRTY;
+    }
+}
+// @endcond
 
 /************************************************************************/
 /*                           SerializeToXML()                           */
@@ -488,8 +519,13 @@ CPLErr GDALPamDataset::XMLInit(CPLXMLNode *psTree, const char *pszUnused)
     /* -------------------------------------------------------------------- */
     /*      Try loading ESRI xml encoded GeodataXform.                      */
     /* -------------------------------------------------------------------- */
-    if (psPam->poSRS == nullptr)
     {
+        // previously we only tried to load GeodataXform if we didn't already
+        // encounter a valid SRS at this stage. But in some cases a PAMDataset
+        // may have both a SRS child element AND a GeodataXform with a SpatialReference
+        // child element. In this case we should prioritize the GeodataXform
+        // over the root PAMDataset SRS node.
+
         // ArcGIS 9.3: GeodataXform as a root element
         CPLXMLNode *psGeodataXform = CPLGetXMLNode(psTree, "=GeodataXform");
         CPLXMLNode *psValueAsXML = nullptr;
@@ -520,6 +556,7 @@ CPLErr GDALPamDataset::XMLInit(CPLXMLNode *psTree, const char *pszUnused)
                 CPLGetXMLValue(psGeodataXform, "SpatialReference.WKT", nullptr);
             if (pszESRI_WKT)
             {
+                delete psPam->poSRS;
                 psPam->poSRS = new OGRSpatialReference(nullptr);
                 psPam->poSRS->SetAxisMappingStrategy(
                     OAMS_TRADITIONAL_GIS_ORDER);
@@ -535,6 +572,10 @@ CPLErr GDALPamDataset::XMLInit(CPLXMLNode *psTree, const char *pszUnused)
                 CPLGetXMLNode(psGeodataXform, "SourceGCPs");
             const CPLXMLNode *psTargetGCPs =
                 CPLGetXMLNode(psGeodataXform, "TargetGCPs");
+            const CPLXMLNode *psCoeffX =
+                CPLGetXMLNode(psGeodataXform, "CoeffX");
+            const CPLXMLNode *psCoeffY =
+                CPLGetXMLNode(psGeodataXform, "CoeffY");
             if (psSourceGCPS && psTargetGCPs && !psPam->bHaveGeoTransform)
             {
                 std::vector<double> adfSource;
@@ -585,6 +626,64 @@ CPLErr GDALPamDataset::XMLInit(CPLXMLNode *psTree, const char *pszUnused)
                                             &asGCPs[0], psPam->poSRS);
                     delete psPam->poSRS;
                     psPam->poSRS = nullptr;
+                }
+            }
+            else if (psCoeffX && psCoeffY && !psPam->bHaveGeoTransform &&
+                     EQUAL(
+                         CPLGetXMLValue(psGeodataXform, "PolynomialOrder", ""),
+                         "1"))
+            {
+                std::vector<double> adfCoeffX;
+                std::vector<double> adfCoeffY;
+                for (auto psIter = psCoeffX->psChild; psIter;
+                     psIter = psIter->psNext)
+                {
+                    if (psIter->eType == CXT_Element &&
+                        strcmp(psIter->pszValue, "Double") == 0)
+                    {
+                        adfCoeffX.push_back(
+                            CPLAtof(CPLGetXMLValue(psIter, nullptr, "0")));
+                    }
+                }
+                for (auto psIter = psCoeffY->psChild; psIter;
+                     psIter = psIter->psNext)
+                {
+                    if (psIter->eType == CXT_Element &&
+                        strcmp(psIter->pszValue, "Double") == 0)
+                    {
+                        adfCoeffY.push_back(
+                            CPLAtof(CPLGetXMLValue(psIter, nullptr, "0")));
+                    }
+                }
+                if (adfCoeffX.size() == 3 && adfCoeffY.size() == 3)
+                {
+                    psPam->adfGeoTransform[0] = adfCoeffX[0];
+                    psPam->adfGeoTransform[1] = adfCoeffX[1];
+                    // Looking at the example of https://github.com/qgis/QGIS/issues/53125#issuecomment-1567650082
+                    // when comparing the .pgwx world file and .png.aux.xml file,
+                    // it appears that the sign of the coefficients for the line
+                    // terms must be negated (which is a bit in line with the
+                    // negation of dfGCPLine in the above GCP case)
+                    psPam->adfGeoTransform[2] = -adfCoeffX[2];
+                    psPam->adfGeoTransform[3] = adfCoeffY[0];
+                    psPam->adfGeoTransform[4] = adfCoeffY[1];
+                    psPam->adfGeoTransform[5] = -adfCoeffY[2];
+
+                    // Looking at the example of https://github.com/qgis/QGIS/issues/53125#issuecomment-1567650082
+                    // when comparing the .pgwx world file and .png.aux.xml file,
+                    // one can see that they have the same origin, so knowing
+                    // that world file uses a center-of-pixel convention,
+                    // correct from center of pixel to top left of pixel
+                    psPam->adfGeoTransform[0] -=
+                        0.5 * psPam->adfGeoTransform[1];
+                    psPam->adfGeoTransform[0] -=
+                        0.5 * psPam->adfGeoTransform[2];
+                    psPam->adfGeoTransform[3] -=
+                        0.5 * psPam->adfGeoTransform[4];
+                    psPam->adfGeoTransform[3] -=
+                        0.5 * psPam->adfGeoTransform[5];
+
+                    psPam->bHaveGeoTransform = TRUE;
                 }
             }
         }
@@ -674,6 +773,7 @@ const char *GDALPamDataset::GetPhysicalFilename()
 /*                         SetSubdatasetName()                          */
 /************************************************************************/
 
+/* Mutually exclusive with SetDerivedDatasetName() */
 void GDALPamDataset::SetSubdatasetName(const char *pszSubdataset)
 
 {
@@ -681,6 +781,20 @@ void GDALPamDataset::SetSubdatasetName(const char *pszSubdataset)
 
     if (psPam)
         psPam->osSubdatasetName = pszSubdataset;
+}
+
+/************************************************************************/
+/*                        SetDerivedDatasetName()                        */
+/************************************************************************/
+
+/* Mutually exclusive with SetSubdatasetName() */
+void GDALPamDataset::SetDerivedDatasetName(const char *pszDerivedDataset)
+
+{
+    PamInitialize();
+
+    if (psPam)
+        psPam->osDerivedDatasetName = pszDerivedDataset;
 }
 
 /************************************************************************/
@@ -829,29 +943,44 @@ CPLErr GDALPamDataset::TryLoadXML(char **papszSiblingFiles)
     /* -------------------------------------------------------------------- */
     /*      If we are looking for a subdataset, search for its subtree now. */
     /* -------------------------------------------------------------------- */
-    if (psTree && !psPam->osSubdatasetName.empty())
+    if (psTree)
     {
-        CPLXMLNode *psSubTree = psTree->psChild;
-
-        for (; psSubTree != nullptr; psSubTree = psSubTree->psNext)
+        std::string osSubNode;
+        std::string osSubNodeValue;
+        if (!psPam->osSubdatasetName.empty())
         {
-            if (psSubTree->eType != CXT_Element ||
-                !EQUAL(psSubTree->pszValue, "Subdataset"))
-                continue;
-
-            if (!EQUAL(CPLGetXMLValue(psSubTree, "name", ""),
-                       psPam->osSubdatasetName))
-                continue;
-
-            psSubTree = CPLGetXMLNode(psSubTree, "PAMDataset");
-            break;
+            osSubNode = "Subdataset";
+            osSubNodeValue = psPam->osSubdatasetName;
         }
+        else if (!psPam->osDerivedDatasetName.empty())
+        {
+            osSubNode = "DerivedDataset";
+            osSubNodeValue = psPam->osDerivedDatasetName;
+        }
+        if (!osSubNode.empty())
+        {
+            CPLXMLNode *psSubTree = psTree->psChild;
 
-        if (psSubTree != nullptr)
-            psSubTree = CPLCloneXMLTree(psSubTree);
+            for (; psSubTree != nullptr; psSubTree = psSubTree->psNext)
+            {
+                if (psSubTree->eType != CXT_Element ||
+                    !EQUAL(psSubTree->pszValue, osSubNode.c_str()))
+                    continue;
 
-        CPLDestroyXMLNode(psTree);
-        psTree = psSubTree;
+                if (!EQUAL(CPLGetXMLValue(psSubTree, "name", ""),
+                           osSubNodeValue.c_str()))
+                    continue;
+
+                psSubTree = CPLGetXMLNode(psSubTree, "PAMDataset");
+                break;
+            }
+
+            if (psSubTree != nullptr)
+                psSubTree = CPLCloneXMLTree(psSubTree);
+
+            CPLDestroyXMLNode(psTree);
+            psTree = psSubTree;
+        }
     }
 
     /* -------------------------------------------------------------------- */
@@ -913,7 +1042,19 @@ CPLErr GDALPamDataset::TrySaveXML()
     /*      the subdataset tree within the whole existing pam tree,         */
     /*      after removing any old version of the same subdataset.          */
     /* -------------------------------------------------------------------- */
+    std::string osSubNode;
+    std::string osSubNodeValue;
     if (!psPam->osSubdatasetName.empty())
+    {
+        osSubNode = "Subdataset";
+        osSubNodeValue = psPam->osSubdatasetName;
+    }
+    else if (!psPam->osDerivedDatasetName.empty())
+    {
+        osSubNode = "DerivedDataset";
+        osSubNodeValue = psPam->osDerivedDatasetName;
+    }
+    if (!osSubNode.empty())
     {
         CPLXMLNode *psOldTree = nullptr;
 
@@ -935,11 +1076,11 @@ CPLErr GDALPamDataset::TrySaveXML()
              psSubTree = psSubTree->psNext)
         {
             if (psSubTree->eType != CXT_Element ||
-                !EQUAL(psSubTree->pszValue, "Subdataset"))
+                !EQUAL(psSubTree->pszValue, osSubNode.c_str()))
                 continue;
 
             if (!EQUAL(CPLGetXMLValue(psSubTree, "name", ""),
-                       psPam->osSubdatasetName))
+                       osSubNodeValue.c_str()))
                 continue;
 
             break;
@@ -947,9 +1088,10 @@ CPLErr GDALPamDataset::TrySaveXML()
 
         if (psSubTree == nullptr)
         {
-            psSubTree = CPLCreateXMLNode(psOldTree, CXT_Element, "Subdataset");
+            psSubTree =
+                CPLCreateXMLNode(psOldTree, CXT_Element, osSubNode.c_str());
             CPLCreateXMLNode(CPLCreateXMLNode(psSubTree, CXT_Attribute, "name"),
-                             CXT_Text, psPam->osSubdatasetName);
+                             CXT_Text, osSubNodeValue.c_str());
         }
 
         CPLXMLNode *psOldPamDataset = CPLGetXMLNode(psSubTree, "PAMDataset");

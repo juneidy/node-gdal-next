@@ -47,6 +47,7 @@
 #include "gdal_priv.h"
 #include "ogr_api.h"
 #include "ogr_core.h"
+#include "vrtdataset.h"  // for VRTSerializeNoData
 
 #if (defined(__x86_64) || defined(_M_X64))
 #include <emmintrin.h>
@@ -1165,12 +1166,14 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
  *
  * <li>OPTIMIZE_SIZE: This defaults to FALSE, but may be set to TRUE
  * typically when writing to a compressed dataset (GeoTIFF with
- * COMPRESSED creation option set for example) for achieving a smaller
+ * COMPRESS creation option set for example) for achieving a smaller
  * file size. This is achieved by writing at once data aligned on full
  * blocks of the target dataset, which avoids partial writes of
  * compressed blocks and lost space when they are rewritten at the end
  * of the file. However sticking to target block size may cause major
- * processing slowdown for some particular reprojections.</li>
+ * processing slowdown for some particular reprojections. Starting
+ * with GDAL 3.8, OPTIMIZE_SIZE mode is automatically enabled when it is safe
+ * to do so.</li>
  *
  * <li>NUM_THREADS: (GDAL >= 1.10) Can be set to a numeric value or ALL_CPUS to
  * set the number of threads to use to parallelize the computation part of the
@@ -1233,7 +1236,10 @@ CPLErr GDALWarpDstAlphaMasker(void *pMaskFuncArg, int nBandCount,
  * <li>SAMPLE_STEPS: Modifies the density of the sampling grid.  The default
  * number of steps is 21.   Increasing this can increase the computational
  * cost, but improves the accuracy with which the source region is
- * computed.</li>
+ * computed.
+ * Starting with GDAL 3.7, this can be set to ALL to mean to sample
+ * along all edge points of the destination region (if SAMPLE_GRID=NO or not
+ * specified), or all points of the destination region if SAMPLE_GRID=YES.</li>
  *
  * <li>SOURCE_EXTRA: This is a number of extra pixels added around the source
  * window for a given request, and by default it is 1 to take care of rounding
@@ -1292,8 +1298,8 @@ void CPL_STDCALL GDALDestroyWarpOptions(GDALWarpOptions *psOptions)
     CPLFree(psOptions->papSrcPerBandValidityMaskFuncArg);
 
     if (psOptions->hCutline != nullptr)
-        OGR_G_DestroyGeometry(
-            reinterpret_cast<OGRGeometryH>(psOptions->hCutline));
+        delete OGRGeometry::FromHandle(
+            static_cast<OGRGeometryH>(psOptions->hCutline));
 
     CPLFree(psOptions);
 }
@@ -1345,7 +1351,7 @@ GDALCloneWarpOptions(const GDALWarpOptions *psSrcOptions)
 
     if (psSrcOptions->hCutline != nullptr)
         psDstOptions->hCutline =
-            OGR_G_Clone(reinterpret_cast<OGRGeometryH>(psSrcOptions->hCutline));
+            OGR_G_Clone(static_cast<OGRGeometryH>(psSrcOptions->hCutline));
     psDstOptions->dfCutlineBlendDist = psSrcOptions->dfCutlineBlendDist;
 
     return psDstOptions;
@@ -1514,7 +1520,8 @@ void CPL_STDCALL GDALWarpResolveWorkingDataType(GDALWarpOptions *psOptions)
                                       GDALGetRasterDataType(hDstBand));
             }
         }
-        else if (psOptions->hSrcDS != nullptr)
+
+        if (psOptions->hSrcDS != nullptr)
         {
             GDALRasterBandH hSrcBand = GDALGetRasterBand(
                 psOptions->hSrcDS, psOptions->panSrcBands[iBand]);
@@ -1758,12 +1765,11 @@ CPLXMLNode *CPL_STDCALL GDALSerializeWarpOptions(const GDALWarpOptions *psWO)
 
         if (psWO->padfSrcNoDataReal != nullptr)
         {
-            if (CPLIsNan(psWO->padfSrcNoDataReal[i]))
-                CPLCreateXMLElementAndValue(psBand, "SrcNoDataReal", "nan");
-            else
-                CPLCreateXMLElementAndValue(
-                    psBand, "SrcNoDataReal",
-                    CPLString().Printf("%.16g", psWO->padfSrcNoDataReal[i]));
+            CPLCreateXMLElementAndValue(
+                psBand, "SrcNoDataReal",
+                VRTSerializeNoData(psWO->padfSrcNoDataReal[i],
+                                   psWO->eWorkingDataType, 16)
+                    .c_str());
         }
 
         if (psWO->padfSrcNoDataImag != nullptr)
@@ -1784,12 +1790,11 @@ CPLXMLNode *CPL_STDCALL GDALSerializeWarpOptions(const GDALWarpOptions *psWO)
 
         if (psWO->padfDstNoDataReal != nullptr)
         {
-            if (CPLIsNan(psWO->padfDstNoDataReal[i]))
-                CPLCreateXMLElementAndValue(psBand, "DstNoDataReal", "nan");
-            else
-                CPLCreateXMLElementAndValue(
-                    psBand, "DstNoDataReal",
-                    CPLString().Printf("%.16g", psWO->padfDstNoDataReal[i]));
+            CPLCreateXMLElementAndValue(
+                psBand, "DstNoDataReal",
+                VRTSerializeNoData(psWO->padfDstNoDataReal[i],
+                                   psWO->eWorkingDataType, 16)
+                    .c_str());
         }
 
         if (psWO->padfDstNoDataImag != nullptr)
@@ -1828,7 +1833,7 @@ CPLXMLNode *CPL_STDCALL GDALSerializeWarpOptions(const GDALWarpOptions *psWO)
     if (psWO->hCutline != nullptr)
     {
         char *pszWKT = nullptr;
-        if (OGR_G_ExportToWkt(reinterpret_cast<OGRGeometryH>(psWO->hCutline),
+        if (OGR_G_ExportToWkt(static_cast<OGRGeometryH>(psWO->hCutline),
                               &pszWKT) == OGRERR_NONE)
         {
             CPLCreateXMLElementAndValue(psTree, "Cutline", pszWKT);
@@ -2024,6 +2029,28 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
         if (pszValue != nullptr)
             psWO->panDstBands[iBand] = atoi(pszValue);
 
+        const auto NormalizeValue = [](const char *pszValueIn,
+                                       GDALDataType eDataType) -> double
+        {
+            if (eDataType == GDT_Float32 &&
+                CPLString().Printf(
+                    "%.16g", -std::numeric_limits<float>::max()) == pszValueIn)
+            {
+                return -std::numeric_limits<float>::max();
+            }
+            else if (eDataType == GDT_Float32 &&
+                     CPLString().Printf("%.16g",
+                                        std::numeric_limits<float>::max()) ==
+                         pszValueIn)
+            {
+                return std::numeric_limits<float>::max();
+            }
+            else
+            {
+                return CPLAtof(pszValueIn);
+            }
+        };
+
         /* --------------------------------------------------------------------
          */
         /*      Source nodata. */
@@ -2033,7 +2060,8 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
         if (pszValue != nullptr)
         {
             GDALWarpInitSrcNoDataReal(psWO, -1.1e20);
-            psWO->padfSrcNoDataReal[iBand] = CPLAtof(pszValue);
+            psWO->padfSrcNoDataReal[iBand] =
+                NormalizeValue(pszValue, psWO->eWorkingDataType);
         }
 
         pszValue = CPLGetXMLValue(psBand, "SrcNoDataImag", nullptr);
@@ -2052,7 +2080,8 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
         if (pszValue != nullptr)
         {
             GDALWarpInitDstNoDataReal(psWO, -1.1e20);
-            psWO->padfDstNoDataReal[iBand] = CPLAtof(pszValue);
+            psWO->padfDstNoDataReal[iBand] =
+                NormalizeValue(pszValue, psWO->eWorkingDataType);
         }
 
         pszValue = CPLGetXMLValue(psBand, "DstNoDataImag", nullptr);
@@ -2078,8 +2107,9 @@ GDALWarpOptions *CPL_STDCALL GDALDeserializeWarpOptions(CPLXMLNode *psTree)
     if (pszWKT)
     {
         char *pszWKTTemp = const_cast<char *>(pszWKT);
-        OGR_G_CreateFromWkt(&pszWKTTemp, nullptr,
-                            reinterpret_cast<OGRGeometryH *>(&psWO->hCutline));
+        OGRGeometryH hCutline = nullptr;
+        OGR_G_CreateFromWkt(&pszWKTTemp, nullptr, &hCutline);
+        psWO->hCutline = hCutline;
     }
 
     psWO->dfCutlineBlendDist =

@@ -129,7 +129,7 @@ extern "C" __declspec(dllexport) void __cdecl SetNewAndDeleteFromCryptoPP(
     s_pDelete = pDelete;
 }
 
-void *__cdecl operator new(vsize_t size)
+void *__cdecl operator new(size_t size)
 {
     return s_pNew(size);
 }
@@ -1734,7 +1734,7 @@ VSICryptFilesystemHandler::Open(const char *pszFilename, const char *pszAccess,
         poHeader->eAlg = eAlg;
         poHeader->eMode = eMode;
         poHeader->nSectorSize = static_cast<GUInt16>(nSectorSize);
-        poHeader->osFreeText = osFreeText;
+        poHeader->osFreeText = std::move(osFreeText);
         poHeader->bAddKeyCheck = bAddKeyCheck;
 
         VSICryptFileHandle *poHandle = new VSICryptFileHandle(

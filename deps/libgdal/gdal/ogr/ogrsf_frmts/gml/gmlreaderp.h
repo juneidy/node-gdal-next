@@ -45,6 +45,7 @@
 #include "cpl_multiproc.h"
 #include "gmlutils.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -104,6 +105,7 @@ typedef enum
     STATE_GEOMETRY,
     STATE_IGNORED_FEATURE,
     STATE_BOUNDED_BY,
+    STATE_BOUNDED_BY_IN_FEATURE,
     STATE_CITYGML_ATTRIBUTE
 } HandlerState;
 
@@ -136,6 +138,7 @@ class GMLHandler
     int m_nGeometryDepth;
     bool m_bAlreadyFoundGeometry;
     int m_nGeometryPropertyIndex;
+    std::map<std::string, CPLXMLNode *> m_oMapElementToSubstitute{};
 
     int m_nDepth;
     int m_nDepthFeature;
@@ -164,6 +167,8 @@ class GMLHandler
 
     OGRErr startElementBoundedBy(const char *pszName, int nLenName, void *attr);
     OGRErr endElementBoundedBy();
+
+    OGRErr endElementBoundedByInFeature();
 
     OGRErr startElementFeatureAttribute(const char *pszName, int nLenName,
                                         void *attr);
@@ -424,8 +429,7 @@ class GMLReader final : public IGMLReader
 
     bool m_bEmptyAsNull;
 
-    bool m_bIsConsistentSingleGeomElemPath = true;
-    std::string m_osSingleGeomElemPath{};
+    bool m_bUseBBOX = false;
 
     bool ParseXMLHugeFile(const char *pszOutputFilename,
                           const bool bSqliteIsTempFile,
@@ -573,21 +577,13 @@ class GMLReader final : public IGMLReader
         return m_bEmptyAsNull;
     }
 
-    void SetConsistentSingleGeomElemPath(bool b)
+    void SetUseBBOX(bool bFlag)
     {
-        m_bIsConsistentSingleGeomElemPath = b;
+        m_bUseBBOX = bFlag;
     }
-    bool IsConsistentSingleGeomElemPath() const
+    bool UseBBOX() const
     {
-        return m_bIsConsistentSingleGeomElemPath;
-    }
-    void SetSingleGeomElemPath(const std::string &s)
-    {
-        m_osSingleGeomElemPath = s;
-    }
-    const std::string &GetSingleGeomElemPath() const
-    {
-        return m_osSingleGeomElemPath;
+        return m_bUseBBOX;
     }
 
     static CPLMutex *hMutex;

@@ -53,14 +53,14 @@ class OGRDGNLayer final : public OGRLayer
     void ConsiderBrush(DGNElemCore *, const char *pszPen,
                        OGRFeature *poFeature);
 
-    DGNElemCore **LineStringToElementGroup(OGRLineString *, int);
+    DGNElemCore **LineStringToElementGroup(const OGRLineString *, int);
     DGNElemCore **TranslateLabel(OGRFeature *);
 
     // Unused:
     // int                 bHaveSimpleQuery;
     OGRFeature *poEvalFeature;
 
-    OGRErr CreateFeatureWithGeom(OGRFeature *, OGRGeometry *);
+    OGRErr CreateFeatureWithGeom(OGRFeature *, const OGRGeometry *);
 
   public:
     OGRDGNLayer(const char *pszName, DGNHandle hDGN, int bUpdate);
@@ -115,7 +115,7 @@ class OGRDGNDataSource final : public OGRDataSource
     int Open(const char *, int bTestOpen, int bUpdate);
     bool PreCreate(const char *, char **);
 
-    OGRLayer *ICreateLayer(const char *, OGRSpatialReference * = nullptr,
+    OGRLayer *ICreateLayer(const char *, const OGRSpatialReference * = nullptr,
                            OGRwkbGeometryType = wkbUnknown,
                            char ** = nullptr) override;
 

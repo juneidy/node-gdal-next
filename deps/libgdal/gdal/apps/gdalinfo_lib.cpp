@@ -287,7 +287,12 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
                GDALGetDriverShortName(hDriver), GDALGetDriverLongName(hDriver));
     }
 
-    char **papszFileList = GDALGetFileList(hDataset);
+    // The list of files of a raster FileGDB is not super useful and potentially
+    // super long, so omit it, unless the -json mode is enabled
+    char **papszFileList =
+        (!bJson && EQUAL(GDALGetDriverShortName(hDriver), "OpenFileGDB"))
+            ? nullptr
+            : GDALGetFileList(hDataset);
 
     if (papszFileList == nullptr || *papszFileList == nullptr)
     {
@@ -336,19 +341,33 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
 
     if (bJson)
     {
-        json_object *poSize = json_object_new_array();
-        json_object *poSizeX =
-            json_object_new_int(GDALGetRasterXSize(hDataset));
-        json_object *poSizeY =
-            json_object_new_int(GDALGetRasterYSize(hDataset));
+        {
+            json_object *poSize = json_object_new_array();
+            json_object *poSizeX =
+                json_object_new_int(GDALGetRasterXSize(hDataset));
+            json_object *poSizeY =
+                json_object_new_int(GDALGetRasterYSize(hDataset));
 
-        json_object_array_add(poSize, poSizeX);
-        json_object_array_add(poSize, poSizeY);
+            // size is X, Y ordered
+            json_object_array_add(poSize, poSizeX);
+            json_object_array_add(poSize, poSizeY);
 
-        json_object *poStacSize = nullptr;
-        json_object_deep_copy(poSize, &poStacSize, nullptr);
-        json_object_object_add(poJsonObject, "size", poSize);
-        json_object_object_add(poStac, "proj:shape", poStacSize);
+            json_object_object_add(poJsonObject, "size", poSize);
+        }
+
+        {
+            json_object *poStacSize = json_object_new_array();
+            json_object *poSizeX =
+                json_object_new_int(GDALGetRasterXSize(hDataset));
+            json_object *poSizeY =
+                json_object_new_int(GDALGetRasterYSize(hDataset));
+
+            // ... but ... proj:shape is Y, X ordered.
+            json_object_array_add(poStacSize, poSizeY);
+            json_object_array_add(poStacSize, poSizeX);
+
+            json_object_object_add(poStac, "proj:shape", poStacSize);
+        }
     }
     else
     {
@@ -399,16 +418,28 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
                 json_object *poEPSG = json_object_new_int64(atoi(pszAuthCode));
                 json_object_object_add(poStac, "proj:epsg", poEPSG);
             }
-            char *pszProjJson = nullptr;
-            CPLPushErrorHandler(
-                CPLQuietErrorHandler);  // PROJJSON requires PROJ >= 6.2
-            OGRErr result = OSRExportToPROJJSON(hSRS, &pszProjJson, nullptr);
-            CPLPopErrorHandler();
-            if (result == OGRERR_NONE)
+            else
             {
-                json_object *poStacProjJson = json_tokener_parse(pszProjJson);
-                json_object_object_add(poStac, "proj:projjson", poStacProjJson);
-                CPLFree(pszProjJson);
+                // Setting it to null is mandated by the
+                // https://github.com/stac-extensions/projection#projepsg
+                // when setting proj:projjson or proj:wkt2
+                json_object_object_add(poStac, "proj:epsg", nullptr);
+            }
+            {
+                // PROJJSON requires PROJ >= 6.2
+                CPLErrorHandlerPusher oPusher(CPLQuietErrorHandler);
+                CPLErrorStateBackuper oCPLErrorHandlerPusher;
+                char *pszProjJson = nullptr;
+                OGRErr result =
+                    OSRExportToPROJJSON(hSRS, &pszProjJson, nullptr);
+                if (result == OGRERR_NONE)
+                {
+                    json_object *poStacProjJson =
+                        json_tokener_parse(pszProjJson);
+                    json_object_object_add(poStac, "proj:projjson",
+                                           poStacProjJson);
+                    CPLFree(pszProjJson);
+                }
             }
 
             json_object *poAxisMapping = json_object_new_array();
@@ -685,15 +716,20 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
     {
         OGRSpatialReferenceH hLatLong = nullptr;
 
-        OGRErr eErr = OGRERR_NONE;
-        // Check that it looks like Earth before trying to reproject to wgs84...
-        if (bJson &&
-            fabs(OSRGetSemiMajor(hProj, &eErr) - 6378137.0) < 10000.0 &&
-            eErr == OGRERR_NONE)
+        if (bJson)
         {
-            bTransformToWGS84 = true;
-            hLatLong = OSRNewSpatialReference(nullptr);
-            OSRSetWellKnownGeogCS(hLatLong, "WGS84");
+            // Check that it looks like Earth before trying to reproject to wgs84...
+            // OSRGetSemiMajor() may raise an error on CRS like Engineering CRS
+            CPLErrorHandlerPusher oPusher(CPLQuietErrorHandler);
+            CPLErrorStateBackuper oCPLErrorHandlerPusher;
+            OGRErr eErr = OGRERR_NONE;
+            if (fabs(OSRGetSemiMajor(hProj, &eErr) - 6378137.0) < 10000.0 &&
+                eErr == OGRERR_NONE)
+            {
+                bTransformToWGS84 = true;
+                hLatLong = OSRNewSpatialReference(nullptr);
+                OSRSetWellKnownGeogCS(hLatLong, "WGS84");
+            }
         }
         else
         {
@@ -722,6 +758,9 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
     /* -------------------------------------------------------------------- */
     if (bJson && GDALGetRasterXSize(hDataset))
     {
+        CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+        CPLErrorStateBackuper oBackuper;
+
         json_object *poLinearRing = json_object_new_array();
         json_object *poCornerCoordinates = json_object_new_object();
         json_object *poLongLatExtent = json_object_new_object();
@@ -763,6 +802,9 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
     }
     else if (GDALGetRasterXSize(hDataset))
     {
+        CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+        CPLErrorStateBackuper oBackuper;
+
         Concat(osStr, psOptions->bStdoutOutput, "Corner Coordinates:\n");
         GDALInfoReportCorner(psOptions, hDataset, hTransform, "Upper Left", 0.0,
                              0.0, bJson, nullptr, nullptr, osStr);
@@ -846,6 +888,9 @@ char *GDALInfo(GDALDatasetH hDataset, const GDALInfoOptions *psOptions)
             {
                 case GDT_Byte:
                     stacDataType = "uint8";
+                    break;
+                case GDT_Int8:
+                    stacDataType = "int8";
                     break;
                 case GDT_UInt16:
                     stacDataType = "uint16";

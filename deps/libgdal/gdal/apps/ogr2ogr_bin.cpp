@@ -62,57 +62,66 @@ static bool StringCISortFunction(const CPLString &a, const CPLString &b)
     return STRCASECMP(a.c_str(), b.c_str()) < 0;
 }
 
-static void Usage(const char *pszAdditionalMsg = nullptr, bool bShort = true)
+static void Usage(bool bIsError, const char *pszAdditionalMsg = nullptr,
+                  bool bShort = true)
 {
-    printf(
-        "Usage: ogr2ogr [--help-general] [-skipfailures] [-append | -upsert] "
-        "[-update]\n"
-        "               [-select field_list] [-where "
-        "restricted_where|@filename]\n"
-        "               [-progress] [-sql <sql statement>|@filename] [-dialect "
-        "dialect]\n"
-        "               [-preserve_fid] [-fid FID] [-limit nb_features]\n"
-        "               [-spat xmin ymin xmax ymax] [-spat_srs srs_def] "
-        "[-geomfield field]\n"
-        "               [-a_srs srs_def] [-t_srs srs_def] [-s_srs srs_def] "
-        "[-ct string]\n"
-        "               [-f format_name] [-overwrite] [[-dsco NAME=VALUE] "
-        "...]\n"
-        "               dst_datasource_name src_datasource_name\n"
-        "               [-lco NAME=VALUE] [-nln name] \n"
+    fprintf(
+        bIsError ? stderr : stdout,
+        "Usage: ogr2ogr [--help] [--help-general]\n"
+        "               [-skipfailures] [-append | -upsert] [-update]\n"
+        "               [-select <field_list>] [-where "
+        "<restricted_where>|@<filename>]\n"
+        "               [-progress] [-sql <sql statement>|@<filename>] "
+        "[-dialect "
+        "<dialect>]\n"
+        "               [-preserve_fid] [-fid <FID>] [-limit <nb_features>]\n"
+        "               [-spat <xmin> <ymin> <xmax> <ymax>] [-spat_srs "
+        "<srs_def>] "
+        "[-geomfield <field>]\n"
+        "               [-a_srs <srs_def>] [-t_srs <srs_def>] [-s_srs "
+        "<srs_def>] "
+        "[-ct <string>]\n"
+        "               [-if <input_drv_name>] [-f <output_drv_name>] "
+        "[-overwrite] "
+        "[-dsco <NAME>=<VALUE>]...\n"
+        "               [-lco <NAME>=<VALUE>]... [-nln <name>] \n"
         "               [-nlt "
-        "type|PROMOTE_TO_MULTI|CONVERT_TO_LINEAR|CONVERT_TO_CURVE]\n"
-        "               [-dim XY|XYZ|XYM|XYZM|layer_dim] [layer [layer ...]]\n"
+        "<type>|PROMOTE_TO_MULTI|CONVERT_TO_LINEAR|CONVERT_TO_CURVE]\n"
+        "               [-dim XY|XYZ|XYM|XYZM|<layer_dim>]\n"
+        "               <dst_datasource_name> <src_datasource_name>\n"
+        "               [<layer> [<layer>...]]\n"
         "\n"
         "Advanced options :\n"
         "               [-gt n] [-ds_transaction]\n"
-        "               [[-oo NAME=VALUE] ...] [[-doo NAME=VALUE] ...]\n"
-        "               [-clipsrc [xmin ymin xmax "
-        "ymax]|WKT|datasource|spat_extent]\n"
-        "               [-clipsrcsql sql_statement] [-clipsrclayer layer]\n"
-        "               [-clipsrcwhere expression]\n"
-        "               [-clipdst [xmin ymin xmax ymax]|WKT|datasource]\n"
-        "               [-clipdstsql sql_statement] [-clipdstlayer layer]\n"
-        "               [-clipdstwhere expression]\n"
-        "               [-wrapdateline][-datelineoffset val]\n"
-        "               [[-simplify tolerance] | [-segmentize max_dist]]\n"
+        "               [-oo <NAME>=<VALUE>]... [-doo <NAME>=<VALUE>]...\n"
+        "               [-clipsrc {[<xmin> <ymin> <xmax> <ymax>]|<WKT>|"
+        "<datasource>|spat_extent}]\n"
+        "               [-clipsrcsql <sql_statement>] [-clipsrclayer <layer>]\n"
+        "               [-clipsrcwhere <expression>]\n"
+        "               [-clipdst {[<xmin> <ymin> <xmax> "
+        "<ymax>]|<WKT>|<datasource>}]\n"
+        "               [-clipdstsql <sql_statement>] [-clipdstlayer <layer>]\n"
+        "               [-clipdstwhere <expression>]\n"
+        "               [-wrapdateline][-datelineoffset <val>]\n"
+        "               [[-simplify <tolerance>] | [-segmentize <max_dist>]]\n"
         "               [-makevalid]\n"
         "               [-addfields] [-unsetFid] [-emptyStrAsNull]\n"
         "               [-relaxedFieldNameMatch] [-forceNullable] "
         "[-unsetDefault]\n"
-        "               [-fieldTypeToString All|(type1[,type2]*)] "
+        "               [-fieldTypeToString {All|{<type1>[,<type2>]}...}] "
         "[-unsetFieldWidth]\n"
         "               [-mapFieldType "
-        "srctype|All=dsttype[,srctype2=dsttype2]*]\n"
-        "               [-fieldmap identity | index1[,index2]*]\n"
-        "               [-splitlistfields] [-maxsubfields val]\n"
+        "{<srctype>|All=<dsttype>[,<srctype2>=<dsttype2>]...}]\n"
+        "               [-dateTimeTo {UTC|UTC(+|-)<HH>|UTC(+|-)<HH>:<MM>}]\n"
+        "               [-fieldmap {identity|{<index1>[,<index2>]...}]\n"
+        "               [-splitlistfields] [-maxsubfields <val>]\n"
         "               [-resolveDomains]\n"
-        "               [-explodecollections] [-zfield field_name]\n"
-        "               [-gcp ungeoref_x ungeoref_y georef_x georef_y "
-        "[elevation]]* [-order n | -tps]\n"
-        "               [[-s_coord_epoch epoch] | [-t_coord_epoch epoch] | "
-        "[-a_coord_epoch epoch]]\n"
-        "               [-nomd] [-mo \"META-TAG=VALUE\"]* [-noNativeData]\n");
+        "               [-explodecollections] [-zfield <field_name>]\n"
+        "               [-gcp <ungeoref_x> <ungeoref_y> <georef_x> <georef_y> "
+        "[<elevation>]]... [[-order <n>]|[-tps]]\n"
+        "               [-s_coord_epoch <epoch>] [-t_coord_epoch <epoch>] "
+        "[-a_coord_epoch <epoch>]\n"
+        "               [-nomd] [-mo <META-TAG>=<VALUE>]... [-noNativeData]\n");
 
     if (bShort)
     {
@@ -225,8 +234,7 @@ static void Usage(const char *pszAdditionalMsg = nullptr, bool bShort = true)
 static GDALVectorTranslateOptionsForBinary *
 GDALVectorTranslateOptionsForBinaryNew()
 {
-    return static_cast<GDALVectorTranslateOptionsForBinary *>(
-        CPLCalloc(1, sizeof(GDALVectorTranslateOptionsForBinary)));
+    return new GDALVectorTranslateOptionsForBinary;
 }
 
 /************************************************************************/
@@ -236,14 +244,7 @@ GDALVectorTranslateOptionsForBinaryNew()
 static void GDALVectorTranslateOptionsForBinaryFree(
     GDALVectorTranslateOptionsForBinary *psOptionsForBinary)
 {
-    if (psOptionsForBinary)
-    {
-        CPLFree(psOptionsForBinary->pszDataSource);
-        CPLFree(psOptionsForBinary->pszDestDataSource);
-        CSLDestroy(psOptionsForBinary->papszOpenOptions);
-        CPLFree(psOptionsForBinary->pszFormat);
-        CPLFree(psOptionsForBinary);
-    }
+    delete psOptionsForBinary;
 }
 
 /************************************************************************/
@@ -296,12 +297,14 @@ MAIN_START(nArgc, papszArgv)
         }
         else if (EQUAL(papszArgv[iArg], "--help"))
         {
-            Usage();
+            Usage(false);
+            nRetCode = 0;
             goto exit;
         }
         else if (EQUAL(papszArgv[iArg], "--long-usage"))
         {
-            Usage(nullptr, false);
+            Usage(false, nullptr, false);
+            nRetCode = 0;
             goto exit;
         }
     }
@@ -312,25 +315,25 @@ MAIN_START(nArgc, papszArgv)
 
     if (psOptions == nullptr)
     {
-        Usage();
+        Usage(true);
         GDALVectorTranslateOptionsForBinaryFree(psOptionsForBinary);
         goto exit;
     }
 
-    if (psOptionsForBinary->pszDataSource == nullptr ||
-        psOptionsForBinary->pszDestDataSource == nullptr)
+    if (psOptionsForBinary->osDataSource.empty() ||
+        !psOptionsForBinary->bDestSpecified)
     {
-        if (psOptionsForBinary->pszDestDataSource == nullptr)
-            Usage("no target datasource provided");
+        if (!psOptionsForBinary->bDestSpecified)
+            Usage(true, "no target datasource provided");
         else
-            Usage("no source datasource provided");
+            Usage(true, "no source datasource provided");
         GDALVectorTranslateOptionsFree(psOptions);
         GDALVectorTranslateOptionsForBinaryFree(psOptionsForBinary);
         goto exit;
     }
 
-    if (strcmp(psOptionsForBinary->pszDestDataSource, "/vsistdout/") == 0)
-        psOptionsForBinary->bQuiet = TRUE;
+    if (psOptionsForBinary->osDestDataSource == "/vsistdout/")
+        psOptionsForBinary->bQuiet = true;
 
     /* -------------------------------------------------------------------- */
     /*      Open data source.                                               */
@@ -340,12 +343,13 @@ MAIN_START(nArgc, papszArgv)
     // output Known to cause problems with at least FGdb, SQlite and GPKG
     // drivers. See #4270
     if (psOptionsForBinary->eAccessMode != ACCESS_CREATION &&
-        strcmp(psOptionsForBinary->pszDestDataSource,
-               psOptionsForBinary->pszDataSource) == 0)
+        psOptionsForBinary->osDestDataSource ==
+            psOptionsForBinary->osDataSource)
     {
-        hODS = GDALOpenEx(psOptionsForBinary->pszDataSource,
-                          GDAL_OF_UPDATE | GDAL_OF_VECTOR, nullptr,
-                          psOptionsForBinary->papszOpenOptions, nullptr);
+        hODS = GDALOpenEx(psOptionsForBinary->osDataSource.c_str(),
+                          GDAL_OF_UPDATE | GDAL_OF_VECTOR,
+                          psOptionsForBinary->aosAllowInputDrivers.List(),
+                          psOptionsForBinary->aosOpenOptions.List(), nullptr);
 
         GDALDriverH hDriver =
             hODS != nullptr ? GDALGetDatasetDriver(hODS) : nullptr;
@@ -356,9 +360,10 @@ MAIN_START(nArgc, papszArgv)
                          EQUAL(GDALGetDescription(hDriver), "SQLite") ||
                          EQUAL(GDALGetDescription(hDriver), "GPKG")))
         {
-            hDS = GDALOpenEx(psOptionsForBinary->pszDataSource, GDAL_OF_VECTOR,
-                             nullptr, psOptionsForBinary->papszOpenOptions,
-                             nullptr);
+            hDS = GDALOpenEx(
+                psOptionsForBinary->osDataSource.c_str(), GDAL_OF_VECTOR,
+                psOptionsForBinary->aosAllowInputDrivers.List(),
+                psOptionsForBinary->aosOpenOptions.List(), nullptr);
         }
         else
         {
@@ -369,8 +374,9 @@ MAIN_START(nArgc, papszArgv)
     else
     {
         hDS =
-            GDALOpenEx(psOptionsForBinary->pszDataSource, GDAL_OF_VECTOR,
-                       nullptr, psOptionsForBinary->papszOpenOptions, nullptr);
+            GDALOpenEx(psOptionsForBinary->osDataSource.c_str(), GDAL_OF_VECTOR,
+                       psOptionsForBinary->aosAllowInputDrivers.List(),
+                       psOptionsForBinary->aosOpenOptions.List(), nullptr);
     }
 
     /* -------------------------------------------------------------------- */
@@ -383,7 +389,7 @@ MAIN_START(nArgc, papszArgv)
         fprintf(stderr,
                 "FAILURE:\n"
                 "Unable to open datasource `%s' with the following drivers.\n",
-                psOptionsForBinary->pszDataSource);
+                psOptionsForBinary->osDataSource.c_str());
 
         for (int iDriver = 0; iDriver < poDM->GetDriverCount(); iDriver++)
         {
@@ -401,16 +407,16 @@ MAIN_START(nArgc, papszArgv)
         goto exit;
     }
 
-    if (hODS != nullptr && psOptionsForBinary->pszFormat != nullptr)
+    if (hODS != nullptr && !psOptionsForBinary->osFormat.empty())
     {
         GDALDriverManager *poDM = GetGDALDriverManager();
 
         GDALDriver *poDriver =
-            poDM->GetDriverByName(psOptionsForBinary->pszFormat);
+            poDM->GetDriverByName(psOptionsForBinary->osFormat.c_str());
         if (poDriver == nullptr)
         {
             fprintf(stderr, "Unable to find driver `%s'.\n",
-                    psOptionsForBinary->pszFormat);
+                    psOptionsForBinary->osFormat.c_str());
             fprintf(stderr, "The following drivers are available:\n");
 
             for (int iDriver = 0; iDriver < poDM->GetDriverCount(); iDriver++)
@@ -442,10 +448,11 @@ MAIN_START(nArgc, papszArgv)
     {
         // TODO(schwehr): Remove scope after removing gotos
         int bUsageError = FALSE;
-        hDstDS = GDALVectorTranslate(psOptionsForBinary->pszDestDataSource,
-                                     hODS, 1, &hDS, psOptions, &bUsageError);
+        hDstDS =
+            GDALVectorTranslate(psOptionsForBinary->osDestDataSource.c_str(),
+                                hODS, 1, &hDS, psOptions, &bUsageError);
         if (bUsageError)
-            Usage();
+            Usage(true);
         else
             nRetCode = hDstDS ? 0 : 1;
     }
@@ -459,9 +466,10 @@ MAIN_START(nArgc, papszArgv)
     {
         if (nRetCode == 0)
             CPLErrorReset();
-        GDALClose(hDstDS);
-        // Works around https://github.com/Toblerity/Fiona/issues/1169
-        // Ideally GDALClose() should return an error code to avoid this hack
+        if (GDALClose(hDstDS) != CE_None)
+            nRetCode = 1;
+        // TODO: Below code can be removed once all drivers have implemented
+        // GDALDataset::Close()
         if (nRetCode == 0 && CPLGetLastErrorType() == CE_Failure)
             nRetCode = 1;
     }

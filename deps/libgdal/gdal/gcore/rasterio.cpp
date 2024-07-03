@@ -32,6 +32,7 @@
 #include "gdal.h"
 #include "gdal_priv.h"
 
+#include <cassert>
 #include <climits>
 #include <cmath>
 #include <cstddef>
@@ -1103,7 +1104,7 @@ CPLErr GDALRasterBand::RasterIOResampled(
             /* Add a mask band if needed */
             if (GetMaskFlags() != GMF_ALL_VALID)
             {
-                reinterpret_cast<GDALDataset *>(hVRTDS)->CreateMaskBand(0);
+                GDALDataset::FromHandle(hVRTDS)->CreateMaskBand(0);
                 VRTSourcedRasterBand *poVRTMaskBand =
                     reinterpret_cast<VRTSourcedRasterBand *>(
                         reinterpret_cast<GDALRasterBand *>(hVRTBand)
@@ -1216,10 +1217,11 @@ CPLErr GDALRasterBand::RasterIOResampled(
         CPLAssert(pfnResampleFunc);
         GDALDataType eWrkDataType =
             GDALGetOvrWorkDataType(pszResampling, eDataType);
-        int bHasNoData = FALSE;
-        float fNoDataValue = static_cast<float>(GetNoDataValue(&bHasNoData));
+        int nHasNoData = 0;
+        double dfNoDataValue = GetNoDataValue(&nHasNoData);
+        const bool bHasNoData = CPL_TO_BOOL(nHasNoData);
         if (!bHasNoData)
-            fNoDataValue = 0.0f;
+            dfNoDataValue = 0.0;
 
         int nDstBlockXSize = nBufXSize;
         int nDstBlockYSize = nBufYSize;
@@ -1392,7 +1394,7 @@ CPLErr GDALRasterBand::RasterIOResampled(
                         {
                             for (int j = 0; j < nDstYCount; j++)
                             {
-                                GDALCopyWords(&fNoDataValue, GDT_Float32, 0,
+                                GDALCopyWords(&dfNoDataValue, GDT_Float64, 0,
                                               static_cast<GByte *>(pDataMem) +
                                                   nLSMem * (j + nDstYOff) +
                                                   nDstXOff * nPSMem,
@@ -1429,7 +1431,7 @@ CPLErr GDALRasterBand::RasterIOResampled(
                         nDstYOff + nDestYOffVirtual,
                         nDstYOff + nDestYOffVirtual + nDstYCount, poMEMBand,
                         &pDstBuffer, &eDstBufferDataType, pszResampling,
-                        bHasNoData, fNoDataValue, GetColorTable(), eDataType,
+                        bHasNoData, dfNoDataValue, GetColorTable(), eDataType,
                         bPropagateNoData);
                     if (eErr == CE_None)
                     {
@@ -1831,13 +1833,13 @@ CPLErr GDALDataset::RasterIOResampled(GDALRWFlag /* eRWFlag */, int nXOff,
                     {
                         if (bVal == 0)
                         {
-                            float fNoDataValue = 0.0f;
+                            GByte abyZero[16] = {0};
                             for (int iBand = 0; iBand < nBandCount; iBand++)
                             {
                                 for (int j = 0; j < nDstYCount; j++)
                                 {
                                     GDALCopyWords(
-                                        &fNoDataValue, GDT_Float32, 0,
+                                        abyZero, GDT_Byte, 0,
                                         static_cast<GByte *>(pData) +
                                             iBand * nBandSpace +
                                             nLineSpace * (j + nDstYOff) +
@@ -1883,7 +1885,7 @@ CPLErr GDALDataset::RasterIOResampled(GDALRWFlag /* eRWFlag */, int nXOff,
                         nDstYOff + nDestYOffVirtual,
                         nDstYOff + nDestYOffVirtual + nDstYCount, papoDstBands,
                         pszResampling, FALSE /*bHasNoData*/,
-                        0.f /* fNoDataValue */, nullptr /* color table*/,
+                        0.0 /* dfNoDataValue */, nullptr /* color table*/,
                         eDataType);
                 }
                 else
@@ -1919,7 +1921,7 @@ CPLErr GDALDataset::RasterIOResampled(GDALRWFlag /* eRWFlag */, int nXOff,
                             nDstYOff + nDestYOffVirtual,
                             nDstYOff + nDestYOffVirtual + nDstYCount, poMEMBand,
                             &pDstBuffer, &eDstBufferDataType, pszResampling,
-                            FALSE /*bHasNoData*/, 0.f /* fNoDataValue */,
+                            false /*bHasNoData*/, 0.0 /* dfNoDataValue */,
                             nullptr /* color table*/, eDataType,
                             bPropagateNoData);
                         if (eErr == CE_None)
@@ -2748,6 +2750,11 @@ inline void GDALCopyWordsFromT(const T *const CPL_RESTRICT pSrcData,
                            static_cast<unsigned char *>(pDstData),
                            nDstPixelStride, nWordCount);
             break;
+        case GDT_Int8:
+            GDALCopyWordsT(pSrcData, nSrcPixelStride,
+                           static_cast<signed char *>(pDstData),
+                           nDstPixelStride, nWordCount);
+            break;
         case GDT_UInt16:
             GDALCopyWordsT(pSrcData, nSrcPixelStride,
                            static_cast<unsigned short *>(pDstData),
@@ -2849,7 +2856,7 @@ inline void GDALCopyWordsFromT(const T *const CPL_RESTRICT pSrcData,
             }
             break;
         case GDT_Unknown:
-        default:
+        case GDT_TypeCount:
             CPLAssert(false);
     }
 }
@@ -2922,6 +2929,7 @@ static void GDALReplicateWord(const void *CPL_RESTRICT pSrcData,
     switch (eDstType)
     {
         case GDT_Byte:
+        case GDT_Int8:
         {
             if (nDstPixelStride == 1)
             {
@@ -2979,7 +2987,8 @@ static void GDALReplicateWord(const void *CPL_RESTRICT pSrcData,
             CASE_DUPLICATE_COMPLEX(GDT_CFloat32, float)
             CASE_DUPLICATE_COMPLEX(GDT_CFloat64, double)
 
-        default:
+        case GDT_Unknown:
+        case GDT_TypeCount:
             CPLAssert(false);
     }
 }
@@ -3305,8 +3314,9 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
 {
     // On platforms where alignment matters, be careful
     const int nSrcDataTypeSize = GDALGetDataTypeSizeBytes(eSrcType);
-#ifdef CPL_CPU_REQUIRES_ALIGNED_ACCESS
     const int nDstDataTypeSize = GDALGetDataTypeSizeBytes(eDstType);
+    assert(nSrcDataTypeSize != 0);
+    assert(nDstDataTypeSize != 0);
     if (!(eSrcType == eDstType && nSrcPixelStride == nDstPixelStride) &&
         ((reinterpret_cast<GPtrDiff_t>(pSrcData) % nSrcDataTypeSize) != 0 ||
          (reinterpret_cast<GPtrDiff_t>(pDstData) % nDstDataTypeSize) != 0 ||
@@ -3347,7 +3357,6 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
         }
         return;
     }
-#endif
 
     // Deal with the case where we're replicating a single word into the
     // provided buffer
@@ -3360,7 +3369,7 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
 
     if (eSrcType == eDstType)
     {
-        if (eSrcType == GDT_Byte)
+        if (eSrcType == GDT_Byte || eSrcType == GDT_Int8)
         {
             GDALFastCopy(static_cast<GByte *>(pDstData), nDstPixelStride,
                          static_cast<const GByte *>(pSrcData), nSrcPixelStride,
@@ -3379,7 +3388,7 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
 
         if (nWordCount == 1)
         {
-#ifdef CSA_BUILD
+#if defined(CSA_BUILD) || defined(__COVERITY__)
             // Avoid false positives...
             memcpy(pDstData, pSrcData, nSrcDataTypeSize);
 #else
@@ -3414,6 +3423,11 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
         case GDT_Byte:
             GDALCopyWordsFromT<unsigned char>(
                 static_cast<const unsigned char *>(pSrcData), nSrcPixelStride,
+                false, pDstData, eDstType, nDstPixelStride, nWordCount);
+            break;
+        case GDT_Int8:
+            GDALCopyWordsFromT<signed char>(
+                static_cast<const signed char *>(pSrcData), nSrcPixelStride,
                 false, pDstData, eDstType, nDstPixelStride, nWordCount);
             break;
         case GDT_UInt16:
@@ -3477,7 +3491,7 @@ void CPL_STDCALL GDALCopyWords64(const void *CPL_RESTRICT pSrcData,
                                        eDstType, nDstPixelStride, nWordCount);
             break;
         case GDT_Unknown:
-        default:
+        case GDT_TypeCount:
             CPLAssert(false);
     }
 }
@@ -3653,18 +3667,29 @@ int GDALBandGetBestOverviewLevel2(GDALRasterBand *poBand, int &nXOff,
     if (nOYOff + nOYSize > poBestOverview->GetYSize())
         nOYSize = poBestOverview->GetYSize() - nOYOff;
 
+    if (psExtraArg)
+    {
+        if (psExtraArg->bFloatingPointWindowValidity)
+        {
+            psExtraArg->dfXOff /= dfXRes;
+            psExtraArg->dfXSize /= dfXRes;
+            psExtraArg->dfYOff /= dfYRes;
+            psExtraArg->dfYSize /= dfYRes;
+        }
+        else if (psExtraArg->eResampleAlg != GRIORA_NearestNeighbour)
+        {
+            psExtraArg->bFloatingPointWindowValidity = true;
+            psExtraArg->dfXOff = nXOff / dfXRes;
+            psExtraArg->dfXSize = nXSize / dfXRes;
+            psExtraArg->dfYOff = nYOff / dfYRes;
+            psExtraArg->dfYSize = nYSize / dfYRes;
+        }
+    }
+
     nXOff = nOXOff;
     nYOff = nOYOff;
     nXSize = nOXSize;
     nYSize = nOYSize;
-
-    if (psExtraArg && psExtraArg->bFloatingPointWindowValidity)
-    {
-        psExtraArg->dfXOff /= dfXRes;
-        psExtraArg->dfXSize /= dfXRes;
-        psExtraArg->dfYOff /= dfYRes;
-        psExtraArg->dfYSize /= dfYRes;
-    }
 
     return nBestOverviewLevel;
 }
@@ -4608,6 +4633,9 @@ CPLErr CPL_STDCALL GDALDatasetCopyWholeRaster(GDALDatasetH hSrcDS,
         bInterleave = true;
     else if (pszInterleave != nullptr && EQUAL(pszInterleave, "BAND"))
         bInterleave = false;
+    // attributes is specific to the TileDB driver
+    else if (pszInterleave != nullptr && EQUAL(pszInterleave, "ATTRIBUTES"))
+        bInterleave = true;
     else if (pszInterleave != nullptr)
     {
         CPLError(CE_Warning, CPLE_NotSupported,
@@ -5095,7 +5123,10 @@ bool GDALBufferHasOnlyNoData(const void *pBuffer, double dfNoDataValue,
 #else
     typedef std::uint32_t WordType;
 #endif
-    if (dfNoDataValue == 0.0 && nWidth == nLineStride)
+    if (dfNoDataValue == 0.0 && nWidth == nLineStride &&
+        // Do not use this optimized code path for floating point numbers,
+        // as it can't detect negative zero.
+        nSampleFormat != GSF_FLOATING_POINT)
     {
         const GByte *pabyBuffer = static_cast<const GByte *>(pBuffer);
         const size_t nSize =

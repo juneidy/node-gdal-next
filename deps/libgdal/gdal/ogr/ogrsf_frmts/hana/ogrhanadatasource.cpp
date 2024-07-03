@@ -104,6 +104,7 @@ class OpenOptionsConstants
     static constexpr const char *DATABASE = "DATABASE";
     static constexpr const char *USER = "USER";
     static constexpr const char *PASSWORD = "PASSWORD";
+    static constexpr const char *USER_STORE_KEY = "USER_STORE_KEY";
     static constexpr const char *SCHEMA = "SCHEMA";
     static constexpr const char *TABLES = "TABLES";
 
@@ -133,6 +134,7 @@ class OpenOptionsConstants
                "  <Option name='DATABASE' type='string' description='Specifies the name of the database to connect to' required='true'/>"
                "  <Option name='USER' type='string' description='Specifies the user name' required='true'/>"
                "  <Option name='PASSWORD' type='string' description='Specifies the user password' required='true'/>"
+               "  <Option name='USER_STORE_KEY' type='string' description='Specifies whether a connection is made using a key defined in the SAP HANA user store (hdbuserstore)' required='false'/>"
                "  <Option name='SCHEMA' type='string' description='Specifies the schema used for tables listed in TABLES option' required='true'/>"
                "  <Option name='TABLES' type='string' description='Restricted set of tables to list (comma separated)'/>"
                "  <Option name='ENCRYPT' type='boolean' description='Enables or disables TLS/SSL encryption' default='NO'/>"
@@ -197,9 +199,39 @@ CPLString BuildConnectionString(char **openOptions)
         addParameter(paramName, paramValue);
     };
 
-    if (CSLFindString(openOptions, OpenOptionsConstants::DSN) != -1)
+    auto checkIgnoredOptParameter = [&](const char *optionName)
     {
-        addOptParameter(OpenOptionsConstants::DSN, "DSN", true);
+        if (getOptValue(optionName))
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Connection parameter '%s' is ignored in the current "
+                     "combination.",
+                     optionName);
+    };
+
+    if (const char *paramUserStoreKey =
+            getOptValue(OpenOptionsConstants::USER_STORE_KEY))
+    {
+        addOptParameter(OpenOptionsConstants::DRIVER, "DRIVER", true);
+        CPLString node = CPLString().Printf("@%s", paramUserStoreKey);
+        addParameter("SERVERNODE", node.c_str());
+
+        checkIgnoredOptParameter(OpenOptionsConstants::DSN);
+        checkIgnoredOptParameter(OpenOptionsConstants::HOST);
+        checkIgnoredOptParameter(OpenOptionsConstants::PORT);
+        checkIgnoredOptParameter(OpenOptionsConstants::DATABASE);
+        checkIgnoredOptParameter(OpenOptionsConstants::USER);
+        checkIgnoredOptParameter(OpenOptionsConstants::PASSWORD);
+    }
+    else if (const char *paramDSN = getOptValue(OpenOptionsConstants::DSN))
+    {
+        addParameter(OpenOptionsConstants::DSN, paramDSN);
+        addOptParameter(OpenOptionsConstants::USER, "UID", true);
+        addOptParameter(OpenOptionsConstants::PASSWORD, "PWD", true);
+
+        checkIgnoredOptParameter(OpenOptionsConstants::DRIVER);
+        checkIgnoredOptParameter(OpenOptionsConstants::HOST);
+        checkIgnoredOptParameter(OpenOptionsConstants::PORT);
+        checkIgnoredOptParameter(OpenOptionsConstants::DATABASE);
     }
     else
     {
@@ -211,13 +243,13 @@ CPLString BuildConnectionString(char **openOptions)
             CPLString node = CPLString().Printf("%s:%s", paramHost, paramPort);
             addParameter("SERVERNODE", node.c_str());
         }
+        addOptParameter(OpenOptionsConstants::USER, "UID", true);
+        addOptParameter(OpenOptionsConstants::PASSWORD, "PWD", true);
         addOptParameter(OpenOptionsConstants::DATABASE, "DATABASENAME");
     }
 
-    addOptParameter(OpenOptionsConstants::USER, "UID", true);
-    addOptParameter(OpenOptionsConstants::PASSWORD, "PWD", true);
-    const char *paramSchema = getOptValue(OpenOptionsConstants::SCHEMA, true);
-    if (paramSchema != nullptr)
+    if (const char *paramSchema =
+            getOptValue(OpenOptionsConstants::SCHEMA, true))
     {
         CPLString schema = CPLString().Printf("\"%s\"", paramSchema);
         addParameter("CURRENTSCHEMA", schema.c_str());
@@ -240,6 +272,10 @@ CPLString BuildConnectionString(char **openOptions)
     addOptParameter(OpenOptionsConstants::SPLIT_BATCH_COMMANDS,
                     "SPLITBATCHCOMMANDS");
     addParameter("CHAR_AS_UTF8", "1");
+
+    CPLString appName;
+    appName.Printf("GDAL %s", GDALVersionInfo("RELEASE_NAME"));
+    addParameter("sessionVariable:APPLICATION", appName.c_str());
 
     return isValid ? JoinStrings(params, ";") : "";
 }
@@ -954,7 +990,7 @@ OGRSpatialReference *OGRHanaDataSource::GetSrsById(int srid)
 /*                               GetSrsId()                             */
 /************************************************************************/
 
-int OGRHanaDataSource::GetSrsId(OGRSpatialReference *srs)
+int OGRHanaDataSource::GetSrsId(const OGRSpatialReference *srs)
 {
     if (srs == nullptr)
         return UNDETERMINED_SRID;
@@ -1117,7 +1153,6 @@ OGRErr OGRHanaDataSource::GetQueryColumns(
 
     columnDescriptions.reserve(numColumns);
 
-    CPLString tableName = rsmd->getTableName(1);
     odbc::DatabaseMetaDataRef dmd = conn_->getDatabaseMetaData();
     odbc::PreparedStatementRef stmtArrayTypeInfo =
         PrepareStatement("SELECT DATA_TYPE_NAME FROM "
@@ -1134,6 +1169,7 @@ OGRErr OGRHanaDataSource::GetQueryColumns(
 
         bool isArray = false;
         bool isGeometry = false;
+        CPLString tableName = rsmd->getTableName(clmIndex);
         CPLString columnName = rsmd->getColumnName(clmIndex);
         CPLString defaultValue;
         short dataType = rsmd->getColumnType(clmIndex);
@@ -1268,7 +1304,8 @@ OGRHanaDataSource::GetTablePrimaryKeys(const char *schemaName,
 void OGRHanaDataSource::InitializeLayers(const char *schemaName,
                                          const char *tableNames)
 {
-    std::vector<CPLString> tables = SplitStrings(tableNames, ",");
+    std::vector<CPLString> tablesToFind = SplitStrings(tableNames, ",");
+    const bool hasTablesToFind = !tablesToFind.empty();
 
     auto addLayersFromQuery = [&](const char *query, bool updatable)
     {
@@ -1280,9 +1317,10 @@ void OGRHanaDataSource::InitializeLayers(const char *schemaName,
             odbc::String tableName = rsTables->getString(1);
             if (tableName.isNull())
                 continue;
-            auto pos = std::find(tables.begin(), tables.end(), *tableName);
-            if (pos != tables.end())
-                tables.erase(pos);
+            auto pos =
+                std::find(tablesToFind.begin(), tablesToFind.end(), *tableName);
+            if (pos != tablesToFind.end())
+                tablesToFind.erase(pos);
 
             auto layer = cpl::make_unique<OGRHanaTableLayer>(
                 this, schemaName_.c_str(), tableName->c_str(), updatable);
@@ -1294,23 +1332,27 @@ void OGRHanaDataSource::InitializeLayers(const char *schemaName,
     // Look for layers in Tables
     std::ostringstream osTables;
     osTables << "SELECT TABLE_NAME FROM SYS.TABLES WHERE SCHEMA_NAME = ?";
-    if (!tables.empty())
-        osTables << " AND TABLE_NAME IN (" << JoinStrings(tables, ",", Literal)
-                 << ")";
+    if (!tablesToFind.empty())
+        osTables << " AND TABLE_NAME IN ("
+                 << JoinStrings(tablesToFind, ",", Literal) << ")";
 
     addLayersFromQuery(osTables.str().c_str(), updateMode_);
 
-    // Look for layers in Views
-    std::ostringstream osViews;
-    osViews << "SELECT VIEW_NAME FROM SYS.VIEWS WHERE SCHEMA_NAME = ?";
-    if (!tables.empty())
-        osViews << " AND VIEW_NAME IN (" << JoinStrings(tables, ",", Literal)
-                << ")";
+    if (!(hasTablesToFind && tablesToFind.empty()))
+    {
+        // Look for layers in Views
+        std::ostringstream osViews;
+        osViews << "SELECT VIEW_NAME FROM SYS.VIEWS WHERE SCHEMA_NAME = ?";
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!tablesToFind.empty())
+            osViews << " AND VIEW_NAME IN ("
+                    << JoinStrings(tablesToFind, ",", Literal) << ")";
 
-    addLayersFromQuery(osViews.str().c_str(), false);
+        addLayersFromQuery(osViews.str().c_str(), false);
+    }
 
     // Report about tables that could not be found
-    for (const auto &tableName : tables)
+    for (const auto &tableName : tablesToFind)
     {
         const char *layerName = tableName.c_str();
         if (GetLayerByName(layerName) == nullptr)
@@ -1620,7 +1662,7 @@ OGRLayer *OGRHanaDataSource::GetLayerByName(const char *name)
 /************************************************************************/
 
 OGRLayer *OGRHanaDataSource::ICreateLayer(const char *layerNameIn,
-                                          OGRSpatialReference *srs,
+                                          const OGRSpatialReference *srs,
                                           OGRwkbGeometryType geomType,
                                           char **options)
 {

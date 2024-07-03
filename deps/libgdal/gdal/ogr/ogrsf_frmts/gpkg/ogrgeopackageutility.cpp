@@ -29,6 +29,8 @@
 #include "ogrgeopackageutility.h"
 #include "ogr_p.h"
 
+#include <limits>
+
 /* Requirement 20: A GeoPackage SHALL store feature table geometries */
 /* with the basic simple feature geometry types (Geometry, Point, */
 /* LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon, */
@@ -68,8 +70,9 @@ OGRwkbGeometryType GPkgGeometryTypeToWKB(const char *pszGpkgType, bool bHasZ,
 /* declared using one of the data types specified in table GeoPackage */
 /* Data Types. */
 /* http://opengis.github.io/geopackage/#table_column_data_types */
-OGRFieldType GPkgFieldToOGR(const char *pszGpkgType, OGRFieldSubType &eSubType,
-                            int &nMaxWidth)
+// return a OGRFieldType value or OFTMaxType + 1
+int GPkgFieldToOGR(const char *pszGpkgType, OGRFieldSubType &eSubType,
+                   int &nMaxWidth)
 {
     eSubType = OFSTNone;
     nMaxWidth = 0;
@@ -158,7 +161,7 @@ OGRFieldType GPkgFieldToOGR(const char *pszGpkgType, OGRFieldSubType &eSubType,
             CPLError(CE_Warning, CPLE_AppDefined,
                      "Field format '%s' not supported", pszGpkgType);
         }
-        return static_cast<OGRFieldType>(OFTMaxType + 1);
+        return OFTMaxType + 1;
     }
 }
 
@@ -263,7 +266,14 @@ GByte *GPkgGeometryFromOGR(const OGRGeometry *poGeometry, int iSrsId,
 
     /* Total BLOB size is header + WKB size */
     size_t nWkbLen = nHeaderLen + poGeometry->WkbSize();
-    GByte *pabyWkb = static_cast<GByte *>(CPLMalloc(nWkbLen));
+    if (nWkbLen > static_cast<size_t>(std::numeric_limits<int>::max()))
+    {
+        CPLError(CE_Failure, CPLE_NotSupported, "too big geometry blob");
+        return nullptr;
+    }
+    GByte *pabyWkb = static_cast<GByte *>(VSI_MALLOC_VERBOSE(nWkbLen));
+    if (!pabyWkb)
+        return nullptr;
     if (pnWkbLen)
         *pnWkbLen = nWkbLen;
 

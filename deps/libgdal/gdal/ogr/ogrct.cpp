@@ -110,6 +110,9 @@ struct OGRCoordinateTransformationOptions::Private
     bool bAllowBallpark = true;
     double dfAccuracy = -1;  // no constraint
 
+    bool bOnlyBest = false;
+    bool bOnlyBestOptionSet = false;
+
     bool bHasSourceCenterLong = false;
     double dfSourceCenterLong = 0.0;
 
@@ -153,6 +156,8 @@ std::string OGRCoordinateTransformationOptions::Private::GetKey() const
     ret += std::to_string(static_cast<int>(bReverseCO));
     ret += std::to_string(static_cast<int>(bAllowBallpark));
     ret += std::to_string(dfAccuracy);
+    ret += std::to_string(static_cast<int>(bOnlyBestOptionSet));
+    ret += std::to_string(static_cast<int>(bOnlyBest));
     ret += std::to_string(static_cast<int>(bHasSourceCenterLong));
     ret += std::to_string(dfSourceCenterLong);
     ret += std::to_string(static_cast<int>(bHasTargetCenterLong));
@@ -501,6 +506,7 @@ int OCTCoordinateTransformationOptionsSetOperation(
     OGRCoordinateTransformationOptionsH hOptions, const char *pszCO,
     int bReverseCO)
 {
+    // cppcheck-suppress knownConditionTrueFalse
     return hOptions->SetCoordinateOperation(pszCO, CPL_TO_BOOL(bReverseCO));
 }
 
@@ -545,6 +551,7 @@ bool OGRCoordinateTransformationOptions::SetDesiredAccuracy(double dfAccuracy)
 int OCTCoordinateTransformationOptionsSetDesiredAccuracy(
     OGRCoordinateTransformationOptionsH hOptions, double dfAccuracy)
 {
+    // cppcheck-suppress knownConditionTrueFalse
     return hOptions->SetDesiredAccuracy(dfAccuracy);
 }
 
@@ -585,7 +592,62 @@ bool OGRCoordinateTransformationOptions::SetBallparkAllowed(bool bAllowBallpark)
 int OCTCoordinateTransformationOptionsSetBallparkAllowed(
     OGRCoordinateTransformationOptionsH hOptions, int bAllowBallpark)
 {
+    // cppcheck-suppress knownConditionTrueFalse
     return hOptions->SetBallparkAllowed(CPL_TO_BOOL(bAllowBallpark));
+}
+
+/************************************************************************/
+/*                         SetOnlyBest()                                */
+/************************************************************************/
+
+/** \brief Sets whether only the "best" operation should be used.
+ *
+ * By default (at least in the PROJ 9.x series), PROJ may use coordinate
+ * operations that are not the "best" if resources (typically grids) needed
+ * to use them are missing. It will then fallback to other coordinate operations
+ * that have a lesser accuracy, for example using Helmert transformations,
+ * or in the absence of such operations, to ones with potential very rought
+ * accuracy, using "ballpark" transformations
+ * (see https://proj.org/glossary.html).
+ *
+ * When calling this method with bOnlyBest = true, PROJ will only consider the
+ * "best" operation, and error out (at Transform() time) if they cannot be
+ * used.
+ * This method may be used together with SetBallparkAllowed(false) to
+ * only allow best operations that have a known accuracy.
+ *
+ * Note that this method has no effect on PROJ versions before 9.2.
+ *
+ * The default value for this option can be also set with the
+ * PROJ_ONLY_BEST_DEFAULT environment variable, or with the "only_best_default"
+ * setting of proj.ini. Calling SetOnlyBest() overrides such default value.
+ *
+ * @param bOnlyBest set to true to ask PROJ to use only the best operation(s)
+ *
+ * @since GDAL 3.8 and PROJ 9.2
+ */
+bool OGRCoordinateTransformationOptions::SetOnlyBest(bool bOnlyBest)
+{
+    d->bOnlyBest = bOnlyBest;
+    d->bOnlyBestOptionSet = true;
+    return true;
+}
+
+/************************************************************************/
+/*        OCTCoordinateTransformationOptionsSetOnlyBest()               */
+/************************************************************************/
+
+/** \brief Sets whether only the "best" operation(s) should be used.
+ *
+ * See OGRCoordinateTransformationOptions::SetOnlyBest()
+ *
+ * @since GDAL 3.8 and PROJ 9.2
+ */
+int OCTCoordinateTransformationOptionsSetOnlyBest(
+    OGRCoordinateTransformationOptionsH hOptions, bool bOnlyBest)
+{
+    // cppcheck-suppress knownConditionTrueFalse
+    return hOptions->SetOnlyBest(bOnlyBest);
 }
 
 /************************************************************************/
@@ -754,8 +816,8 @@ class OGRProjCT : public OGRCoordinateTransformation
                    const char *pszTargetSRS,
                    const OGRCoordinateTransformationOptions &options);
 
-    OGRSpatialReference *GetSourceCS() override;
-    OGRSpatialReference *GetTargetCS() override;
+    const OGRSpatialReference *GetSourceCS() const override;
+    const OGRSpatialReference *GetTargetCS() const override;
 
     int Transform(int nCount, double *x, double *y, double *z, double *t,
                   int *pabSuccess) override;
@@ -1096,7 +1158,8 @@ OGRCoordinateTransformationH OCTClone(OGRCoordinateTransformationH hTransform)
  * @return handle to transformation's source coordinate system or NULL if not
  * present.
  *
- * The ownership of the returned CS belongs to the transformation object.
+ * The ownership of the returned SRS belongs to the transformation object, and
+ * the returned SRS should not be modified.
  *
  * @since GDAL 3.4
  */
@@ -1105,8 +1168,8 @@ OGRSpatialReferenceH OCTGetSourceCS(OGRCoordinateTransformationH hTransform)
 
 {
     VALIDATE_POINTER1(hTransform, "OCTGetSourceCS", nullptr);
-    return OGRSpatialReference::ToHandle(
-        OGRCoordinateTransformation::FromHandle(hTransform)->GetSourceCS());
+    return OGRSpatialReference::ToHandle(const_cast<OGRSpatialReference *>(
+        OGRCoordinateTransformation::FromHandle(hTransform)->GetSourceCS()));
 }
 
 /************************************************************************/
@@ -1122,7 +1185,8 @@ OGRSpatialReferenceH OCTGetSourceCS(OGRCoordinateTransformationH hTransform)
  * @return handle to transformation's target coordinate system or NULL if not
  * present.
  *
- * The ownership of the returned CS belongs to the transformation object.
+ * The ownership of the returned SRS belongs to the transformation object, and
+ * the returned SRS should not be modified.
  *
  * @since GDAL 3.4
  */
@@ -1131,8 +1195,8 @@ OGRSpatialReferenceH OCTGetTargetCS(OGRCoordinateTransformationH hTransform)
 
 {
     VALIDATE_POINTER1(hTransform, "OCTGetTargetCS", nullptr);
-    return OGRSpatialReference::ToHandle(
-        OGRCoordinateTransformation::FromHandle(hTransform)->GetTargetCS());
+    return OGRSpatialReference::ToHandle(const_cast<OGRSpatialReference *>(
+        OGRCoordinateTransformation::FromHandle(hTransform)->GetTargetCS()));
 }
 
 /************************************************************************/
@@ -1406,6 +1470,10 @@ int OGRProjCT::Initialize(const OGRSpatialReference *poSourceIn,
         bSourceLatLong = CPL_TO_BOOL(poSRSSource->IsGeographic());
         bSourceIsDynamicCRS = poSRSSource->IsDynamic();
         dfSourceCoordinateEpoch = poSRSSource->GetCoordinateEpoch();
+        if (!bSourceIsDynamicCRS && dfSourceCoordinateEpoch > 0)
+        {
+            bSourceIsDynamicCRS = poSRSSource->HasPointMotionOperation();
+        }
         poSRSSource->GetAxis(nullptr, 0, &m_eSourceFirstAxisOrient);
     }
     if (poSRSTarget)
@@ -1413,17 +1481,24 @@ int OGRProjCT::Initialize(const OGRSpatialReference *poSourceIn,
         bTargetLatLong = CPL_TO_BOOL(poSRSTarget->IsGeographic());
         bTargetIsDynamicCRS = poSRSTarget->IsDynamic();
         dfTargetCoordinateEpoch = poSRSTarget->GetCoordinateEpoch();
+        if (!bTargetIsDynamicCRS && dfTargetCoordinateEpoch > 0)
+        {
+            bTargetIsDynamicCRS = poSRSTarget->HasPointMotionOperation();
+        }
         poSRSTarget->GetAxis(nullptr, 0, &m_eTargetFirstAxisOrient);
     }
 
+#if PROJ_VERSION_MAJOR < 9 ||                                                  \
+    (PROJ_VERSION_MAJOR == 9 && PROJ_VERSION_MINOR < 4)
     if (bSourceIsDynamicCRS && bTargetIsDynamicCRS &&
         dfSourceCoordinateEpoch > 0 && dfTargetCoordinateEpoch > 0 &&
         dfSourceCoordinateEpoch != dfTargetCoordinateEpoch)
     {
         CPLError(CE_Warning, CPLE_AppDefined,
-                 "Coordinate transformation between different epochs are "
-                 "not currently supported");
+                 "Coordinate transformation between different epochs only"
+                 "supported since PROJ 9.4");
     }
+#endif
 
     /* -------------------------------------------------------------------- */
     /*      Setup source and target translations to radians for lat/long    */
@@ -1555,7 +1630,13 @@ int OGRProjCT::Initialize(const OGRSpatialReference *poSourceIn,
 #endif
 #ifdef DEBUG
         CPLDebug("OGR_CT", "Source CRS: '%s'", pszSrcSRS);
+        if (dfSourceCoordinateEpoch > 0)
+            CPLDebug("OGR_CT", "Source coordinate epoch: %.3f",
+                     dfSourceCoordinateEpoch);
         CPLDebug("OGR_CT", "Target CRS: '%s'", pszTargetSRS);
+        if (dfTargetCoordinateEpoch > 0)
+            CPLDebug("OGR_CT", "Target coordinate epoch: %.3f",
+                     dfTargetCoordinateEpoch);
 #endif
 
         if (m_eStrategy == Strategy::PROJ)
@@ -1587,6 +1668,32 @@ int OGRProjCT::Initialize(const OGRSpatialReference *poSourceIn,
                     "ACCURACY", CPLSPrintf("%.18g", options.d->dfAccuracy));
             if (!options.d->bAllowBallpark)
                 aosOptions.SetNameValue("ALLOW_BALLPARK", "NO");
+#if PROJ_VERSION_MAJOR > 9 ||                                                  \
+    (PROJ_VERSION_MAJOR == 9 && PROJ_VERSION_MINOR >= 2)
+            if (options.d->bOnlyBestOptionSet)
+            {
+                aosOptions.SetNameValue("ONLY_BEST",
+                                        options.d->bOnlyBest ? "YES" : "NO");
+            }
+#endif
+
+#if PROJ_VERSION_MAJOR > 9 ||                                                  \
+    (PROJ_VERSION_MAJOR == 9 && PROJ_VERSION_MINOR >= 4)
+            if (bSourceIsDynamicCRS && dfSourceCoordinateEpoch > 0 &&
+                bTargetIsDynamicCRS && dfTargetCoordinateEpoch > 0)
+            {
+                auto srcCM = proj_coordinate_metadata_create(
+                    ctx, srcCRS, dfSourceCoordinateEpoch);
+                proj_destroy(srcCRS);
+                srcCRS = srcCM;
+
+                auto targetCM = proj_coordinate_metadata_create(
+                    ctx, targetCRS, dfTargetCoordinateEpoch);
+                proj_destroy(targetCRS);
+                targetCRS = targetCM;
+            }
+#endif
+
             m_pj = proj_create_crs_to_crs_from_pj(ctx, srcCRS, targetCRS, area,
                                                   aosOptions.List());
             proj_destroy(srcCRS);
@@ -1622,7 +1729,9 @@ int OGRProjCT::Initialize(const OGRSpatialReference *poSourceIn,
 #endif
     }
 
-    if (options.d->osCoordOperation.empty() && poSRSSource && poSRSTarget)
+    if (options.d->osCoordOperation.empty() && poSRSSource && poSRSTarget &&
+        (dfSourceCoordinateEpoch == 0 || dfTargetCoordinateEpoch == 0 ||
+         dfSourceCoordinateEpoch == dfTargetCoordinateEpoch))
     {
         // Determine if we can skip the transformation completely.
         const char *const apszOptionsIsSame[] = {"CRITERION=EQUIVALENT",
@@ -2045,7 +2154,7 @@ bool OGRProjCT::ListCoordinateOperations(
 /*                            GetSourceCS()                             */
 /************************************************************************/
 
-OGRSpatialReference *OGRProjCT::GetSourceCS()
+const OGRSpatialReference *OGRProjCT::GetSourceCS() const
 
 {
     return poSRSSource;
@@ -2055,7 +2164,7 @@ OGRSpatialReference *OGRProjCT::GetSourceCS()
 /*                            GetTargetCS()                             */
 /************************************************************************/
 
-OGRSpatialReference *OGRProjCT::GetTargetCS()
+const OGRSpatialReference *OGRProjCT::GetTargetCS() const
 
 {
     return poSRSTarget;
@@ -2310,7 +2419,7 @@ int OGRProjCT::TransformWithErrorCodes(int nCount, double *x, double *y,
                         } while (x[i] < -M_PI);
                     }
                 }
-                constexpr double RAD_TO_DEG = 57.29577951308232;
+                constexpr double RAD_TO_DEG = 180. / M_PI;
                 x[i] *= RAD_TO_DEG;
 
                 // Optimization for the case where we are provided a whole line
@@ -2531,6 +2640,8 @@ int OGRProjCT::TransformWithErrorCodes(int nCount, double *x, double *y,
 
     if (!bTransformDone)
     {
+        const auto nLastErrorCounter = CPLGetErrorCounter();
+
         for (int i = 0; i < nCount; i++)
         {
             PJ_COORD coord;
@@ -2626,7 +2737,13 @@ int OGRProjCT::TransformWithErrorCodes(int nCount, double *x, double *y,
 #endif
                     if (m_bEmitErrors)
                     {
-                        if (pszError == nullptr)
+                        if (nLastErrorCounter != CPLGetErrorCounter() &&
+                            CPLGetLastErrorType() == CE_Failure &&
+                            strstr(CPLGetLastErrorMsg(), "PROJ:"))
+                        {
+                            // do nothing
+                        }
+                        else if (pszError == nullptr)
                             CPLError(CE_Failure, CPLE_AppDefined,
                                      "Reprojection failed, err = %d", err);
                         else
@@ -3094,6 +3211,7 @@ int OGRProjCT::TransformBounds(const double xmin, const double ymin,
     if (degree_output)
     {
         CPLErrorHandlerPusher oErrorHandlerPusher(CPLQuietErrorHandler);
+
         north_pole_in_bounds =
             ContainsNorthPole(xmin, ymin, xmax, ymax, output_lon_lat_order);
         if (CPLGetLastErrorType() != CE_None)
@@ -3179,62 +3297,79 @@ int OGRProjCT::TransformBounds(const double xmin, const double ymin,
         *out_ymin = simple_min(&y_boundary_array[0], boundary_len);
         *out_ymax = simple_max(&y_boundary_array[0], boundary_len);
 
-        // For a projected CRS with a central meridian != 0, try to reproject
-        // the points with long = +/- 180deg of the central meridian and at lat
-        // = latitude_of_origin And also do the same for long = central_meridian
-        // and lat = +/- 90deg Helps for example for EPSG:4326 to ESRI:53037
         if (poSRSTarget->IsProjected())
         {
-            const double dfLon0 =
-                poSRSTarget->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
-            if (dfLon0 != 0)
+            CPLErrorHandlerPusher oErrorHandlerPusher(CPLQuietErrorHandler);
+            CPLErrorStateBackuper oBackuper;
+
+            auto poBaseTarget = std::unique_ptr<OGRSpatialReference>(
+                poSRSTarget->CloneGeogCS());
+            poBaseTarget->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+            auto poCTBaseTargetToSrc =
+                std::unique_ptr<OGRCoordinateTransformation>(
+                    OGRCreateCoordinateTransformation(poBaseTarget.get(),
+                                                      poSRSSource));
+            if (poCTBaseTargetToSrc)
             {
-                const double dfLat0 = poSRSTarget->GetNormProjParm(
-                    SRS_PP_LATITUDE_OF_ORIGIN, 0.0);
+                const double dfLon0 =
+                    poSRSTarget->GetNormProjParm(SRS_PP_CENTRAL_MERIDIAN, 0.0);
 
-                auto poBaseTarget = std::unique_ptr<OGRSpatialReference>(
-                    poSRSTarget->CloneGeogCS());
-                poBaseTarget->SetAxisMappingStrategy(
-                    OAMS_TRADITIONAL_GIS_ORDER);
+                double dfSignedPoleLat = 0;
+                double dfAbsPoleLat = 90;
+                bool bIncludesPole = false;
+                const char *pszProjection =
+                    poSRSTarget->GetAttrValue("PROJECTION");
+                if (pszProjection &&
+                    EQUAL(pszProjection, SRS_PT_MERCATOR_1SP) && dfLon0 == 0)
+                {
+                    // This MAX_LAT_MERCATOR values is equivalent to the
+                    // semi_major_axis * PI easting/northing value only
+                    // for EPSG:3857, but it is also quite
+                    // reasonable for other Mercator projections
+                    constexpr double MAX_LAT_MERCATOR = 85.0511287798066;
+                    dfAbsPoleLat = MAX_LAT_MERCATOR;
+                }
 
-                constexpr double EPS = 1e-8;
+                // Detect if a point at long = central_meridian and
+                // lat = +/- 90deg is included in the extent.
+                // Helps for example for EPSG:4326 to ESRI:53037
                 for (int iSign = -1; iSign <= 1; iSign += 2)
                 {
-                    double dfX =
-                        fmod(dfLon0 + iSign * (180 - EPS) + 180, 360) - 180;
-                    double dfY = dfLat0;
+                    double dfX = dfLon0;
+                    constexpr double EPS = 1e-8;
+                    double dfY = iSign * (dfAbsPoleLat - EPS);
 
-                    auto poCTBaseTargetToSrc =
-                        std::unique_ptr<OGRCoordinateTransformation>(
-                            OGRCreateCoordinateTransformation(
-                                poBaseTarget.get(), poSRSSource));
-                    if (poCTBaseTargetToSrc)
+                    if (poCTBaseTargetToSrc->TransformWithErrorCodes(
+                            1, &dfX, &dfY, nullptr, nullptr, nullptr) &&
+                        dfX >= xmin && dfY >= ymin && dfX <= xmax &&
+                        dfY <= ymax &&
+                        TransformWithErrorCodes(1, &dfX, &dfY, nullptr, nullptr,
+                                                nullptr))
                     {
-                        if (poCTBaseTargetToSrc->TransformWithErrorCodes(
-                                1, &dfX, &dfY, nullptr, nullptr, nullptr) &&
-                            dfX >= xmin && dfY >= ymin && dfX <= xmax &&
-                            dfY <= ymax &&
-                            TransformWithErrorCodes(1, &dfX, &dfY, nullptr,
-                                                    nullptr, nullptr))
+                        dfSignedPoleLat = iSign * dfAbsPoleLat;
+                        bIncludesPole = true;
+                        *out_xmin = std::min(*out_xmin, dfX);
+                        *out_ymin = std::min(*out_ymin, dfY);
+                        if (dfX != HUGE_VAL && dfY != HUGE_VAL)
                         {
-                            *out_xmin = std::min(*out_xmin, dfX);
-                            *out_ymin = std::min(*out_ymin, dfY);
                             *out_xmax = std::max(*out_xmax, dfX);
                             *out_ymax = std::max(*out_ymax, dfY);
                         }
                     }
                 }
-                for (int iSign = -1; iSign <= 1; iSign += 2)
-                {
-                    double dfX = dfLon0;
-                    double dfY = iSign * (90 - EPS);
 
-                    auto poCTBaseTargetToSrc =
-                        std::unique_ptr<OGRCoordinateTransformation>(
-                            OGRCreateCoordinateTransformation(
-                                poBaseTarget.get(), poSRSSource));
-                    if (poCTBaseTargetToSrc)
+                const auto TryAtPlusMinus180 =
+                    [this, dfLon0, xmin, ymin, xmax, ymax, out_xmin, out_ymin,
+                     out_xmax, out_ymax, &poCTBaseTargetToSrc](double dfLat)
+                {
+                    for (int iSign = -1; iSign <= 1; iSign += 2)
                     {
+                        constexpr double EPS = 1e-8;
+                        double dfX =
+                            fmod(dfLon0 + iSign * (180 - EPS) + 180, 360) - 180;
+                        double dfY = dfLat;
+
                         if (poCTBaseTargetToSrc->TransformWithErrorCodes(
                                 1, &dfX, &dfY, nullptr, nullptr, nullptr) &&
                             dfX >= xmin && dfY >= ymin && dfX <= xmax &&
@@ -3244,10 +3379,28 @@ int OGRProjCT::TransformBounds(const double xmin, const double ymin,
                         {
                             *out_xmin = std::min(*out_xmin, dfX);
                             *out_ymin = std::min(*out_ymin, dfY);
-                            *out_xmax = std::max(*out_xmax, dfX);
-                            *out_ymax = std::max(*out_ymax, dfY);
+                            if (dfX != HUGE_VAL && dfY != HUGE_VAL)
+                            {
+                                *out_xmax = std::max(*out_xmax, dfX);
+                                *out_ymax = std::max(*out_ymax, dfY);
+                            }
                         }
                     }
+                };
+
+                // For a projected CRS with a central meridian != 0, try to
+                // reproject the points with long = +/- 180deg of the central
+                // meridian and at lat = latitude_of_origin.
+                const double dfLat0 = poSRSTarget->GetNormProjParm(
+                    SRS_PP_LATITUDE_OF_ORIGIN, 0.0);
+                if (dfLon0 != 0)
+                {
+                    TryAtPlusMinus180(dfLat0);
+                }
+
+                if (bIncludesPole && dfLat0 != dfSignedPoleLat)
+                {
+                    TryAtPlusMinus180(dfSignedPoleLat);
                 }
             }
         }

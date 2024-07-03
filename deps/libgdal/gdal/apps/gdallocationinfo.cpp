@@ -45,15 +45,17 @@
 /*                               Usage()                                */
 /************************************************************************/
 
-static void Usage()
+static void Usage(bool bIsError)
 
 {
-    printf("Usage: gdallocationinfo [--help-general] [-xml] [-lifonly] "
-           "[-valonly]\n"
-           "                        [-b band]* [-overview overview_level]\n"
-           "                        [-l_srs srs_def] [-geoloc] [-wgs84]\n"
-           "                        [-oo NAME=VALUE]* srcfile x y\n"
-           "\n");
+    fprintf(
+        bIsError ? stderr : stdout,
+        "Usage: gdallocationinfo [--help] [--help-general]\n"
+        "                        [-xml] [-lifonly] [-valonly]\n"
+        "                        [-b <band>]... [-overview <overview_level>]\n"
+        "                        [-l_srs <srs_def>] [-geoloc] [-wgs84]\n"
+        "                        [-oo <NAME>=<VALUE>]... <srcfile> [<x> <y>]\n"
+        "\n");
     exit(1);
 }
 
@@ -118,6 +120,10 @@ MAIN_START(argc, argv)
             CSLDestroy(argv);
             return 0;
         }
+        else if (EQUAL(argv[i], "--help"))
+        {
+            Usage(false);
+        }
         else if (i < argc - 1 && EQUAL(argv[i], "-b"))
         {
             anBandList.push_back(atoi(argv[++i]));
@@ -161,7 +167,7 @@ MAIN_START(argc, argv)
             papszOpenOptions = CSLAddString(papszOpenOptions, argv[++i]);
         }
         else if (argv[i][0] == '-' && !isdigit(argv[i][1]))
-            Usage();
+            Usage(true);
 
         else if (pszSrcFilename == nullptr)
             pszSrcFilename = argv[i];
@@ -173,11 +179,11 @@ MAIN_START(argc, argv)
             pszLocY = argv[i];
 
         else
-            Usage();
+            Usage(true);
     }
 
     if (pszSrcFilename == nullptr || (pszLocX != nullptr && pszLocY == nullptr))
-        Usage();
+        Usage(true);
 
     /* -------------------------------------------------------------------- */
     /*      Open source file.                                               */
@@ -253,6 +259,7 @@ MAIN_START(argc, argv)
         dfGeoY = CPLAtof(pszLocY);
     }
 
+    int nRetCode = 0;
     while (inputAvailable)
     {
         int iPixel, iLine;
@@ -326,6 +333,7 @@ MAIN_START(argc, argv)
                 printf("\nLocation is off this file! No further details to "
                        "report.\n");
             bPixelReport = false;
+            nRetCode = 1;
         }
 
         /* --------------------------------------------------------------------
@@ -434,14 +442,18 @@ MAIN_START(argc, argv)
             /*      Report the pixel value of this band. */
             /* --------------------------------------------------------------------
              */
-            double adfPixel[2];
+            double adfPixel[2] = {0, 0};
+            const bool bIsComplex = CPL_TO_BOOL(
+                GDALDataTypeIsComplex(GDALGetRasterDataType(hBand)));
 
             if (GDALRasterIO(hBand, GF_Read, iPixelToQuery, iLineToQuery, 1, 1,
-                             adfPixel, 1, 1, GDT_CFloat64, 0, 0) == CE_None)
+                             adfPixel, 1, 1,
+                             bIsComplex ? GDT_CFloat64 : GDT_Float64, 0,
+                             0) == CE_None)
             {
                 CPLString osValue;
 
-                if (GDALDataTypeIsComplex(GDALGetRasterDataType(hBand)))
+                if (bIsComplex)
                     osValue.Printf("%.15g+%.15gi", adfPixel[0], adfPixel[1]);
                 else
                     osValue.Printf("%.15g", adfPixel[0]);
@@ -482,11 +494,13 @@ MAIN_START(argc, argv)
                 if (dfOffset != 0.0 || dfScale != 1.0)
                 {
                     adfPixel[0] = adfPixel[0] * dfScale + dfOffset;
-                    adfPixel[1] = adfPixel[1] * dfScale + dfOffset;
 
-                    if (GDALDataTypeIsComplex(GDALGetRasterDataType(hBand)))
+                    if (bIsComplex)
+                    {
+                        adfPixel[1] = adfPixel[1] * dfScale + dfOffset;
                         osValue.Printf("%.15g+%.15gi", adfPixel[0],
                                        adfPixel[1]);
+                    }
                     else
                         osValue.Printf("%.15g", adfPixel[0]);
 
@@ -545,6 +559,6 @@ MAIN_START(argc, argv)
 
     CSLDestroy(argv);
 
-    return 0;
+    return nRetCode;
 }
 MAIN_END

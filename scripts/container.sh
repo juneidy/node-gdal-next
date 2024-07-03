@@ -5,7 +5,7 @@ DIST=$2
 NODEJS=$3
 GDAL=$4
 if [ -z "${OP}" ]; then
-  echo "container.sh <release|dev|shell> [ubuntu:{18.04|20.04|21.10}|centos:stream8|fedora:{33|34}|debian:{buster|bullseye}|amazonlinux:2022] [<Node.js version>] [shared]"
+  echo "container.sh <release|dev|shell> [ubuntu:{18.04|20.04|22.04}|centos:stream8|fedora:{36|37|38}|debian:{buster|bullseye}|amazonlinux:2022] [<Node.js version>] [shared]"
   exit 1
 fi
 if [ ! -d "test/platforms" ]; then
@@ -35,7 +35,8 @@ docker build \
         --build-arg VERSION=${VERSION} --build-arg NODEJS=${NODEJS} --build-arg GDAL=${GDAL} \
         -t ${CONTAINER} -f test/platforms/Dockerfile.${DIST} test/platforms
 
-COMMON_ARGS="--user `id -u`:`id -g` --env MOCHA_TEST_NETWORK -v `pwd`:/src:ro"
+PTRACE_ARGS="--cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
+COMMON_ARGS="${PTRACE_ARGS} --user `id -u`:`id -g` --env MOCHA_TEST_NETWORK -v `pwd`:/src:ro"
 
 echo "Checking for ccache"
 if which ccache && test "${OP}" != "publish"; then

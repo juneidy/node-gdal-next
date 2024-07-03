@@ -42,10 +42,18 @@
 #include "cpl_curl_priv.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <set>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <utility>
+
+// To avoid aliasing to CopyFile to CopyFileA on Windows
+#ifdef CopyFile
+#undef CopyFile
+#endif
 
 //! @cond Doxygen_Suppress
 
@@ -118,7 +126,6 @@ struct WriteFuncStruct
     VSICurlReadCbkFunc pfnReadCbk = nullptr;
     void *pReadCbkUserData = nullptr;
     bool bInterrupted = false;
-    bool bInterruptIfNonErrorPayload = false;
 
 #if !CURL_AT_LEAST_VERSION(7, 54, 0)
     // Workaround to ignore extra HTTP response headers from
@@ -207,6 +214,21 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
     char **ParseHTMLFileList(const char *pszFilename, int nMaxFiles,
                              char *pszData, bool *pbGotFileList);
 
+    // Data structure and map to store regions that are in progress, to
+    // avoid simultaneous downloads of the same region in different threads
+    // Cf https://github.com/OSGeo/gdal/issues/8041
+    struct RegionInDownload
+    {
+        std::mutex oMutex{};
+        std::condition_variable oCond{};
+        bool bDownloadInProgress = false;
+        int nWaiters = 0;
+        std::string osData{};
+    };
+    std::mutex m_oMutex{};
+    std::map<std::string, std::unique_ptr<RegionInDownload>>
+        m_oMapRegionInDownload{};
+
   protected:
     CPLMutex *hMutex = nullptr;
 
@@ -230,12 +252,12 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
 
     static const char *GetOptionsStatic();
 
-    static bool IsAllowedFilename(const char *pszFilename);
-
     VSICurlFilesystemHandlerBase();
 
   public:
     ~VSICurlFilesystemHandlerBase() override;
+
+    static bool IsAllowedFilename(const char *pszFilename);
 
     VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
                            bool bSetError,
@@ -247,10 +269,6 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
     int Rename(const char *oldpath, const char *newpath) override;
     int Mkdir(const char *pszDirname, long nMode) override;
     int Rmdir(const char *pszDirname) override;
-    char **ReadDir(const char *pszDirname) override
-    {
-        return ReadDirEx(pszDirname, 0);
-    }
     char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
     char **SiblingFiles(const char *pszFilename) override;
 
@@ -296,6 +314,13 @@ class VSICurlFilesystemHandlerBase : public VSIFilesystemHandler
 
     void AddRegion(const char *pszURL, vsi_l_offset nFileOffsetStart,
                    size_t nSize, const char *pData);
+
+    std::pair<bool, std::string>
+    NotifyStartDownloadRegion(const std::string &osURL,
+                              vsi_l_offset startOffset, int nBlocks);
+    void NotifyStopDownloadRegion(const std::string &osURL,
+                                  vsi_l_offset startOffset, int nBlocks,
+                                  const std::string &osData);
 
     bool GetCachedFileProp(const char *pszURL, FileProp &oFileProp);
     void SetCachedFileProp(const char *pszURL, FileProp &oFileProp);
@@ -402,6 +427,19 @@ class VSICurlHandle : public VSIVirtualHandle
     void UpdateRedirectInfo(CURL *hCurlHandle,
                             const WriteFuncStruct &sWriteFuncHeaderData);
 
+    // Used by AdviseRead()
+    struct AdviseReadRange
+    {
+        bool bDone = false;
+        std::mutex oMutex{};
+        std::condition_variable oCV{};
+        vsi_l_offset nStartOffset = 0;
+        size_t nSize = 0;
+        std::vector<GByte> abyData{};
+    };
+    std::vector<std::unique_ptr<AdviseReadRange>> m_aoAdviseReadRanges{};
+    std::thread m_oThreadAdviseRead{};
+
   protected:
     virtual struct curl_slist *
     GetCurlHeaders(const CPLString & /*osVerb*/,
@@ -458,6 +496,9 @@ class VSICurlHandle : public VSIVirtualHandle
     size_t PRead(void *pBuffer, size_t nSize,
                  vsi_l_offset nOffset) const override;
 
+    void AdviseRead(int nRanges, const vsi_l_offset *panOffsets,
+                    const size_t *panSizes) override;
+
     bool IsKnownFileSize() const
     {
         return oFileProp.bHasComputedFileSize;
@@ -496,17 +537,40 @@ class VSICurlHandle : public VSIVirtualHandle
 };
 
 /************************************************************************/
+/*                  VSICurlFilesystemHandlerBaseWritable                */
+/************************************************************************/
+
+class VSICurlFilesystemHandlerBaseWritable : public VSICurlFilesystemHandlerBase
+{
+    CPL_DISALLOW_COPY_ASSIGN(VSICurlFilesystemHandlerBaseWritable)
+
+  protected:
+    VSICurlFilesystemHandlerBaseWritable() = default;
+
+    virtual VSIVirtualHandleUniquePtr
+    CreateWriteHandle(const char *pszFilename, CSLConstList papszOptions) = 0;
+
+  public:
+    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
+                           bool bSetError, CSLConstList papszOptions) override;
+
+    bool SupportsSequentialWrite(const char * /* pszPath */,
+                                 bool /* bAllowLocalTempFile */) override
+    {
+        return true;
+    }
+    bool SupportsRandomWrite(const char * /* pszPath */,
+                             bool /* bAllowLocalTempFile */) override;
+};
+
+/************************************************************************/
 /*                        IVSIS3LikeFSHandler                           */
 /************************************************************************/
 
-class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBase
+class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBaseWritable
 {
     CPL_DISALLOW_COPY_ASSIGN(IVSIS3LikeFSHandler)
 
-    bool CopyFile(VSILFILE *fpIn, vsi_l_offset nSourceSize,
-                  const char *pszSource, const char *pszTarget,
-                  CSLConstList papszOptions, GDALProgressFunc pProgressFunc,
-                  void *pProgressData);
     virtual int MkdirInternal(const char *pszDirname, long nMode,
                               bool bDoStatCheck);
 
@@ -538,14 +602,13 @@ class IVSIS3LikeFSHandler : public VSICurlFilesystemHandlerBase
              int nFlags) override;
     int Rename(const char *oldpath, const char *newpath) override;
 
-    virtual int DeleteObject(const char *pszFilename);
+    virtual int CopyFile(const char *pszSource, const char *pszTarget,
+                         VSILFILE *fpSource, vsi_l_offset nSourceSize,
+                         const char *const *papszOptions,
+                         GDALProgressFunc pProgressFunc,
+                         void *pProgressData) override;
 
-    virtual void UpdateMapFromHandle(IVSIS3LikeHandleHelper *)
-    {
-    }
-    virtual void UpdateHandleFromMap(IVSIS3LikeHandleHelper *)
-    {
-    }
+    virtual int DeleteObject(const char *pszFilename);
 
     bool Sync(const char *pszSource, const char *pszTarget,
               const char *const *papszOptions, GDALProgressFunc pProgressFunc,
@@ -633,6 +696,7 @@ class VSIS3WriteHandle final : public VSIVirtualHandle
     IVSIS3LikeHandleHelper *m_poS3HandleHelper = nullptr;
     bool m_bUseChunked = false;
     CPLStringList m_aosOptions{};
+    CPLStringList m_aosHTTPOptions{};
 
     vsi_l_offset m_nCurOffset = 0;
     int m_nBufferOff = 0;

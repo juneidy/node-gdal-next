@@ -12,9 +12,12 @@ add_library(
   gdal_rasterize_lib.cpp
   gdalwarp_lib.cpp
   commonutils.cpp
+  ogrinfo_lib.cpp
   ogr2ogr_lib.cpp
   gdaldem_lib.cpp
   nearblack_lib.cpp
+  nearblack_lib_floodfill.cpp
+  gdal_footprint_lib.cpp
   gdalmdiminfo_lib.cpp
   gdalmdimtranslate_lib.cpp)
 add_dependencies(appslib generate_gdal_version_h)
@@ -62,7 +65,8 @@ if (BUILD_APPS)
   add_executable(gdaltransform gdaltransform.cpp)
   add_executable(gdal_create gdal_create.cpp)
   add_executable(gdal_viewshed gdal_viewshed.cpp)
-  add_executable(ogrinfo commonutils.h ogrinfo.cpp)
+  add_executable(gdal_footprint commonutils.h gdal_footprint_bin.cpp)
+  add_executable(ogrinfo commonutils.h ogrinfo_bin.cpp)
   add_executable(ogr2ogr ogr2ogr_bin.cpp)
 
   add_executable(ogrlineref ogrlineref.cpp)
@@ -74,6 +78,9 @@ if (BUILD_APPS)
   add_executable(nearblack nearblack_bin.cpp)
   add_executable(gdalmdiminfo gdalmdiminfo_bin.cpp)
   add_executable(gdalmdimtranslate gdalmdimtranslate_bin.cpp)
+
+  add_executable(sozip sozip.cpp)
+
   set(APPS_TARGETS
       gdalinfo
       gdalbuildvrt
@@ -95,10 +102,12 @@ if (BUILD_APPS)
       gdalwarp
       gdal_contour
       gdallocationinfo
+      gdal_footprint
       ogrinfo
       ogr2ogr
       gdalmdiminfo
-      gdalmdimtranslate)
+      gdalmdimtranslate
+      sozip)
   if (ENABLE_GNM)
     add_executable(gnmanalyse gnmanalyse.cpp)
     add_executable(gnmmanage gnmmanage.cpp)
@@ -148,8 +157,6 @@ if (BUILD_APPS)
   add_executable(multireadtest EXCLUDE_FROM_ALL multireadtest.cpp)
   add_executable(test_ogrsf test_ogrsf.cpp)
   add_executable(testreprojmulti EXCLUDE_FROM_ALL testreprojmulti.cpp)
-  add_executable(bench_ogr_batch EXCLUDE_FROM_ALL bench_ogr_batch.cpp)
-  add_executable(bench_ogr_c_api EXCLUDE_FROM_ALL bench_ogr_c_api.cpp)
 
   foreach (
     UTILCMD IN
@@ -161,9 +168,7 @@ if (BUILD_APPS)
           gdalwarpsimple
           multireadtest
           test_ogrsf
-          testreprojmulti
-          bench_ogr_batch
-          bench_ogr_c_api)
+          testreprojmulti)
     if (WIN32)
         target_sources(${UTILCMD} PRIVATE longpathaware.manifest)
     endif()

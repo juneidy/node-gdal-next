@@ -32,6 +32,7 @@
 #include "cpl_vsi.h"
 
 #include <cassert>
+#include <cinttypes>
 #include <cstdarg>
 #include <cstddef>
 #include <cstring>
@@ -372,9 +373,9 @@ int VSIMkdirRecursive(const char *pszPathname, long mode)
 
     const CPLString osPathname(pszPathname);
     VSIStatBufL sStat;
-    if (VSIStatL(osPathname, &sStat) == 0 && VSI_ISDIR(sStat.st_mode))
+    if (VSIStatL(osPathname, &sStat) == 0)
     {
-        return 0;
+        return VSI_ISDIR(sStat.st_mode) ? 0 : -1;
     }
     const CPLString osParentPath(CPLGetPath(osPathname));
 
@@ -497,6 +498,64 @@ int VSIRename(const char *oldpath, const char *newpath)
 }
 
 /************************************************************************/
+/*                             VSICopyFile()                            */
+/************************************************************************/
+
+/**
+ * \brief Copy a source file into a target file.
+ *
+ * For a /vsizip/foo.zip/bar target, the options available are those of
+ * CPLAddFileInZip()
+ *
+ * The following copies are made fully on the target server, without local
+ * download from source and upload to target:
+ * - /vsis3/ -> /vsis3/
+ * - /vsigs/ -> /vsigs/
+ * - /vsiaz/ -> /vsiaz/
+ * - /vsiadls/ -> /vsiadls/
+ * - any of the above or /vsicurl/ -> /vsiaz/ (starting with GDAL 3.8)
+ *
+ * @param pszSource Source filename. UTF-8 encoded. May be NULL if fpSource is
+ * not NULL.
+ * @param pszTarget Target filename.  UTF-8 encoded. Must not be NULL
+ * @param fpSource File handle on the source file. May be NULL if pszSource is
+ * not NULL.
+ * @param nSourceSize Size of the source file. Pass -1 if unknown.
+ * If set to -1, and progress callback is used, VSIStatL() will be used on
+ * pszSource to retrieve the source size.
+ * @param papszOptions Null terminated list of options, or NULL.
+ * @param pProgressFunc Progress callback, or NULL.
+ * @param pProgressData User data of progress callback, or NULL.
+ *
+ * @return 0 on success.
+ * @since GDAL 3.7
+ */
+
+int VSICopyFile(const char *pszSource, const char *pszTarget,
+                VSILFILE *fpSource, vsi_l_offset nSourceSize,
+                const char *const *papszOptions, GDALProgressFunc pProgressFunc,
+                void *pProgressData)
+
+{
+    if (!pszSource && !fpSource)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "pszSource == nullptr && fpSource == nullptr");
+        return -1;
+    }
+    if (!pszTarget || pszTarget[0] == '\0')
+    {
+        return -1;
+    }
+
+    VSIFilesystemHandler *poFSHandlerTarget =
+        VSIFileManager::GetHandler(pszTarget);
+    return poFSHandlerTarget->CopyFile(pszSource, pszTarget, fpSource,
+                                       nSourceSize, papszOptions, pProgressFunc,
+                                       pProgressData);
+}
+
+/************************************************************************/
 /*                             VSISync()                                */
 /************************************************************************/
 
@@ -515,7 +574,8 @@ int VSIRename(const char *oldpath, const char *newpath)
  * <li> local filesystem <--> remote filesystem.</li>
  * <li> remote filesystem <--> remote filesystem (starting with GDAL 3.1).
  * Where the source and target remote filesystems are the same and one of
- * /vsis3/, /vsigs/ or /vsiaz/</li>
+ * /vsis3/, /vsigs/ or /vsiaz/. Or when the target is /vsiaz/ and the source
+ * is /vsis3/, /vsigs/, /vsiadls/ or /vsicurl/ (starting with GDAL 3.8)</li>
  * </ul>
  *
  * Similarly to rsync behavior, if the source filename ends with a slash,
@@ -531,10 +591,11 @@ int VSIRename(const char *oldpath, const char *newpath)
  * Currently accepted options are:
  * <ul>
  * <li>RECURSIVE=NO (the default is YES)</li>
- * <li>SYNC_STRATEGY=TIMESTAMP/ETAG/OVERWRITE. Determines which criterion is
- * used to determine if a target file must be replaced when it already exists
- * and has the same file size as the source. Only applies for a source or target
- * being a network filesystem.
+ * <li>SYNC_STRATEGY=TIMESTAMP/ETAG/OVERWRITE.
+ *
+ *     Determines which criterion is used to determine if a target file must be
+ *     replaced when it already exists and has the same file size as the source.
+ *     Only applies for a source or target being a network filesystem.
  *
  *     The default is TIMESTAMP (similarly to how 'aws s3 sync' works), that is
  *     to say that for an upload operation, a remote file is
@@ -550,7 +611,7 @@ int VSIRename(const char *oldpath, const char *newpath)
  *     MD5Sum as ETAG.
  *
  *     The OVERWRITE strategy (GDAL >= 3.2) will always overwrite the target
- * file with the source one.
+ *     file with the source one.
  * </li>
  * <li>NUM_THREADS=integer. (GDAL >= 3.1) Number of threads to use for parallel
  * file copying. Only use for when /vsis3/, /vsigs/, /vsiaz/ or /vsiadls/ is in
@@ -786,7 +847,8 @@ int VSIStatExL(const char *pszFilename, VSIStatBufL *psStatBuf, int nFlags)
 /**
  * \brief Get metadata on files.
  *
- * Implemented currently only for network-like filesystems.
+ * Implemented currently only for network-like filesystems, or starting
+ * with GDAL 3.7 for /vsizip/
  *
  * @param pszFilename the path of the filesystem object to be queried.
  * UTF-8 encoded.
@@ -808,6 +870,8 @@ int VSIStatExL(const char *pszFilename, VSIStatBufL *psStatBuf, int nFlags)
  * <li>METADATA: specific to /vsiaz/: to set blob metadata. Refer to
  * https://docs.microsoft.com/en-us/rest/api/storageservices/get-blob-metadata.
  * Note: this will be a subset of what pszDomain=HEADERS returns</li>
+ * <li>ZIP: specific to /vsizip/: to obtain ZIP specific metadata, in particular
+ * if a file is SOZIP-enabled (SOZIP_VALID=YES)</li>
  * </ul>
  * @param papszOptions Unused. Should be set to NULL.
  *
@@ -983,6 +1047,31 @@ bool VSIIsLocal(const char *pszPath)
     VSIFilesystemHandler *poFSHandler = VSIFileManager::GetHandler(pszPath);
 
     return poFSHandler->IsLocal(pszPath);
+}
+
+/************************************************************************/
+/*                       VSIGetCanonicalFilename()                      */
+/************************************************************************/
+
+/**
+ * \brief Returns the canonical filename.
+ *
+ * May be implemented by case-insensitive filesystems
+ * (currently Win32 and MacOSX) to return the filename with its actual case
+ * (i.e. the one that would be used when listing the content of the directory).
+ *
+ * @param pszPath UTF-8 encoded path
+ *
+ * @return UTF-8 encoded string, to free with VSIFree()
+ *
+ * @since GDAL 3.8
+ */
+
+char *VSIGetCanonicalFilename(const char *pszPath)
+{
+    VSIFilesystemHandler *poFSHandler = VSIFileManager::GetHandler(pszPath);
+
+    return CPLStrdup(poFSHandler->GetCanonicalFilename(pszPath).c_str());
 }
 
 /************************************************************************/
@@ -1177,6 +1266,98 @@ VSIVirtualHandle *VSIFilesystemHandler::Open(const char *pszFilename,
                                              const char *pszAccess)
 {
     return Open(pszFilename, pszAccess, false, nullptr);
+}
+
+/************************************************************************/
+/*                             CopyFile()                               */
+/************************************************************************/
+
+int VSIFilesystemHandler::CopyFile(const char *pszSource, const char *pszTarget,
+                                   VSILFILE *fpSource, vsi_l_offset nSourceSize,
+                                   CSLConstList papszOptions,
+                                   GDALProgressFunc pProgressFunc,
+                                   void *pProgressData)
+{
+    VSIVirtualHandleUniquePtr poFileHandleAutoClose;
+    if (!fpSource)
+    {
+        fpSource = VSIFOpenExL(pszSource, "rb", TRUE);
+        if (!fpSource)
+        {
+            CPLError(CE_Failure, CPLE_FileIO, "Cannot open %s", pszSource);
+            return -1;
+        }
+        poFileHandleAutoClose.reset(fpSource);
+    }
+    if (nSourceSize == static_cast<vsi_l_offset>(-1) &&
+        pProgressFunc != nullptr && pszSource != nullptr)
+    {
+        VSIStatBufL sStat;
+        if (VSIStatL(pszSource, &sStat) == 0)
+        {
+            nSourceSize = sStat.st_size;
+        }
+    }
+
+    VSILFILE *fpOut = VSIFOpenEx2L(pszTarget, "wb", TRUE, papszOptions);
+    if (!fpOut)
+    {
+        CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s", pszTarget);
+        return -1;
+    }
+
+    CPLString osMsg;
+    if (pszSource)
+        osMsg.Printf("Copying of %s", pszSource);
+
+    int ret = 0;
+    constexpr size_t nBufferSize = 10 * 4096;
+    std::vector<GByte> abyBuffer(nBufferSize, 0);
+    GUIntBig nOffset = 0;
+    while (true)
+    {
+        size_t nRead = VSIFReadL(&abyBuffer[0], 1, nBufferSize, fpSource);
+        size_t nWritten = VSIFWriteL(&abyBuffer[0], 1, nRead, fpOut);
+        if (nWritten != nRead)
+        {
+            CPLError(CE_Failure, CPLE_FileIO, "Copying of %s to %s failed",
+                     pszSource, pszTarget);
+            ret = -1;
+            break;
+        }
+        nOffset += nRead;
+        if (pProgressFunc &&
+            !pProgressFunc(nSourceSize == 0 ? 1.0
+                           : nSourceSize > 0 &&
+                                   nSourceSize != static_cast<vsi_l_offset>(-1)
+                               ? double(nOffset) / nSourceSize
+                               : 0.0,
+                           pszSource ? osMsg.c_str() : nullptr, pProgressData))
+        {
+            ret = -1;
+            break;
+        }
+        if (nRead < nBufferSize)
+        {
+            break;
+        }
+    }
+
+    if (nSourceSize != static_cast<vsi_l_offset>(-1) && nOffset != nSourceSize)
+    {
+        CPLError(CE_Failure, CPLE_FileIO,
+                 "Copying of %s to %s failed: %" PRIu64 " bytes were copied "
+                 "whereas %" PRIu64 " were expected",
+                 pszSource, pszTarget, static_cast<uint64_t>(nOffset),
+                 static_cast<uint64_t>(nSourceSize));
+        ret = -1;
+    }
+
+    if (VSIFCloseL(fpOut) != 0)
+    {
+        ret = -1;
+    }
+    return ret;
 }
 
 /************************************************************************/
@@ -1455,6 +1636,9 @@ VSIDIR *VSIFilesystemHandler::OpenDir(const char *pszPath, int nRecurseDepth,
     }
     VSIDIRGeneric *dir = new VSIDIRGeneric(this);
     dir->osRootPath = pszPath;
+    if (!dir->osRootPath.empty() &&
+        (dir->osRootPath.back() == '/' || dir->osRootPath.back() == '\\'))
+        dir->osRootPath.pop_back();
     dir->nRecurseDepth = nRecurseDepth;
     dir->papszContent = papszContent;
     dir->m_osFilterPrefix = CSLFetchNameValueDef(papszOptions, "PREFIX", "");
@@ -1737,6 +1921,19 @@ VSILFILE *VSIFOpenExL(const char *pszFilename, const char *pszAccess,
  * This method goes through the VSIFileHandler virtualization and may
  * work on unusual filesystems such as in memory.
  *
+ * The following options are supported:
+ * <ul>
+ * <li>MIME headers such as Content-Type and Content-Encoding
+ * are supported for the /vsis3/, /vsigs/, /vsiaz/, /vsiadls/ file systems.</li>
+ * <li>DISABLE_READDIR_ON_OPEN=YES/NO (GDAL >= 3.6) for /vsicurl/ and other
+ * network-based file systems. By default, directory file listing is done,
+ * unless YES is specified.</li>
+ * <li>WRITE_THROUGH=YES (GDAL >= 3.8) for the Windows regular files to
+ * set the FILE_FLAG_WRITE_THROUGH flag to the CreateFile() function. In that
+ * mode, the data is written to the system cache but is flushed to disk without
+ * delay.</li>
+ * </ul>
+ *
  * Analog of the POSIX fopen() function.
  *
  * @param pszFilename the file to open.  UTF-8 encoded.
@@ -1745,12 +1942,7 @@ VSILFILE *VSIFOpenExL(const char *pszFilename, const char *pszAccess,
  * should set VSIErrors on failure.
  * @param papszOptions NULL or NULL-terminated list of strings. The content is
  *                     highly file system dependent.
- *                     MIME headers such as Content-Type and Content-Encoding
- * are supported for the /vsis3/, /vsigs/, /vsiaz/, /vsiadls/ file systems.
- *                     Starting with GDAL 3.6, the
- * DISABLE_READDIR_ON_OPEN=YES/NO option is supported for /vsicurl/ and other
- * network-based file systems. By default, directory file listing is done,
- *                     unless YES is specified.
+ *
  *
  * @return NULL on failure, or the file handle.
  *
@@ -1769,8 +1961,8 @@ VSILFILE *VSIFOpenEx2L(const char *pszFilename, const char *pszAccess,
 
     VSIFilesystemHandler *poFSHandler = VSIFileManager::GetHandler(pszFilename);
 
-    VSILFILE *fp = reinterpret_cast<VSILFILE *>(poFSHandler->Open(
-        pszFilename, pszAccess, CPL_TO_BOOL(bSetError), papszOptions));
+    VSILFILE *fp = poFSHandler->Open(pszFilename, pszAccess,
+                                     CPL_TO_BOOL(bSetError), papszOptions);
 
     VSIDebug4("VSIFOpenEx2L(%s,%s,%d) = %p", pszFilename, pszAccess, bSetError,
               fp);
@@ -1815,13 +2007,11 @@ VSILFILE *VSIFOpenEx2L(const char *pszFilename, const char *pszAccess,
 int VSIFCloseL(VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
     VSIDebug1("VSIFCloseL(%p)", fp);
 
-    const int nResult = poFileHandle->Close();
+    const int nResult = fp->Close();
 
-    delete poFileHandle;
+    delete fp;
 
     return nResult;
 }
@@ -1875,9 +2065,7 @@ int VSIFCloseL(VSILFILE *fp)
 int VSIFSeekL(VSILFILE *fp, vsi_l_offset nOffset, int nWhence)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Seek(nOffset, nWhence);
+    return fp->Seek(nOffset, nWhence);
 }
 
 /************************************************************************/
@@ -1918,9 +2106,7 @@ int VSIFSeekL(VSILFILE *fp, vsi_l_offset nOffset, int nWhence)
 vsi_l_offset VSIFTellL(VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Tell();
+    return fp->Tell();
 }
 
 /************************************************************************/
@@ -1959,6 +2145,10 @@ void VSIRewindL(VSILFILE *fp)
  *
  * Analog of the POSIX fflush() call.
  *
+ * On Windows regular files, this method does nothing, unless the
+ * VSI_FLUSH configuration option is set to YES (and only when the file has
+ * *not* been opened with the WRITE_THROUGH option).
+ *
  * @return 0 on success or -1 on error.
  */
 
@@ -1973,6 +2163,10 @@ void VSIRewindL(VSILFILE *fp)
  *
  * Analog of the POSIX fflush() call.
  *
+ * On Windows regular files, this method does nothing, unless the
+ * VSI_FLUSH configuration option is set to YES (and only when the file has
+ * *not* been opened with the WRITE_THROUGH option).
+ *
  * @param fp file handle opened with VSIFOpenL().
  *
  * @return 0 on success or -1 on error.
@@ -1981,9 +2175,7 @@ void VSIRewindL(VSILFILE *fp)
 int VSIFFlushL(VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Flush();
+    return fp->Flush();
 }
 
 /************************************************************************/
@@ -2033,9 +2225,7 @@ int VSIFFlushL(VSILFILE *fp)
 size_t VSIFReadL(void *pBuffer, size_t nSize, size_t nCount, VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Read(pBuffer, nSize, nCount);
+    return fp->Read(pBuffer, nSize, nCount);
 }
 
 /************************************************************************/
@@ -2094,9 +2284,7 @@ int VSIFReadMultiRangeL(int nRanges, void **ppData,
                         const vsi_l_offset *panOffsets, const size_t *panSizes,
                         VSILFILE *fp)
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->ReadMultiRange(nRanges, ppData, panOffsets, panSizes);
+    return fp->ReadMultiRange(nRanges, ppData, panOffsets, panSizes);
 }
 
 /************************************************************************/
@@ -2148,9 +2336,7 @@ size_t VSIFWriteL(const void *pBuffer, size_t nSize, size_t nCount,
                   VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Write(pBuffer, nSize, nCount);
+    return fp->Write(pBuffer, nSize, nCount);
 }
 
 /************************************************************************/
@@ -2193,9 +2379,7 @@ size_t VSIFWriteL(const void *pBuffer, size_t nSize, size_t nCount,
 int VSIFEofL(VSILFILE *fp)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Eof();
+    return fp->Eof();
 }
 
 /************************************************************************/
@@ -2235,9 +2419,7 @@ int VSIFEofL(VSILFILE *fp)
 int VSIFTruncateL(VSILFILE *fp, vsi_l_offset nNewSize)
 
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->Truncate(nNewSize);
+    return fp->Truncate(nNewSize);
 }
 
 /************************************************************************/
@@ -2350,9 +2532,7 @@ int VSIFPutcL(int nChar, VSILFILE *fp)
 VSIRangeStatus VSIFGetRangeStatusL(VSILFILE *fp, vsi_l_offset nOffset,
                                    vsi_l_offset nLength)
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->GetRangeStatus(nOffset, nLength);
+    return fp->GetRangeStatus(nOffset, nLength);
 }
 
 /************************************************************************/
@@ -2633,9 +2813,7 @@ int VSIOverwriteFile(VSILFILE *fpTarget, const char *pszSourceFilename)
 
 void *VSIFGetNativeFileDescriptorL(VSILFILE *fp)
 {
-    VSIVirtualHandle *poFileHandle = reinterpret_cast<VSIVirtualHandle *>(fp);
-
-    return poFileHandle->GetNativeFileDescriptor();
+    return fp->GetNativeFileDescriptor();
 }
 
 /************************************************************************/
@@ -2861,6 +3039,56 @@ const char *VSIGetPathSpecificOption(const char *pszPath, const char *pszKey,
 }
 
 /************************************************************************/
+/*                      VSIDuplicateFileSystemHandler()                 */
+/************************************************************************/
+
+/**
+ * \brief Duplicate an existing file system handler.
+ *
+ * A number of virtual file system for remote object stores use protocols
+ * identical or close to popular ones (typically AWS S3), but with slightly
+ * different settings (at the very least the endpoint).
+ *
+ * This functions allows to duplicate the source virtual file system handler
+ * as a new one with a different prefix (when the source virtual file system
+ * handler supports the duplication operation).
+ *
+ * VSISetPathSpecificOption() will typically be called afterwards to change
+ * configurable settings on the cloned file system handler (e.g. AWS_S3_ENDPOINT
+ * for a clone of /vsis3/).
+ *
+ * @since GDAL 3.7
+ */
+bool VSIDuplicateFileSystemHandler(const char *pszSourceFSName,
+                                   const char *pszNewFSName)
+{
+    VSIFilesystemHandler *poTargetFSHandler =
+        VSIFileManager::GetHandler(pszNewFSName);
+    if (poTargetFSHandler != VSIFileManager::GetHandler("/"))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "%s is already a known virtual file system", pszNewFSName);
+        return false;
+    }
+
+    VSIFilesystemHandler *poSourceFSHandler =
+        VSIFileManager::GetHandler(pszSourceFSName);
+    if (!poSourceFSHandler)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "%s is not a known virtual file system", pszSourceFSName);
+        return false;
+    }
+
+    poTargetFSHandler = poSourceFSHandler->Duplicate(pszNewFSName);
+    if (!poTargetFSHandler)
+        return false;
+
+    VSIFileManager::InstallHandler(pszNewFSName, poTargetFSHandler);
+    return true;
+}
+
+/************************************************************************/
 /* ==================================================================== */
 /*                           VSIFileManager()                           */
 /* ==================================================================== */
@@ -2927,6 +3155,10 @@ VSIFileManager *VSIFileManager::Get()
     VSIInstallGZipFileHandler();
     VSIInstallZipFileHandler();
 #endif
+#ifdef HAVE_LIBARCHIVE
+    VSIInstall7zFileHandler();
+    VSIInstallRarFileHandler();
+#endif
 #ifdef HAVE_CURL
     VSIInstallCurlFileHandler();
     VSIInstallCurlStreamingFileHandler();
@@ -2948,6 +3180,7 @@ VSIFileManager *VSIFileManager::Get()
     VSIInstallStdoutHandler();
     VSIInstallSparseFileHandler();
     VSIInstallTarFileHandler();
+    VSIInstallCachedFileHandler();
     VSIInstallCryptFileHandler();
 
     return poManager;

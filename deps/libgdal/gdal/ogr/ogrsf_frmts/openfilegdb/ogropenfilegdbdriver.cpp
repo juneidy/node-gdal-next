@@ -55,7 +55,10 @@ static GDALIdentifyEnum
 OGROpenFileGDBDriverIdentifyInternal(GDALOpenInfo *poOpenInfo,
                                      const char *&pszFilename)
 {
-    // FUSIL is a fuzzer
+    if (STARTS_WITH(pszFilename, "OpenFileGDB:"))
+        return GDAL_IDENTIFY_TRUE;
+
+        // FUSIL is a fuzzer
 #ifdef FOR_FUSIL
     CPLString osOrigFilename(pszFilename);
 #endif
@@ -206,13 +209,28 @@ static GDALDataset *OGROpenFileGDBDriverOpen(GDALOpenInfo *poOpenInfo)
     }
 #endif
 
-    OGROpenFileGDBDataSource *poDS = new OGROpenFileGDBDataSource();
+    auto poDS = cpl::make_unique<OGROpenFileGDBDataSource>();
     if (poDS->Open(poOpenInfo))
     {
-        return poDS;
+        if (poDS->GetSubdatasets().size() == 2)
+        {
+            // If there is a single raster dataset, open it right away.
+            GDALOpenInfo oOpenInfo(
+                poDS->GetSubdatasets().FetchNameValue("SUBDATASET_1_NAME"),
+                poOpenInfo->nOpenFlags);
+            poDS = cpl::make_unique<OGROpenFileGDBDataSource>();
+            if (poDS->Open(&oOpenInfo))
+            {
+                poDS->SetDescription(poOpenInfo->pszFilename);
+            }
+            else
+            {
+                poDS.reset();
+            }
+        }
+        return poDS.release();
     }
 
-    delete poDS;
     return nullptr;
 }
 
@@ -229,7 +247,7 @@ static GDALDataset *OGROpenFileGDBDriverCreate(const char *pszName, int nXSize,
     if (!(nXSize == 0 && nYSize == 0 && nBands == 0 && eType == GDT_Unknown))
     {
         CPLError(CE_Failure, CPLE_NotSupported,
-                 "Only vector datasets supported");
+                 "OpenFileGDB::Create(): only vector datasets supported");
         return nullptr;
     }
 
@@ -237,6 +255,39 @@ static GDALDataset *OGROpenFileGDBDriverCreate(const char *pszName, int nXSize,
     if (!poDS->Create(pszName))
         return nullptr;
     return poDS.release();
+}
+
+/************************************************************************/
+/*                     OGROpenFileGDBDriverDelete()                     */
+/************************************************************************/
+
+static CPLErr OGROpenFileGDBDriverDelete(const char *pszFilename)
+{
+    CPLStringList aosFiles(VSIReadDir(pszFilename));
+    if (aosFiles.empty())
+        return CE_Failure;
+
+    for (int i = 0; i < aosFiles.size(); ++i)
+    {
+        if (strcmp(aosFiles[i], ".") != 0 && strcmp(aosFiles[i], "..") != 0)
+        {
+            const std::string osFilename(
+                CPLFormFilename(pszFilename, aosFiles[i], nullptr));
+            if (VSIUnlink(osFilename.c_str()) != 0)
+            {
+                CPLError(CE_Failure, CPLE_FileIO, "Cannot delete %s",
+                         osFilename.c_str());
+                return CE_Failure;
+            }
+        }
+    }
+    if (VSIRmdir(pszFilename) != 0)
+    {
+        CPLError(CE_Failure, CPLE_FileIO, "Cannot delete %s", pszFilename);
+        return CE_Failure;
+    }
+
+    return CE_None;
 }
 
 /***********************************************************************/
@@ -259,6 +310,7 @@ void RegisterOGROpenFileGDB()
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "gdb");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC,
                               "drivers/vector/openfilegdb.html");
+    poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_VECTOR, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_CREATE_LAYER, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_DELETE_LAYER, "YES");
@@ -275,9 +327,18 @@ void RegisterOGROpenFileGDB()
                               "Integer Real String Date DateTime Binary");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES,
                               "Int16 Float32");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
+                              "Nullable Default "
+                              "AlternativeName Domain");
     poDriver->SetMetadataItem(
         GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
-        "Name Type WidthPrecision Nullable Default Domain");
+        "Name Type Nullable Default Domain AlternativeName");
+    // see https://support.esri.com/en/technical-article/000010906
+    poDriver->SetMetadataItem(
+        GDAL_DMD_ILLEGAL_FIELD_NAMES,
+        "ADD ALTER AND BETWEEN BY COLUMN CREATE DELETE DROP EXISTS FOR FROM "
+        "GROUP IN INSERT INTO IS LIKE NOT NULL OR ORDER SELECT SET TABLE "
+        "UPDATE VALUES WHERE");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_DEFAULT_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_GEOMFIELDS, "YES");
@@ -292,6 +353,8 @@ void RegisterOGROpenFileGDB()
     poDriver->SetMetadataItem(GDAL_DMD_RELATIONSHIP_FLAGS,
                               "OneToOne OneToMany ManyToMany Composite "
                               "Association ForwardPathLabel BackwardPathLabel");
+    poDriver->SetMetadataItem(GDAL_DMD_RELATIONSHIP_RELATED_TABLE_TYPES,
+                              "features media");
 
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
 
@@ -309,6 +372,8 @@ void RegisterOGROpenFileGDB()
         "    <Value>YES</Value>"
         "    <Value>NO</Value>"
         "  </Option>"
+        "  <Option name='NODATA_OR_MASK' type='string' scope='raster' "
+        "description='AUTO, MASK, NONE or numeric nodata value'/>"
         "</OpenOptionList>");
 
     poDriver->SetMetadataItem(
@@ -349,7 +414,7 @@ void RegisterOGROpenFileGDB()
         "  <Option name='MSCALE' type='float' description='M scale of the "
         "coordinate precision grid'/>"
         "  <Option name='COLUMN_TYPES' type='string' description='A list of "
-        "strings of format field_name=fgdb_filed_type (separated by comma) to "
+        "strings of format field_name=fgdb_field_type (separated by comma) to "
         "force the FileGDB column type of fields to be created'/>"
         "  <Option name='DOCUMENTATION' type='string' description='XML "
         "documentation'/>"
@@ -379,6 +444,7 @@ void RegisterOGROpenFileGDB()
     poDriver->pfnOpen = OGROpenFileGDBDriverOpen;
     poDriver->pfnIdentify = OGROpenFileGDBDriverIdentify;
     poDriver->pfnCreate = OGROpenFileGDBDriverCreate;
+    poDriver->pfnDelete = OGROpenFileGDBDriverDelete;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
 }

@@ -88,26 +88,6 @@ struct GDALWarpAppOptionsForBinary
     char **papszAllowInputDrivers;
 };
 
-/* Access modes */
-typedef enum
-{
-    ACCESS_CREATION,
-    ACCESS_UPDATE, /* open existing output datasource in update mode rather than
-                      trying to create a new one */
-    ACCESS_APPEND, /* append to existing layer instead of creating new */
-    ACCESS_OVERWRITE /*  delete the output layer and recreate it empty */
-} GDALVectorTranslateAccessMode;
-
-struct GDALVectorTranslateOptionsForBinary
-{
-    char *pszDataSource;
-    char *pszDestDataSource;
-    int bQuiet;
-    char **papszOpenOptions;
-    char *pszFormat;
-    GDALVectorTranslateAccessMode eAccessMode;
-};
-
 struct GDALDEMProcessingOptionsForBinary
 {
     char *pszProcessing;
@@ -124,23 +104,6 @@ struct GDALNearblackOptionsForBinary
     int bQuiet;
 };
 
-struct GDALGridOptionsForBinary
-{
-    char *pszSource;
-    char *pszDest;
-    int bQuiet;
-    char *pszFormat;
-};
-
-struct GDALRasterizeOptionsForBinary
-{
-    char *pszSource;
-    char *pszDest;
-    int bQuiet;
-    char *pszFormat;
-    int bCreateOutput;
-};
-
 struct GDALBuildVRTOptionsForBinary
 {
     int nSrcFiles;
@@ -151,6 +114,30 @@ struct GDALBuildVRTOptionsForBinary
 };
 
 CPL_C_END
+
+/* Access modes */
+typedef enum
+{
+    ACCESS_CREATION,
+    ACCESS_UPDATE, /* open existing output datasource in update mode rather than
+                      trying to create a new one */
+    ACCESS_APPEND, /* append to existing layer instead of creating new */
+    ACCESS_OVERWRITE /*  delete the output layer and recreate it empty */
+} GDALVectorTranslateAccessMode;
+
+struct GDALVectorTranslateOptionsForBinary
+{
+    std::string osDataSource{};
+    bool bDestSpecified = false;
+    std::string osDestDataSource{};
+    bool bQuiet = false;
+    CPLStringList aosOpenOptions{};
+    std::string osFormat;
+    GDALVectorTranslateAccessMode eAccessMode = ACCESS_CREATION;
+
+    /* Allowed input drivers. */
+    CPLStringList aosAllowInputDrivers{};
+};
 
 struct GDALMultiDimInfoOptionsForBinary
 {
@@ -177,6 +164,62 @@ struct GDALMultiDimTranslateOptionsForBinary
 
     /* Open options. */
     CPLStringList aosOpenOptions{};
+};
+
+struct GDALVectorInfoOptionsForBinary
+{
+    /* Filename to open. */
+    std::string osFilename{};
+
+    bool bVerbose = true;
+
+    bool bReadOnly = false;
+
+    bool bUpdate = false;
+
+    std::string osSQLStatement{};
+
+    /* Open options. */
+    CPLStringList aosOpenOptions{};
+
+    /* Allowed input drivers. */
+    CPLStringList aosAllowInputDrivers{};
+};
+
+struct GDALGridOptionsForBinary
+{
+    std::string osSource{};
+    bool bDestSpecified = false;
+    std::string osDest{};
+    bool bQuiet = false;
+    CPLStringList aosOpenOptions{};
+};
+
+struct GDALRasterizeOptionsForBinary
+{
+    std::string osSource{};
+    bool bDestSpecified = false;
+    std::string osDest{};
+    bool bQuiet = false;
+    CPLStringList aosOpenOptions{};
+    bool bCreateOutput = false;
+    std::string osFormat{};
+};
+
+struct GDALFootprintOptionsForBinary
+{
+    std::string osSource{};
+    bool bDestSpecified = false;
+    std::string osDest{};
+    bool bQuiet = false;
+    CPLStringList aosOpenOptions{};
+    bool bCreateOutput = false;
+    std::string osFormat{};
+
+    /*! whether to overwrite destination layer */
+    bool bOverwrite = false;
+
+    std::string osDestLayerName{};
 };
 
 #endif /* #ifndef DOXYGEN_SKIP */

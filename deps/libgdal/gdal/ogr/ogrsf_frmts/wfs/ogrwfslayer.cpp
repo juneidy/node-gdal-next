@@ -81,18 +81,16 @@ OGRWFSLayer::OGRWFSLayer(OGRWFSDataSource *poDSIn, OGRSpatialReference *poSRSIn,
                          const char *pszNSIn, const char *pszNSValIn)
     : poDS(poDSIn), poFeatureDefn(nullptr), bGotApproximateLayerDefn(false),
       poGMLFeatureClass(nullptr),
-      bAxisOrderAlreadyInverted(bAxisOrderAlreadyInvertedIn), poSRS(poSRSIn),
+      bAxisOrderAlreadyInverted(bAxisOrderAlreadyInvertedIn), m_poSRS(poSRSIn),
       pszBaseURL(CPLStrdup(pszBaseURLIn)), pszName(CPLStrdup(pszNameIn)),
       pszNS(pszNSIn ? CPLStrdup(pszNSIn) : nullptr),
       pszNSVal(pszNSValIn ? CPLStrdup(pszNSValIn) : nullptr),
       bStreamingDS(false), poBaseDS(nullptr), poBaseLayer(nullptr),
       bHasFetched(false), bReloadNeeded(false), eGeomType(wkbUnknown),
-      nFeatures(-1), bCountFeaturesInGetNextFeature(false), dfMinX(0.0),
-      dfMinY(0.0), dfMaxX(0.0), dfMaxY(0.0), bHasExtents(false),
+      nFeatures(-1), bCountFeaturesInGetNextFeature(false),
       poFetchedFilterGeom(nullptr), nExpectedInserts(0), bInTransaction(false),
       bUseFeatureIdAtLayerLevel(false), bPagingActive(false),
-      nPagingStartIndex(0), nFeatureRead(0), nFeatureCountRequested(0),
-      pszRequiredOutputFormat(nullptr)
+      nPagingStartIndex(0), nFeatureRead(0), pszRequiredOutputFormat(nullptr)
 {
     SetDescription(pszName);
 }
@@ -104,10 +102,10 @@ OGRWFSLayer::OGRWFSLayer(OGRWFSDataSource *poDSIn, OGRSpatialReference *poSRSIn,
 OGRWFSLayer *OGRWFSLayer::Clone()
 {
     OGRWFSLayer *poDupLayer =
-        new OGRWFSLayer(poDS, poSRS, bAxisOrderAlreadyInverted, pszBaseURL,
+        new OGRWFSLayer(poDS, m_poSRS, bAxisOrderAlreadyInverted, pszBaseURL,
                         pszName, pszNS, pszNSVal);
-    if (poSRS)
-        poSRS->Reference();
+    if (m_poSRS)
+        m_poSRS->Reference();
     poDupLayer->poFeatureDefn = GetLayerDefn()->Clone();
     poDupLayer->poFeatureDefn->Reference();
     poDupLayer->bGotApproximateLayerDefn = bGotApproximateLayerDefn;
@@ -134,8 +132,8 @@ OGRWFSLayer::~OGRWFSLayer()
     if (bInTransaction)
         OGRWFSLayer::CommitTransaction();
 
-    if (poSRS != nullptr)
-        poSRS->Release();
+    if (m_poSRS != nullptr)
+        m_poSRS->Release();
 
     if (poFeatureDefn != nullptr)
         poFeatureDefn->Release();
@@ -154,6 +152,61 @@ OGRWFSLayer::~OGRWFSLayer()
     OGRWFSRecursiveUnlink(osTmpDirName);
 
     CPLFree(pszRequiredOutputFormat);
+}
+
+/************************************************************************/
+/*                          SetActiveSRS()                              */
+/************************************************************************/
+
+OGRErr OGRWFSLayer::SetActiveSRS(int /*iGeomField*/,
+                                 const OGRSpatialReference *poSRS)
+{
+    if (poSRS == nullptr)
+        return OGRERR_FAILURE;
+    const char *const apszOptions[] = {
+        "IGNORE_DATA_AXIS_TO_SRS_AXIS_MAPPING=YES", nullptr};
+    size_t i = 0;
+    for (const auto &poSupportedSRS : m_apoSupportedCRSList)
+    {
+        if (poSupportedSRS->IsSame(poSRS, apszOptions))
+        {
+            m_osSRSName = m_aosSupportedCRSList[i];
+            if (m_poSRS)
+                m_poSRS->Release();
+            m_poSRS = poSRS->Clone();
+            m_poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+            if (poFeatureDefn)
+            {
+                auto poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(0);
+                if (poGeomFieldDefn)
+                {
+                    poGeomFieldDefn->SetSpatialRef(m_poSRS);
+                }
+            }
+            m_oExtents = OGREnvelope();
+            if (m_oWGS84Extents.IsInit())
+            {
+                OGRSpatialReference oWGS84;
+                oWGS84.SetWellKnownGeogCS("WGS84");
+                oWGS84.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+                auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+                    OGRCreateCoordinateTransformation(&oWGS84, m_poSRS));
+                if (poCT)
+                {
+                    poCT->TransformBounds(
+                        m_oWGS84Extents.MinX, m_oWGS84Extents.MinY,
+                        m_oWGS84Extents.MaxX, m_oWGS84Extents.MaxY,
+                        &m_oExtents.MinX, &m_oExtents.MinY, &m_oExtents.MaxX,
+                        &m_oExtents.MaxY, 20);
+                }
+            }
+            SetSpatialFilter(nullptr);
+            ResetReading();
+            return OGRERR_NONE;
+        }
+        ++i;
+    }
+    return OGRERR_FAILURE;
 }
 
 /************************************************************************/
@@ -306,7 +359,7 @@ OGRWFSLayer::BuildLayerDefnFromFeatureClass(GMLFeatureClass *poClass)
         poFDefn->SetGeomType(
             (OGRwkbGeometryType)poGMLFeatureClass->GetGeometryProperty(0)
                 ->GetType());
-        poFDefn->GetGeomFieldDefn(0)->SetSpatialRef(poSRS);
+        poFDefn->GetGeomFieldDefn(0)->SetSpatialRef(m_poSRS);
     }
 
     /* -------------------------------------------------------------------- */
@@ -375,18 +428,30 @@ CPLString OGRWFSLayer::MakeGetFeatureURL(int nRequestMaxFeatures,
         osURL = CPLURLAddKVP(osURL, "TYPENAMES", WFS_EscapeURL(pszName));
     else
         osURL = CPLURLAddKVP(osURL, "TYPENAME", WFS_EscapeURL(pszName));
+    if (!m_osSRSName.empty())
+        osURL =
+            CPLURLAddKVP(osURL, "SRSNAME", WFS_EscapeURL(m_osSRSName.c_str()));
     if (pszRequiredOutputFormat)
         osURL = CPLURLAddKVP(osURL, "OUTPUTFORMAT",
                              WFS_EscapeURL(pszRequiredOutputFormat));
 
     if (poDS->IsPagingAllowed() && !bRequestHits)
     {
-        osURL = CPLURLAddKVP(
-            osURL, "STARTINDEX",
-            CPLSPrintf("%d", nPagingStartIndex + poDS->GetBaseStartIndex()));
         nRequestMaxFeatures = poDS->GetPageSize();
-        nFeatureCountRequested = nRequestMaxFeatures;
-        bPagingActive = true;
+        /* If the feature count is known and is less than the page size, we don't
+         * need to do paging. Skipping the pagination parameters improves compatibility
+         * with remote datasources that don't have a primary key.
+         * Without a primary key, the WFS server can't support paging, since there
+         * is no natural sort order defined. */
+        if (nFeatures < 0 ||
+            (nRequestMaxFeatures && nFeatures > nRequestMaxFeatures))
+        {
+            osURL =
+                CPLURLAddKVP(osURL, "STARTINDEX",
+                             CPLSPrintf("%d", nPagingStartIndex +
+                                                  poDS->GetBaseStartIndex()));
+            bPagingActive = true;
+        }
     }
 
     if (nRequestMaxFeatures)
@@ -611,7 +676,6 @@ CPLString OGRWFSLayer::MakeGetFeatureURL(int nRequestMaxFeatures,
 
         if (bHasIgnoredField && !osPropertyName.empty())
         {
-            osPropertyName = "(" + osPropertyName + ")";
             osURL = CPLURLAddKVP(osURL, "PROPERTYNAME",
                                  WFS_EscapeURL(osPropertyName));
         }
@@ -699,6 +763,26 @@ GDALDataset *OGRWFSLayer::FetchGetFeature(int nRequestMaxFeatures)
 
     CPLString osOutputFormat = CPLURLGetValue(osURL, "OUTPUTFORMAT");
 
+    const auto ReadNumberMatched = [this](const char *pszData)
+    {
+        const char *pszNumberMatched = strstr(pszData, " numberMatched=\"");
+        if (!pszNumberMatched)
+            pszNumberMatched = strstr(pszData, "\n"
+                                               "numberMatched=\"");
+        if (pszNumberMatched)
+        {
+            pszNumberMatched += strlen(" numberMatched=\"");
+            if (*pszNumberMatched >= '0' && *pszNumberMatched <= '9')
+            {
+                m_nNumberMatched = CPLAtoGIntBig(pszNumberMatched);
+                CPLDebug("WFS", "numberMatched = " CPL_FRMT_GIB,
+                         m_nNumberMatched);
+                if (!bCountFeaturesInGetNextFeature)
+                    nFeatures = m_nNumberMatched;
+            }
+        }
+    };
+
     if (CPLTestBool(CPLGetConfigOption("OGR_WFS_USE_STREAMING", "YES")))
     {
         CPLString osStreamingName;
@@ -713,53 +797,59 @@ GDALDataset *OGRWFSLayer::FetchGetFeature(int nRequestMaxFeatures)
             osStreamingName += osURL;
         }
 
-        GDALDataset *poOutputDS = nullptr;
-
         /* Try streaming when the output format is GML and that we have a .xsd
          */
         /* that we are able to understand */
         CPLString osXSDFileName =
             CPLSPrintf("/vsimem/tempwfs_%p/file.xsd", this);
         VSIStatBufL sBuf;
+        GDALDriver *poDriver = nullptr;
         if ((osOutputFormat.empty() ||
              osOutputFormat.ifind("GML") != std::string::npos) &&
             VSIStatL(osXSDFileName, &sBuf) == 0 &&
-            GDALGetDriverByName("GML") != nullptr)
+            (poDriver = GDALDriver::FromHandle(GDALGetDriverByName("GML"))) !=
+                nullptr &&
+            poDriver->pfnOpen)
         {
             bStreamingDS = true;
-            const char *const apszAllowedDrivers[] = {"GML", nullptr};
-            const char *apszOpenOptions[6] = {nullptr, nullptr, nullptr,
-                                              nullptr, nullptr, nullptr};
-            apszOpenOptions[0] = CPLSPrintf("XSD=%s", osXSDFileName.c_str());
-            apszOpenOptions[1] = CPLSPrintf(
-                "EMPTY_AS_NULL=%s", poDS->IsEmptyAsNull() ? "YES" : "NO");
-            int iGMLOOIdex = 2;
+            CPLStringList aosOptions;
+            aosOptions.SetNameValue("XSD", osXSDFileName.c_str());
+            aosOptions.SetNameValue("EMPTY_AS_NULL",
+                                    poDS->IsEmptyAsNull() ? "YES" : "NO");
             if (CPLGetConfigOption("GML_INVERT_AXIS_ORDER_IF_LAT_LONG",
                                    nullptr) == nullptr)
             {
-                apszOpenOptions[iGMLOOIdex] =
-                    CPLSPrintf("INVERT_AXIS_ORDER_IF_LAT_LONG=%s",
-                               poDS->InvertAxisOrderIfLatLong() ? "YES" : "NO");
-                iGMLOOIdex++;
+                aosOptions.SetNameValue(
+                    "INVERT_AXIS_ORDER_IF_LAT_LONG",
+                    poDS->InvertAxisOrderIfLatLong() ? "YES" : "NO");
             }
             if (CPLGetConfigOption("GML_CONSIDER_EPSG_AS_URN", nullptr) ==
                 nullptr)
             {
-                apszOpenOptions[iGMLOOIdex] =
-                    CPLSPrintf("CONSIDER_EPSG_AS_URN=%s",
-                               poDS->GetConsiderEPSGAsURN().c_str());
-                iGMLOOIdex++;
+                aosOptions.SetNameValue("CONSIDER_EPSG_AS_URN",
+                                        poDS->GetConsiderEPSGAsURN().c_str());
             }
             if (CPLGetConfigOption("GML_EXPOSE_GML_ID", nullptr) == nullptr)
             {
-                apszOpenOptions[iGMLOOIdex] = CPLSPrintf(
-                    "EXPOSE_GML_ID=%s", poDS->ExposeGMLId() ? "YES" : "NO");
+                aosOptions.SetNameValue("EXPOSE_GML_ID",
+                                        poDS->ExposeGMLId() ? "YES" : "NO");
                 // iGMLOOIdex ++;
             }
 
-            poOutputDS = (GDALDataset *)GDALOpenEx(
-                osStreamingName, GDAL_OF_VECTOR, apszAllowedDrivers,
-                apszOpenOptions, nullptr);
+            GDALOpenInfo oOpenInfo(osStreamingName.c_str(), GA_ReadOnly);
+            if (oOpenInfo.nHeaderBytes && m_nNumberMatched < 0)
+            {
+                const char *pszData =
+                    reinterpret_cast<const char *>(oOpenInfo.pabyHeader);
+                ReadNumberMatched(pszData);
+            }
+            oOpenInfo.papszOpenOptions = aosOptions.List();
+
+            auto poOutputDS = poDriver->Open(&oOpenInfo, true);
+            if (poOutputDS)
+            {
+                return poOutputDS;
+            }
         }
         /* Try streaming when the output format is FlatGeobuf */
         else if ((osOutputFormat.empty() ||
@@ -775,18 +865,12 @@ GDALDataset *OGRWFSLayer::FetchGetFeature(int nRequestMaxFeatures)
                                           apszAllowedDrivers, nullptr, nullptr);
             if (poFlatGeobuf_DS)
             {
-                bStreamingDS = true;
                 return poFlatGeobuf_DS;
             }
         }
         else
         {
             bStreamingDS = false;
-        }
-
-        if (poOutputDS)
-        {
-            return poOutputDS;
         }
 
         if (bStreamingDS)
@@ -921,16 +1005,17 @@ GDALDataset *OGRWFSLayer::FetchGetFeature(int nRequestMaxFeatures)
         bGZIP = true;
     }
 
-    if (MustRetryIfNonCompliantServer((const char *)pabyData))
+    const char *pszData = reinterpret_cast<const char *>(pabyData);
+    if (MustRetryIfNonCompliantServer(pszData))
     {
         CPLHTTPDestroyResult(psResult);
         return FetchGetFeature(nRequestMaxFeatures);
     }
 
-    if (strstr((const char *)pabyData, "<ServiceExceptionReport") != nullptr ||
-        strstr((const char *)pabyData, "<ows:ExceptionReport") != nullptr)
+    if (strstr(pszData, "<ServiceExceptionReport") != nullptr ||
+        strstr(pszData, "<ows:ExceptionReport") != nullptr)
     {
-        if (poDS->IsOldDeegree((const char *)pabyData))
+        if (poDS->IsOldDeegree(pszData))
         {
             CPLHTTPDestroyResult(psResult);
             return FetchGetFeature(nRequestMaxFeatures);
@@ -941,6 +1026,9 @@ GDALDataset *OGRWFSLayer::FetchGetFeature(int nRequestMaxFeatures)
         CPLHTTPDestroyResult(psResult);
         return nullptr;
     }
+
+    if (m_nNumberMatched < 0)
+        ReadNumberMatched(pszData);
 
     CPLString osTmpFileName;
 
@@ -1082,10 +1170,13 @@ OGRFeatureDefn *OGRWFSLayer::GetLayerDefn()
     if (poFeatureDefn)
         return poFeatureDefn;
 
-    poDS->LoadMultipleLayerDefn(GetName(), pszNS, pszNSVal);
+    if (poDS->GetLayerCount() > 1)
+    {
+        poDS->LoadMultipleLayerDefn(GetName(), pszNS, pszNSVal);
 
-    if (poFeatureDefn)
-        return poFeatureDefn;
+        if (poFeatureDefn)
+            return poFeatureDefn;
+    }
 
     return BuildLayerDefn();
 }
@@ -1099,7 +1190,7 @@ OGRFeatureDefn *OGRWFSLayer::BuildLayerDefn(OGRFeatureDefn *poSrcFDefn)
     bool bUnsetWidthPrecision = false;
 
     poFeatureDefn = new OGRFeatureDefn(pszName);
-    poFeatureDefn->GetGeomFieldDefn(0)->SetSpatialRef(poSRS);
+    poFeatureDefn->GetGeomFieldDefn(0)->SetSpatialRef(m_poSRS);
     poFeatureDefn->Reference();
 
     GDALDataset *l_poDS = nullptr;
@@ -1124,8 +1215,8 @@ OGRFeatureDefn *OGRWFSLayer::BuildLayerDefn(OGRFeatureDefn *poSrcFDefn)
         bUnsetWidthPrecision = true;
     }
 
-    CPLString osPropertyName = CPLURLGetValue(pszBaseURL, "PROPERTYNAME");
-    const char *pszPropertyName = osPropertyName.c_str();
+    const CPLStringList aosPropertyName(CSLTokenizeString2(
+        CPLURLGetValue(pszBaseURL, "PROPERTYNAME"), "(,)", 0));
 
     poFeatureDefn->SetGeomType(poSrcFDefn->GetGeomType());
     if (poSrcFDefn->GetGeomFieldCount() > 0)
@@ -1133,10 +1224,10 @@ OGRFeatureDefn *OGRWFSLayer::BuildLayerDefn(OGRFeatureDefn *poSrcFDefn)
             poSrcFDefn->GetGeomFieldDefn(0)->GetNameRef());
     for (int i = 0; i < poSrcFDefn->GetFieldCount(); i++)
     {
-        if (pszPropertyName[0] != 0)
+        if (!aosPropertyName.empty())
         {
-            if (strstr(pszPropertyName,
-                       poSrcFDefn->GetFieldDefn(i)->GetNameRef()) != nullptr)
+            if (aosPropertyName.FindString(
+                    poSrcFDefn->GetFieldDefn(i)->GetNameRef()) >= 0)
                 poFeatureDefn->AddFieldDefn(poSrcFDefn->GetFieldDefn(i));
             else
                 bGotApproximateLayerDefn = true;
@@ -1168,12 +1259,14 @@ OGRFeatureDefn *OGRWFSLayer::BuildLayerDefn(OGRFeatureDefn *poSrcFDefn)
 void OGRWFSLayer::ResetReading()
 
 {
-    GetLayerDefn();
+    if (poFeatureDefn == nullptr)
+        return;
     if (bPagingActive)
         bReloadNeeded = true;
     nPagingStartIndex = 0;
     nFeatureRead = 0;
-    nFeatureCountRequested = 0;
+    m_nNumberMatched = -1;
+    m_bHasReadAtLeastOneFeatureInThisPage = false;
     if (bReloadNeeded)
     {
         GDALClose(poBaseDS);
@@ -1207,14 +1300,9 @@ OGRFeature *OGRWFSLayer::GetNextFeature()
 
     while (true)
     {
-        if (bPagingActive &&
-            nFeatureRead == nPagingStartIndex + nFeatureCountRequested)
-        {
-            bReloadNeeded = true;
-            nPagingStartIndex = nFeatureRead;
-        }
         if (bReloadNeeded)
         {
+            m_bHasReadAtLeastOneFeatureInThisPage = false;
             GDALClose(poBaseDS);
             poBaseDS = nullptr;
             poBaseLayer = nullptr;
@@ -1264,8 +1352,18 @@ OGRFeature *OGRWFSLayer::GetNextFeature()
 
         OGRFeature *poSrcFeature = poBaseLayer->GetNextFeature();
         if (poSrcFeature == nullptr)
+        {
+            if (bPagingActive && m_bHasReadAtLeastOneFeatureInThisPage &&
+                (m_nNumberMatched < 0 || nFeatureRead < m_nNumberMatched))
+            {
+                bReloadNeeded = true;
+                nPagingStartIndex = nFeatureRead;
+                continue;
+            }
             return nullptr;
+        }
         nFeatureRead++;
+        m_bHasReadAtLeastOneFeatureInThisPage = true;
         if (bCountFeaturesInGetNextFeature)
             nFeatures++;
 
@@ -1326,8 +1424,8 @@ OGRFeature *OGRWFSLayer::GetNextFeature()
             poGeom->swapXY();
         }
 
-        if (poGeom && poSRS)
-            poGeom->assignSpatialReference(poSRS);
+        if (poGeom && m_poSRS)
+            poGeom->assignSpatialReference(m_poSRS);
         delete poSrcFeature;
         return poNewFeature;
     }
@@ -1466,7 +1564,7 @@ int OGRWFSLayer::TestCapability(const char *pszCap)
 
     else if (EQUAL(pszCap, OLCFastGetExtent))
     {
-        if (bHasExtents)
+        if (m_oExtents.IsInit())
             return TRUE;
 
         return poBaseLayer != nullptr && poBaseLayer->TestCapability(pszCap);
@@ -1657,7 +1755,7 @@ int OGRWFSLayer::CanRunGetFeatureCountAndGetExtentTogether()
     /* In some cases, we can evaluate the result of GetFeatureCount() */
     /* and GetExtent() with the same data */
     CPLString osRequestURL = MakeGetFeatureURL(0, FALSE);
-    return (!bHasExtents && nFeatures < 0 &&
+    return (!m_oExtents.IsInit() && nFeatures < 0 &&
             osRequestURL.ifind("FILTER") == std::string::npos &&
             osRequestURL.ifind("MAXFEATURES") == std::string::npos &&
             osRequestURL.ifind("COUNT") == std::string::npos &&
@@ -1714,17 +1812,29 @@ GIntBig OGRWFSLayer::GetFeatureCount(int bForce)
 }
 
 /************************************************************************/
-/*                              SetExtent()                             */
+/*                              SetExtents()                            */
 /************************************************************************/
 
 void OGRWFSLayer::SetExtents(double dfMinXIn, double dfMinYIn, double dfMaxXIn,
                              double dfMaxYIn)
 {
-    dfMinX = dfMinXIn;
-    dfMinY = dfMinYIn;
-    dfMaxX = dfMaxXIn;
-    dfMaxY = dfMaxYIn;
-    bHasExtents = true;
+    m_oExtents.MinX = dfMinXIn;
+    m_oExtents.MinY = dfMinYIn;
+    m_oExtents.MaxX = dfMaxXIn;
+    m_oExtents.MaxY = dfMaxYIn;
+}
+
+/************************************************************************/
+/*                            SetWGS84Extents()                         */
+/************************************************************************/
+
+void OGRWFSLayer::SetWGS84Extents(double dfMinXIn, double dfMinYIn,
+                                  double dfMaxXIn, double dfMaxYIn)
+{
+    m_oWGS84Extents.MinX = dfMinXIn;
+    m_oWGS84Extents.MinY = dfMinYIn;
+    m_oWGS84Extents.MaxX = dfMaxXIn;
+    m_oWGS84Extents.MaxY = dfMaxYIn;
 }
 
 /************************************************************************/
@@ -1733,12 +1843,9 @@ void OGRWFSLayer::SetExtents(double dfMinXIn, double dfMinYIn, double dfMaxXIn,
 
 OGRErr OGRWFSLayer::GetExtent(OGREnvelope *psExtent, int bForce)
 {
-    if (bHasExtents)
+    if (m_oExtents.IsInit())
     {
-        psExtent->MinX = dfMinX;
-        psExtent->MinY = dfMinY;
-        psExtent->MaxX = dfMaxX;
-        psExtent->MaxY = dfMaxY;
+        *psExtent = m_oExtents;
         return OGRERR_NONE;
     }
 
@@ -1771,11 +1878,7 @@ OGRErr OGRWFSLayer::GetExtent(OGREnvelope *psExtent, int bForce)
     {
         if (eErr == OGRERR_NONE)
         {
-            dfMinX = psExtent->MinX;
-            dfMinY = psExtent->MinY;
-            dfMaxX = psExtent->MaxX;
-            dfMaxY = psExtent->MaxY;
-            bHasExtents = true;
+            m_oExtents = *psExtent;
         }
         else
         {
@@ -1900,7 +2003,7 @@ OGRErr OGRWFSLayer::ICreateFeature(OGRFeature *poFeature)
             if (poGeom != nullptr && !osGeometryColumnName.empty())
             {
                 if (poGeom->getSpatialReference() == nullptr)
-                    poGeom->assignSpatialReference(poSRS);
+                    poGeom->assignSpatialReference(m_poSRS);
                 char *pszGML = nullptr;
                 if (strcmp(poDS->GetVersion(), "1.1.0") == 0 ||
                     atoi(poDS->GetVersion()) >= 2)
@@ -2103,7 +2206,7 @@ OGRErr OGRWFSLayer::ICreateFeature(OGRFeature *poFeature)
     /* Invalidate layer */
     bReloadNeeded = true;
     nFeatures = -1;
-    bHasExtents = false;
+    m_oExtents = OGREnvelope();
 
     return OGRERR_NONE;
 }
@@ -2168,7 +2271,7 @@ OGRErr OGRWFSLayer::ISetFeature(OGRFeature *poFeature)
         if (poGeom != nullptr)
         {
             if (poGeom->getSpatialReference() == nullptr)
-                poGeom->assignSpatialReference(poSRS);
+                poGeom->assignSpatialReference(m_poSRS);
             char *pszGML = nullptr;
             if (strcmp(poDS->GetVersion(), "1.1.0") == 0 ||
                 atoi(poDS->GetVersion()) >= 2)
@@ -2305,7 +2408,7 @@ OGRErr OGRWFSLayer::ISetFeature(OGRFeature *poFeature)
     /* Invalidate layer */
     bReloadNeeded = true;
     nFeatures = -1;
-    bHasExtents = false;
+    m_oExtents = OGREnvelope();
 
     return OGRERR_NONE;
 }
@@ -2451,7 +2554,7 @@ OGRErr OGRWFSLayer::DeleteFromFilter(CPLString osOGCFilter)
     /* Invalidate layer */
     bReloadNeeded = true;
     nFeatures = -1;
-    bHasExtents = false;
+    m_oExtents = OGREnvelope();
 
     return OGRERR_NONE;
 }

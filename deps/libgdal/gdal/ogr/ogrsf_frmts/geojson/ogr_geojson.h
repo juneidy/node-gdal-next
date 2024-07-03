@@ -120,10 +120,11 @@ class OGRGeoJSONLayer final : public OGRMemLayer
     bool bOriginalIdModified_;
     GIntBig nTotalFeatureCount_;
     GIntBig nFeatureReadSinceReset_ = 0;
-    GIntBig nNextFID_;
 
     bool IngestAll();
     void TerminateAppendSession();
+
+    CPL_DISALLOW_COPY_ASSIGN(OGRGeoJSONLayer)
 };
 
 /************************************************************************/
@@ -169,10 +170,16 @@ class OGRGeoJSONWriteLayer final : public OGRLayer
                    : OGRERR_FAILURE;
     }
 
+    OGRErr SyncToDisk() override;
+
   private:
     OGRGeoJSONDataSource *poDS_;
     OGRFeatureDefn *poFeatureDefn_;
     int nOutCounter_;
+    /** Offset at which the '] }' terminating sequence has already been
+     * written by SyncToDisk(). 0 if it has not been written.
+     */
+    vsi_l_offset m_nPositionBeforeFCClosed = 0;
 
     bool bWriteBBOX;
     bool bBBOX3D;
@@ -184,9 +191,14 @@ class OGRGeoJSONWriteLayer final : public OGRLayer
 
     bool bRFC7946_;
     bool bWrapDateLine_ = false;
+    bool bHasMakeValid_ = false;
     OGRCoordinateTransformation *poCT_;
     OGRGeometryFactory::TransformWithOptionsCache oTransformCache_;
     OGRGeoJSONWriteOptions oWriteOptions_;
+
+    CPL_DISALLOW_COPY_ASSIGN(OGRGeoJSONWriteLayer)
+
+    void FinishWriting();
 };
 
 /************************************************************************/
@@ -208,7 +220,7 @@ class OGRGeoJSONDataSource final : public OGRDataSource
     int GetLayerCount() override;
     OGRLayer *GetLayer(int nLayer) override;
     OGRLayer *ICreateLayer(const char *pszName,
-                           OGRSpatialReference *poSRS = nullptr,
+                           const OGRSpatialReference *poSRS = nullptr,
                            OGRwkbGeometryType eGType = wkbUnknown,
                            char **papszOptions = nullptr) override;
     int TestCapability(const char *pszCap) override;
@@ -261,7 +273,9 @@ class OGRGeoJSONDataSource final : public OGRDataSource
         return osJSonFlavor_;
     }
 
-    virtual void FlushCache(bool bAtClosing) override;
+    virtual CPLErr FlushCache(bool bAtClosing) override;
+
+    CPLErr Close() override;
 
     static const size_t SPACE_FOR_BBOX = 130;
 
@@ -294,7 +308,7 @@ class OGRGeoJSONDataSource final : public OGRDataSource
     //
     // Private utility functions
     //
-    void Clear();
+    bool Clear();
     int ReadFromFile(GDALOpenInfo *poOpenInfo, const char *pszUnprefixed);
     int ReadFromService(GDALOpenInfo *poOpenInfo, const char *pszSource);
     void LoadLayers(GDALOpenInfo *poOpenInfo, GeoJSONSourceType nSrcType,
@@ -303,6 +317,8 @@ class OGRGeoJSONDataSource final : public OGRDataSource
                             OGRGeoJSONReader *poReader);
     void CheckExceededTransferLimit(json_object *poObj);
     void RemoveJSonPStuff();
+
+    CPL_DISALLOW_COPY_ASSIGN(OGRGeoJSONDataSource)
 };
 
 #endif  // OGR_GEOJSON_H_INCLUDED

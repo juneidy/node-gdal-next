@@ -1722,6 +1722,7 @@ static OGRwkbGeometryType GetOGRGeometryType(XSTypeDefinition *poTypeDef)
         OGRwkbGeometryType eType;
     } asArray[] = {{"GeometryPropertyType", wkbUnknown},
                    {"PointPropertyType", wkbPoint},
+                   {"BoundingShapeType", wkbPolygon},
                    {"PolygonPropertyType", wkbPolygon},
                    {"LineStringPropertyType", wkbLineString},
                    {"MultiPointPropertyType", wkbMultiPoint},
@@ -1732,7 +1733,7 @@ static OGRwkbGeometryType GetOGRGeometryType(XSTypeDefinition *poTypeDef)
                    {"MultiSurfacePropertyType", wkbMultiSurface},
                    {"MultiSolidPropertyType", wkbUnknown},
                    // GeometryArrayPropertyType ?
-                   // GeometricPrimitivePropertyType ?
+                   {"GeometricPrimitivePropertyType", wkbUnknown},
                    {"CurvePropertyType", wkbCurve},
                    {"SurfacePropertyType", wkbSurface},
                    // SurfaceArrayPropertyType ?

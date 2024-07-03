@@ -42,18 +42,19 @@
 /*                               Usage()                                */
 /************************************************************************/
 
-static void Usage(const char *pszErrorMsg)
+static void Usage(bool bIsError, const char *pszErrorMsg)
 
 {
     fprintf(
-        stdout, "%s",
-        "\n"
-        "Usage: gdaltindex [-f format] [-tileindex field_name] "
+        bIsError ? stderr : stdout, "%s",
+        "Usage: gdaltindex [--help] [--help-general]\n"
+        "                  [-f <format>] [-tileindex <field_name>] "
         "[-write_absolute_path] \n"
-        "                  [-skip_different_projection] [-t_srs target_srs]\n"
+        "                  [-skip_different_projection] [-t_srs <target_srs>]\n"
         "                  [-src_srs_name field_name] [-src_srs_format "
-        "[AUTO|WKT|EPSG|PROJ]\n"
-        "                  [-lyr_name name] index_file [gdal_file]*\n"
+        "{AUTO|WKT|EPSG|PROJ}]\n"
+        "                  [-lyr_name <name>] <index_file> <gdal_file> "
+        "[<gdal_file>]...\n"
         "\n"
         "e.g.\n"
         "  % gdaltindex doq_index.shp doq/*.tif\n"
@@ -82,7 +83,7 @@ static void Usage(const char *pszErrorMsg)
     if (pszErrorMsg != nullptr)
         fprintf(stderr, "\nFAILURE: %s\n", pszErrorMsg);
 
-    exit(1);
+    exit(bIsError ? 1 : 0);
 }
 
 /************************************************************************/
@@ -93,8 +94,8 @@ static void Usage(const char *pszErrorMsg)
     do                                                                         \
     {                                                                          \
         if (iArg + nExtraArg >= argc)                                          \
-            Usage(CPLSPrintf("%s option requires %d argument(s)", argv[iArg],  \
-                             nExtraArg));                                      \
+            Usage(true, CPLSPrintf("%s option requires %d argument(s)",        \
+                                   argv[iArg], nExtraArg));                    \
     } while (false)
 
 typedef enum
@@ -155,7 +156,7 @@ MAIN_START(argc, argv)
             return 0;
         }
         else if (EQUAL(argv[iArg], "--help"))
-            Usage(nullptr);
+            Usage(false, nullptr);
         else if ((strcmp(argv[iArg], "-f") == 0 ||
                   strcmp(argv[iArg], "-of") == 0))
         {
@@ -207,7 +208,7 @@ MAIN_START(argc, argv)
                 eSrcSRSFormat = FORMAT_PROJ;
         }
         else if (argv[iArg][0] == '-')
-            Usage(CPLSPrintf("Unknown option name '%s'", argv[iArg]));
+            Usage(true, CPLSPrintf("Unknown option name '%s'", argv[iArg]));
         else if (index_filename == nullptr)
         {
             index_filename = argv[iArg];
@@ -217,12 +218,12 @@ MAIN_START(argc, argv)
     }
 
     if (index_filename == nullptr)
-        Usage("No index filename specified.");
+        Usage(true, "No index filename specified.");
     if (iArg == argc)
-        Usage("No file to index specified.");
+        Usage(true, "No file to index specified.");
     if (bSrcSRSFormatSpecified && pszSrcSRSName == nullptr)
-        Usage("-src_srs_name must be specified when -src_srs_format is "
-              "specified.");
+        Usage(true, "-src_srs_name must be specified when -src_srs_format is "
+                    "specified.");
 
     /* -------------------------------------------------------------------- */
     /*      Create and validate target SRS if given.                        */
@@ -455,10 +456,12 @@ MAIN_START(argc, argv)
         }
     }
 
+    int nRetCode = 0;
+
     /* -------------------------------------------------------------------- */
     /*      loop over GDAL files, processing.                               */
     /* -------------------------------------------------------------------- */
-    for (; iArg < argc; iArg++)
+    for (; nRetCode == 0 && iArg < argc; iArg++)
     {
         char *fileNameToWrite = nullptr;
         VSIStatBuf sStatBuf;
@@ -706,7 +709,7 @@ MAIN_START(argc, argv)
         if (OGR_L_CreateFeature(hLayer, hFeature) != OGRERR_NONE)
         {
             printf("Failed to create feature in shapefile.\n");
-            break;
+            nRetCode = 1;
         }
 
         OGR_F_Destroy(hFeature);
@@ -731,12 +734,13 @@ MAIN_START(argc, argv)
     if (hTargetSRS)
         OSRDestroySpatialReference(hTargetSRS);
 
-    GDALClose(hTileIndexDS);
+    if (GDALClose(hTileIndexDS) != CE_None)
+        nRetCode = 1;
 
     GDALDestroyDriverManager();
     OGRCleanupAll();
     CSLDestroy(argv);
 
-    exit(0);
+    exit(nRetCode);
 }
 MAIN_END

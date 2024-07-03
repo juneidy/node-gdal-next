@@ -720,10 +720,13 @@ OGRErr OGRWAsPLayer::CreateGeomField(OGRGeomFieldDefn *poGeomFieldIn,
                                      CPL_UNUSED int bApproxOK)
 {
     OGRGeomFieldDefn oFieldDefn(poGeomFieldIn);
-    if (oFieldDefn.GetSpatialRef())
+    auto poSRSOri = poGeomFieldIn->GetSpatialRef();
+    if (poSRSOri)
     {
-        oFieldDefn.GetSpatialRef()->SetAxisMappingStrategy(
-            OAMS_TRADITIONAL_GIS_ORDER);
+        auto poSRS = poSRSOri->Clone();
+        poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        oFieldDefn.SetSpatialRef(poSRS);
+        poSRS->Release();
     }
     poLayerDefn->AddGeomFieldDefn(&oFieldDefn);
 
@@ -753,7 +756,7 @@ OGRFeature *OGRWAsPLayer::GetNextRawFeature()
     if (!pszLine)
         return nullptr;
 
-    double dfValues[4];
+    double dfValues[4] = {0};
     int iNumValues = 0;
     {
         std::istringstream iss(pszLine);

@@ -643,13 +643,16 @@ bool OGRGMLDataSource::Open(GDALOpenInfo *poOpenInfo)
     }
 
     poReader->SetSourceFile(pszFilename);
-    static_cast<GMLReader *>(poReader)->SetIsWFSJointLayer(bIsWFSJointLayer);
+    auto poGMLReader = cpl::down_cast<GMLReader *>(poReader);
+    poGMLReader->SetIsWFSJointLayer(bIsWFSJointLayer);
     bEmptyAsNull =
         CPLFetchBool(poOpenInfo->papszOpenOptions, "EMPTY_AS_NULL", true);
-    static_cast<GMLReader *>(poReader)->SetEmptyAsNull(bEmptyAsNull);
-    static_cast<GMLReader *>(poReader)->SetReportAllAttributes(CPLFetchBool(
+    poGMLReader->SetEmptyAsNull(bEmptyAsNull);
+    poGMLReader->SetReportAllAttributes(CPLFetchBool(
         poOpenInfo->papszOpenOptions, "GML_ATTRIBUTES_TO_OGR_FIELDS",
         CPLTestBool(CPLGetConfigOption("GML_ATTRIBUTES_TO_OGR_FIELDS", "NO"))));
+    poGMLReader->SetUseBBOX(
+        CPLFetchBool(poOpenInfo->papszOpenOptions, "USE_BBOX", false));
 
     // Find <gml:description>, <gml:name> and <gml:boundedBy> and if it is
     // a standalone geometry
@@ -1608,18 +1611,29 @@ OGRGMLLayer *OGRGMLDataSource::TranslateGMLSchema(GMLFeatureClass *poClass)
     }
 
     // Report a COMPD_CS only if GML_REPORT_COMPD_CS is explicitly set to TRUE.
-    if (poSRS != nullptr &&
-        !CPLTestBool(CPLGetConfigOption("GML_REPORT_COMPD_CS", "FALSE")))
+    if (poSRS != nullptr && poSRS->IsCompound())
     {
-        OGR_SRSNode *poCOMPD_CS = poSRS->GetAttrNode("COMPD_CS");
-        if (poCOMPD_CS != nullptr)
+        const char *pszReportCompdCS =
+            CPLGetConfigOption("GML_REPORT_COMPD_CS", nullptr);
+        if (pszReportCompdCS == nullptr)
         {
-            OGR_SRSNode *poCandidateRoot = poCOMPD_CS->GetNode("PROJCS");
-            if (poCandidateRoot == nullptr)
-                poCandidateRoot = poCOMPD_CS->GetNode("GEOGCS");
-            if (poCandidateRoot != nullptr)
+            CPLDebug("GML", "Compound CRS detected but only horizontal part "
+                            "will be reported. Set the GML_REPORT_COMPD_CS=YES "
+                            "configuration option to get the Compound CRS");
+            pszReportCompdCS = "FALSE";
+        }
+        if (!CPLTestBool(pszReportCompdCS))
+        {
+            OGR_SRSNode *poCOMPD_CS = poSRS->GetAttrNode("COMPD_CS");
+            if (poCOMPD_CS != nullptr)
             {
-                poSRS->SetRoot(poCandidateRoot->Clone());
+                OGR_SRSNode *poCandidateRoot = poCOMPD_CS->GetNode("PROJCS");
+                if (poCandidateRoot == nullptr)
+                    poCandidateRoot = poCOMPD_CS->GetNode("GEOGCS");
+                if (poCandidateRoot != nullptr)
+                {
+                    poSRS->SetRoot(poCandidateRoot->Clone());
+                }
             }
         }
     }
@@ -1644,6 +1658,14 @@ OGRGMLLayer *OGRGMLDataSource::TranslateGMLSchema(GMLFeatureClass *poClass)
     {
         GMLGeometryPropertyDefn *poProperty =
             poClass->GetGeometryProperty(iField);
+
+        // Patch wrong .gfs file produced by earlier versions
+        if (poProperty->GetType() == wkbPolyhedralSurface &&
+            strcmp(poProperty->GetName(), "lod2Solid") == 0)
+        {
+            poProperty->SetType(wkbPolyhedralSurfaceZ);
+        }
+
         OGRGeomFieldDefn oField(poProperty->GetName(),
                                 (OGRwkbGeometryType)poProperty->GetType());
         if (poClass->GetGeometryPropertyCount() == 1 &&
@@ -1651,6 +1673,7 @@ OGRGMLLayer *OGRGMLDataSource::TranslateGMLSchema(GMLFeatureClass *poClass)
         {
             oField.SetType(wkbUnknown);
         }
+
         const auto &osSRSName = poProperty->GetSRSName();
         if (!osSRSName.empty())
         {
@@ -1707,6 +1730,7 @@ OGRGMLLayer *OGRGMLDataSource::TranslateGMLSchema(GMLFeatureClass *poClass)
         if (!bEmptyAsNull)
             oField.SetNullable(poProperty->IsNullable());
         oField.SetUnique(poProperty->IsUnique());
+        oField.SetComment(poProperty->GetDocumentation());
         poLayer->GetLayerDefn()->AddFieldDefn(&oField);
     }
 
@@ -1948,7 +1972,7 @@ void OGRGMLDataSource::WriteTopElements()
 /************************************************************************/
 
 OGRLayer *OGRGMLDataSource::ICreateLayer(const char *pszLayerName,
-                                         OGRSpatialReference *poSRS,
+                                         const OGRSpatialReference *poSRS,
                                          OGRwkbGeometryType eType,
                                          CPL_UNUSED char **papszOptions)
 {
@@ -2016,12 +2040,11 @@ OGRLayer *OGRGMLDataSource::ICreateLayer(const char *pszLayerName,
             "geometryProperty");
         if (poSRS != nullptr)
         {
-            // Clone it since mapogroutput assumes that it can destroys
-            // the SRS it has passed to use, instead of dereferencing it.
-            poSRS = poSRS->Clone();
-            poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-            poLayer->GetLayerDefn()->GetGeomFieldDefn(0)->SetSpatialRef(poSRS);
-            poSRS->Dereference();
+            auto poSRSClone = poSRS->Clone();
+            poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+            poLayer->GetLayerDefn()->GetGeomFieldDefn(0)->SetSpatialRef(
+                poSRSClone);
+            poSRSClone->Dereference();
         }
     }
 
@@ -2592,6 +2615,21 @@ void OGRGMLDataSource::InsertHeader()
                      strcmp(poFieldDefn->GetNameRef(), "fid") == 0)
                 continue;
 
+            const auto AddComment = [fpSchema, poFieldDefn]()
+            {
+                if (!poFieldDefn->GetComment().empty())
+                {
+                    char *pszComment = CPLEscapeString(
+                        poFieldDefn->GetComment().c_str(), -1, CPLES_XML);
+                    PrintLine(fpSchema,
+                              "          "
+                              "<xs:annotation><xs:documentation>%s</"
+                              "xs:documentation></xs:annotation>",
+                              pszComment);
+                    CPLFree(pszComment);
+                }
+            };
+
             int nMinOccurs = poFieldDefn->IsNullable() ? 0 : 1;
             const OGRFieldType eType = poFieldDefn->GetType();
             if (eType == OFTInteger || eType == OFTIntegerList)
@@ -2604,6 +2642,7 @@ void OGRGMLDataSource::InsertHeader()
                           "minOccurs=\"%d\" maxOccurs=\"%s\">",
                           poFieldDefn->GetNameRef(), nMinOccurs,
                           eType == OFTIntegerList ? "unbounded" : "1");
+                AddComment();
                 PrintLine(fpSchema, "          <xs:simpleType>");
                 if (poFieldDefn->GetSubType() == OFSTBoolean)
                 {
@@ -2639,6 +2678,7 @@ void OGRGMLDataSource::InsertHeader()
                           "minOccurs=\"%d\" maxOccurs=\"%s\">",
                           poFieldDefn->GetNameRef(), nMinOccurs,
                           eType == OFTInteger64List ? "unbounded" : "1");
+                AddComment();
                 PrintLine(fpSchema, "          <xs:simpleType>");
                 if (poFieldDefn->GetSubType() == OFSTBoolean)
                 {
@@ -2675,6 +2715,7 @@ void OGRGMLDataSource::InsertHeader()
                           "minOccurs=\"%d\" maxOccurs=\"%s\">",
                           poFieldDefn->GetNameRef(), nMinOccurs,
                           eType == OFTRealList ? "unbounded" : "1");
+                AddComment();
                 PrintLine(fpSchema, "          <xs:simpleType>");
                 if (poFieldDefn->GetSubType() == OFSTFloat32)
                     PrintLine(fpSchema,
@@ -2703,6 +2744,7 @@ void OGRGMLDataSource::InsertHeader()
                           "minOccurs=\"%d\" maxOccurs=\"%s\">",
                           poFieldDefn->GetNameRef(), nMinOccurs,
                           eType == OFTStringList ? "unbounded" : "1");
+                AddComment();
                 PrintLine(fpSchema, "          <xs:simpleType>");
                 PrintLine(fpSchema,
                           "            <xs:restriction base=\"xs:string\">");
@@ -2722,6 +2764,7 @@ void OGRGMLDataSource::InsertHeader()
                           "        <xs:element name=\"%s\" nillable=\"true\" "
                           "minOccurs=\"%d\" maxOccurs=\"1\" type=\"xs:date\">",
                           poFieldDefn->GetNameRef(), nMinOccurs);
+                AddComment();
                 PrintLine(fpSchema, "        </xs:element>");
             }
             else if (eType == OFTTime)
@@ -2730,6 +2773,7 @@ void OGRGMLDataSource::InsertHeader()
                           "        <xs:element name=\"%s\" nillable=\"true\" "
                           "minOccurs=\"%d\" maxOccurs=\"1\" type=\"xs:time\">",
                           poFieldDefn->GetNameRef(), nMinOccurs);
+                AddComment();
                 PrintLine(fpSchema, "        </xs:element>");
             }
             else if (eType == OFTDateTime)
@@ -2739,6 +2783,7 @@ void OGRGMLDataSource::InsertHeader()
                     "        <xs:element name=\"%s\" nillable=\"true\" "
                     "minOccurs=\"%d\" maxOccurs=\"1\" type=\"xs:dateTime\">",
                     poFieldDefn->GetNameRef(), nMinOccurs);
+                AddComment();
                 PrintLine(fpSchema, "        </xs:element>");
             }
             else

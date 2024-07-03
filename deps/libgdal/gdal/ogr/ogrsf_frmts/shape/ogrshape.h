@@ -54,8 +54,10 @@
 /* ==================================================================== */
 OGRFeature *SHPReadOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
                               OGRFeatureDefn *poDefn, int iShape,
-                              SHPObject *psShape, const char *pszSHPEncoding);
-OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape);
+                              SHPObject *psShape, const char *pszSHPEncoding,
+                              bool &bHasWarnedWrongWindingOrder);
+OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape,
+                              bool &bHasWarnedWrongWindingOrder);
 OGRFeatureDefn *SHPReadOGRFeatureDefn(const char *pszName, SHPHandle hSHP,
                                       DBFHandle hDBF,
                                       const char *pszSHPEncoding,
@@ -91,7 +93,7 @@ class OGRShapeGeomFieldDefn final : public OGRGeomFieldDefn
         CPLFree(pszFullName);
     }
 
-    OGRSpatialReference *GetSpatialRef() const override;
+    const OGRSpatialReference *GetSpatialRef() const override;
     void SetSRSSet()
     {
         bSRSSet = true;
@@ -182,6 +184,7 @@ class OGRShapeLayer final : public OGRAbstractProxiedLayer
 
     bool bCreateSpatialIndexAtClose;
     bool bRewindOnWrite;
+    bool m_bHasWarnedWrongWindingOrder = false;
 
     bool m_bAutoRepack;
     typedef enum
@@ -227,10 +230,13 @@ class OGRShapeLayer final : public OGRAbstractProxiedLayer
 
     OGRShapeLayer(OGRShapeDataSource *poDSIn, const char *pszName,
                   SHPHandle hSHP, DBFHandle hDBF,
-                  const OGRSpatialReference *poSRS, bool bSRSSet, bool bUpdate,
+                  const OGRSpatialReference *poSRS, bool bSRSSet,
+                  const std::string &osPrjFilename, bool bUpdate,
                   OGRwkbGeometryType eReqType,
                   char **papszCreateOptions = nullptr);
     virtual ~OGRShapeLayer();
+
+    GDALDataset *GetDataset() override;
 
     void ResetReading() override;
     OGRFeature *GetNextFeature() override;
@@ -296,7 +302,6 @@ class OGRShapeDataSource final : public OGRDataSource
     OGRShapeLayer **papoLayers;
     int nLayers;
     char *pszName;
-    bool bDSUpdate;
     bool bSingleFileDataSource;
     OGRLayerPool *poPool;
 
@@ -345,7 +350,7 @@ class OGRShapeDataSource final : public OGRDataSource
     OGRLayer *GetLayer(int) override;
     OGRLayer *GetLayerByName(const char *) override;
 
-    OGRLayer *ICreateLayer(const char *, OGRSpatialReference * = nullptr,
+    OGRLayer *ICreateLayer(const char *, const OGRSpatialReference * = nullptr,
                            OGRwkbGeometryType = wkbUnknown,
                            char ** = nullptr) override;
 

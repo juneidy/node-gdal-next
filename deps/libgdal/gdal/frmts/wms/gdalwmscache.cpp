@@ -116,7 +116,7 @@ class GDALWMSFileCache : public GDALWMSCacheImpl
     virtual GDALDataset *GetDataset(const char *pszKey,
                                     char **papszOpenOptions) const override
     {
-        return reinterpret_cast<GDALDataset *>(GDALOpenEx(
+        return GDALDataset::FromHandle(GDALOpenEx(
             GetFilePath(pszKey),
             GDAL_OF_RASTER | GDAL_OF_READONLY | GDAL_OF_VERBOSE_ERROR, nullptr,
             papszOpenOptions, nullptr));
@@ -252,8 +252,8 @@ CPLErr GDALWMSCache::Initialize(const char *pszUrl, CPLXMLNode *pConfig)
     // Separate folder for each unique dataset url
     if (CPLTestBool(CPLGetXMLValue(pConfig, "Unique", "True")))
     {
-        m_osCachePath =
-            CPLFormFilename(m_osCachePath, CPLMD5String(pszUrl), nullptr);
+        m_osCachePath = CPLFormFilename(
+            m_osCachePath, CPLMD5String(pszUrl ? pszUrl : ""), nullptr);
     }
 
     // TODO: Add sqlite db cache type

@@ -128,6 +128,10 @@ CPLErr swq_select::preparse(const char *select_statement,
         return CE_Failure;
     }
 
+    // Restore poCurSelect as it might have been modified by UNION ALL
+    context.poCurSelect = this;
+    swq_fixup(&context);
+
     postpreparse();
 
     return CE_None;
@@ -1071,9 +1075,11 @@ CPLErr swq_select::parse(swq_field_list *field_list,
         }
 
         // Identify column function if present.
-        if ((def->col_func == SWQCF_MIN || def->col_func == SWQCF_MAX ||
-             def->col_func == SWQCF_AVG || def->col_func == SWQCF_SUM) &&
-            (def->field_type == SWQ_STRING || def->field_type == SWQ_GEOMETRY))
+        if (((def->col_func == SWQCF_MIN || def->col_func == SWQCF_MAX ||
+              def->col_func == SWQCF_AVG || def->col_func == SWQCF_SUM) &&
+             def->field_type == SWQ_GEOMETRY) ||
+            ((def->col_func == SWQCF_AVG || def->col_func == SWQCF_SUM) &&
+             def->field_type == SWQ_STRING))
         {
             // Possibly this is already enforced by the checker?
             const swq_operation *op = swq_op_registrar::GetOperator(

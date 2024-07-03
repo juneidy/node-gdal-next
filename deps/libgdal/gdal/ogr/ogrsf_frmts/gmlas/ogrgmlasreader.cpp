@@ -1250,6 +1250,28 @@ void GMLASReader::startElement(const XMLCh *const uri,
         return;
     }
 
+    if (m_bInitialPass)
+    {
+        // Collect the gml:boundedBy/gml:Envelope@srsDimension attribute
+        if (m_bInGMLBoundedByLevel1 && m_nLevel == 2 &&
+            m_osXPath == "gml:Envelope")
+        {
+            for (unsigned int i = 0; i < attrs.getLength(); i++)
+            {
+                const CPLString &osAttrLocalname(
+                    transcode(attrs.getLocalName(i), m_osAttrLocalName));
+                if (osAttrLocalname == "srsDimension")
+                {
+                    const CPLString &osAttrValue(
+                        transcode(attrs.getValue(i), m_osAttrValue));
+                    m_nDefaultSrsDimension = atoi(osAttrValue.c_str());
+                }
+            }
+        }
+        m_bInGMLBoundedByLevel1 =
+            (m_nLevel == 1 && m_osXPath == "gml:boundedBy");
+    }
+
     CPLAssert(m_aoFeaturesReady.empty());
 
     // Look which layer might match the current XPath
@@ -2011,7 +2033,7 @@ void GMLASReader::ProcessAttributes(const Attributes &attrs)
 
                     if (m_oCurCtxt.m_poLayer->IsGeneratedIDField())
                     {
-                        CPLString osFeaturePKID(
+                        const std::string osFeaturePKID(
                             m_oCurCtxt.m_poFeature->GetFieldAsString(
                                 m_oCurCtxt.m_poLayer->GetIDFieldIdx()));
                         m_oMapElementIdToPKID[osAttrValue] = osFeaturePKID;
@@ -2598,8 +2620,7 @@ void GMLASReader::endElement(const XMLCh *const uri,
     while (!m_aoStackContext.empty() &&
            m_aoStackContext.back().m_nLevel >= m_nLevel)
     {
-        std::map<OGRLayer *, int> oMapCounter =
-            m_aoStackContext.back().m_oMapCounter;
+        auto oMapCounter = m_aoStackContext.back().m_oMapCounter;
         if (!m_aoStackContext.back().m_osCurSubXPath.empty())
         {
 #ifdef DEBUG_VERBOSE
@@ -2660,7 +2681,7 @@ void GMLASReader::endElement(const XMLCh *const uri,
             }
             m_nCurFieldIdx = -1;
         }
-        m_oCurCtxt.m_oMapCounter = oMapCounter;
+        m_oCurCtxt.m_oMapCounter = std::move(oMapCounter);
 
 #ifdef DEBUG_VERBOSE
         CPLDebug("GMLAS", "m_oCurCtxt = ");
@@ -2957,6 +2978,33 @@ static const char *GMLASGetSRSName(CPLXMLNode *psNode)
 }
 
 /************************************************************************/
+/*                    AddMissingSRSDimension()                          */
+/************************************************************************/
+
+static void AddMissingSRSDimension(CPLXMLNode *psRoot, int nDefaultSrsDimension)
+{
+    for (CPLXMLNode *psIter = psRoot->psChild; psIter; psIter = psIter->psNext)
+    {
+        if (psIter->eType == CXT_Element)
+        {
+            if (CPLGetXMLValue(psIter, "srsDimension", nullptr) == nullptr)
+            {
+                if (strcmp(psIter->pszValue, "gml:posList") == 0)
+                {
+                    CPLAddXMLAttributeAndValue(
+                        psIter, "srsDimension",
+                        CPLSPrintf("%d", nDefaultSrsDimension));
+                }
+                else
+                {
+                    AddMissingSRSDimension(psIter, nDefaultSrsDimension);
+                }
+            }
+        }
+    }
+}
+
+/************************************************************************/
 /*                            ProcessGeometry()                         */
 /************************************************************************/
 
@@ -2995,6 +3043,12 @@ void GMLASReader::ProcessGeometry(CPLXMLNode *psRoot)
         return;
     }
 
+    if (m_nDefaultSrsDimension != 0 &&
+        CPLGetXMLValue(psRoot, "srsDimension", nullptr) == nullptr)
+    {
+        AddMissingSRSDimension(psRoot, m_nDefaultSrsDimension);
+    }
+
 #ifdef DEBUG_VERBOSE
     {
         char *pszXML = CPLSerializeXMLTree(psRoot);
@@ -3004,7 +3058,7 @@ void GMLASReader::ProcessGeometry(CPLXMLNode *psRoot)
 #endif
 
     OGRGeometry *poGeom =
-        reinterpret_cast<OGRGeometry *>(OGR_G_CreateFromGMLTree(psRoot));
+        OGRGeometry::FromHandle(OGR_G_CreateFromGMLTree(psRoot));
     if (poGeom != nullptr)
     {
         const char *pszSRSName = GMLASGetSRSName(psRoot);

@@ -37,6 +37,7 @@
 #include <cstring>
 #include <cwchar>
 #include <algorithm>
+#include <limits>
 #include <string>
 
 #include "cpl_conv.h"
@@ -234,14 +235,44 @@ static void XMLSerializeGeomFieldBase(CPLXMLNode *psRoot,
     CPLCreateXMLElementAndValue(psSpatialReference, "HighPrecision", "true");
     if (poSRS)
     {
-        const char *pszAuthorityName = poSRS->GetAuthorityName(nullptr);
-        const char *pszAuthorityCode = poSRS->GetAuthorityCode(nullptr);
-        if (pszAuthorityName && pszAuthorityCode &&
-            (EQUAL(pszAuthorityName, "EPSG") ||
-             EQUAL(pszAuthorityName, "ESRI")))
+        if (CPLTestBool(CPLGetConfigOption("OPENFILEGDB_WRITE_WKID", "YES")))
         {
-            CPLCreateXMLElementAndValue(psSpatialReference, "WKID",
-                                        pszAuthorityCode);
+            const char *pszKey = poSRS->IsProjected() ? "PROJCS" : "GEOGCS";
+            const char *pszAuthorityName = poSRS->GetAuthorityName(pszKey);
+            const char *pszAuthorityCode = poSRS->GetAuthorityCode(pszKey);
+            if (pszAuthorityName && pszAuthorityCode &&
+                (EQUAL(pszAuthorityName, "EPSG") ||
+                 EQUAL(pszAuthorityName, "ESRI")))
+            {
+                CPLCreateXMLElementAndValue(psSpatialReference, "WKID",
+                                            pszAuthorityCode);
+                if (CPLTestBool(CPLGetConfigOption(
+                        "OPENFILEGDB_WRITE_LATESTWKID", "YES")))
+                {
+                    CPLCreateXMLElementAndValue(psSpatialReference,
+                                                "LatestWKID", pszAuthorityCode);
+                }
+            }
+        }
+
+        if (poSRS->IsCompound() &&
+            CPLTestBool(CPLGetConfigOption("OPENFILEGDB_WRITE_VCSWKID", "YES")))
+        {
+            const char *pszAuthorityName = poSRS->GetAuthorityName("VERT_CS");
+            const char *pszAuthorityCode = poSRS->GetAuthorityCode("VERT_CS");
+            if (pszAuthorityName && pszAuthorityCode &&
+                (EQUAL(pszAuthorityName, "EPSG") ||
+                 EQUAL(pszAuthorityName, "ESRI")))
+            {
+                CPLCreateXMLElementAndValue(psSpatialReference, "VCSWKID",
+                                            pszAuthorityCode);
+                if (CPLTestBool(CPLGetConfigOption(
+                        "OPENFILEGDB_WRITE_LATESTVCSWKID", "YES")))
+                {
+                    CPLCreateXMLElementAndValue(
+                        psSpatialReference, "LatestVCSWKID", pszAuthorityCode);
+                }
+            }
         }
     }
 }
@@ -468,7 +499,7 @@ bool OGROpenFileGDBLayer::Create(const OGRSpatialReference *poSRS)
                 CPLSearchXMLNode(psParentTree, "=DEFeatureDataset");
             if (psParentInfo != nullptr)
             {
-                poFeatureDatasetSRS.reset(BuildSRS(psParentInfo));
+                poFeatureDatasetSRS.reset(m_poDS->BuildSRS(psParentInfo));
             }
             CPLDestroyXMLNode(psParentTree);
         }
@@ -892,7 +923,8 @@ static CPLXMLNode *CreateXMLFieldDefinition(const OGRFieldDefn *poFieldDefn,
 /************************************************************************/
 
 static bool GetDefault(const OGRFieldDefn *poField, FileGDBFieldType eType,
-                       OGRField &sDefault, std::string &osDefaultVal)
+                       OGRField &sDefault, std::string &osDefaultVal,
+                       bool bApproxOK)
 {
     sDefault = FileGDBField::UNSET_FIELD;
     const char *pszDefault = poField->GetDefault();
@@ -919,6 +951,16 @@ static bool GetDefault(const OGRFieldDefn *poField, FileGDBFieldType eType,
         else if (eType == FGFT_DATETIME)
         {
             osDefaultVal = pszDefault;
+            if (osDefaultVal == "CURRENT_TIMESTAMP" ||
+                osDefaultVal == "CURRENT_TIME" ||
+                osDefaultVal == "CURRENT_DATE")
+            {
+                CPLError(bApproxOK ? CE_Warning : CE_Failure, CPLE_AppDefined,
+                         "%s is not supported as a default value in File "
+                         "Geodatabase",
+                         osDefaultVal.c_str());
+                return bApproxOK;
+            }
             if (osDefaultVal[0] == '\'' && osDefaultVal.back() == '\'')
             {
                 osDefaultVal = osDefaultVal.substr(1);
@@ -929,7 +971,12 @@ static bool GetDefault(const OGRFieldDefn *poField, FileGDBFieldType eType,
                 CPLFree(pszTmp);
             }
             if (!OGRParseDate(osDefaultVal.c_str(), &sDefault, 0))
-                return false;
+            {
+                CPLError(bApproxOK ? CE_Warning : CE_Failure, CPLE_AppDefined,
+                         "Cannot parse %s as a date time",
+                         osDefaultVal.c_str());
+                return bApproxOK;
+            }
         }
     }
     return true;
@@ -1060,6 +1107,28 @@ OGRErr OGROpenFileGDBLayer::CreateField(OGRFieldDefn *poField, int bApproxOK)
     OGRFieldDefn oField(poField);
     poField = &oField;
 
+    const std::string osFidColumn = GetFIDColumn();
+    if (!osFidColumn.empty() &&
+        EQUAL(poField->GetNameRef(), osFidColumn.c_str()))
+    {
+        if (poField->GetType() != OFTInteger &&
+            poField->GetType() != OFTInteger64 &&
+            // typically a GeoPackage exported with QGIS as a shapefile and
+            // re-imported See https://github.com/qgis/QGIS/pull/43118
+            !(poField->GetType() == OFTReal && poField->GetWidth() <= 20 &&
+              poField->GetPrecision() == 0))
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Wrong field type for %s : %d", poField->GetNameRef(),
+                     poField->GetType());
+            return OGRERR_FAILURE;
+        }
+
+        m_iFIDAsRegularColumnIndex = m_poFeatureDefn->GetFieldCount();
+        m_poFeatureDefn->AddFieldDefn(poField);
+        return OGRERR_NONE;
+    }
+
     const std::string osFieldNameOri(poField->GetNameRef());
     const std::string osFieldName = GetLaunderedFieldName(osFieldNameOri);
     if (osFieldName != osFieldNameOri)
@@ -1164,7 +1233,8 @@ OGRErr OGROpenFileGDBLayer::CreateField(OGRFieldDefn *poField, int bApproxOK)
 
     OGRField sDefault = FileGDBField::UNSET_FIELD;
     std::string osDefaultVal;
-    if (!GetDefault(poField, eType, sDefault, osDefaultVal))
+    if (!GetDefault(poField, eType, sDefault, osDefaultVal,
+                    CPL_TO_BOOL(bApproxOK)))
         return OGRERR_FAILURE;
 
     if (!poField->GetDomainName().empty() &&
@@ -1258,6 +1328,13 @@ OGRErr OGROpenFileGDBLayer::AlterFieldDefn(int iFieldToAlter,
         return OGRERR_FAILURE;
     }
 
+    if (iFieldToAlter == m_iFIDAsRegularColumnIndex)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported, "Cannot alter field %s",
+                 GetFIDColumn());
+        return OGRERR_FAILURE;
+    }
+
     const int nGDBIdx = m_poLyrTable->GetFieldIdx(
         m_poFeatureDefn->GetFieldDefn(iFieldToAlter)->GetNameRef());
     if (nGDBIdx < 0)
@@ -1299,12 +1376,11 @@ OGRErr OGROpenFileGDBLayer::AlterFieldDefn(int iFieldToAlter,
 
             oField.SetName(poNewFieldDefn->GetNameRef());
         }
-        oField.SetAlternativeName(poNewFieldDefn->GetAlternativeNameRef());
     }
     if (nFlagsIn & ALTER_WIDTH_PRECISION_FLAG)
     {
-        oField.SetWidth(poNewFieldDefn->GetWidth());
-        oField.SetPrecision(poNewFieldDefn->GetPrecision());
+        if (oField.GetType() == OFTString)
+            oField.SetWidth(poNewFieldDefn->GetWidth());
     }
     if (nFlagsIn & ALTER_DEFAULT_FLAG)
     {
@@ -1324,6 +1400,10 @@ OGRErr OGROpenFileGDBLayer::AlterFieldDefn(int iFieldToAlter,
     if (nFlagsIn & ALTER_DOMAIN_FLAG)
     {
         oField.SetDomainName(poNewFieldDefn->GetDomainName());
+    }
+    if (nFlagsIn & ALTER_ALTERNATIVE_NAME_FLAG)
+    {
+        oField.SetAlternativeName(poNewFieldDefn->GetAlternativeNameRef());
     }
 
     const auto eType = GetGDBFieldType(&oField);
@@ -1346,7 +1426,8 @@ OGRErr OGROpenFileGDBLayer::AlterFieldDefn(int iFieldToAlter,
 
     OGRField sDefault = FileGDBField::UNSET_FIELD;
     std::string osDefaultVal;
-    if (!GetDefault(&oField, eType, sDefault, osDefaultVal))
+    if (!GetDefault(&oField, eType, sDefault, osDefaultVal,
+                    /*bApproxOK=*/false))
         return OGRERR_FAILURE;
 
     const char *pszAlias = oField.GetAlternativeNameRef();
@@ -1364,7 +1445,6 @@ OGRErr OGROpenFileGDBLayer::AlterFieldDefn(int iFieldToAlter,
     poFieldDefn->SetType(oField.GetType());
     poFieldDefn->SetSubType(oField.GetSubType());
     poFieldDefn->SetWidth(oField.GetWidth());
-    poFieldDefn->SetPrecision(oField.GetPrecision());
     poFieldDefn->SetDefault(oField.GetDefault());
     poFieldDefn->SetNullable(oField.IsNullable());
     poFieldDefn->SetDomainName(oField.GetDomainName());
@@ -1716,6 +1796,13 @@ OGRErr OGROpenFileGDBLayer::DeleteField(int iFieldToDelete)
         return OGRERR_FAILURE;
     }
 
+    if (iFieldToDelete == m_iFIDAsRegularColumnIndex)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported, "Cannot delete field %s",
+                 GetFIDColumn());
+        return OGRERR_FAILURE;
+    }
+
     const auto poFieldDefn = m_poFeatureDefn->GetFieldDefn(iFieldToDelete);
     const int nGDBIdx = m_poLyrTable->GetFieldIdx(poFieldDefn->GetNameRef());
     if (nGDBIdx < 0)
@@ -1731,6 +1818,9 @@ OGRErr OGROpenFileGDBLayer::DeleteField(int iFieldToDelete)
         std::string(poFieldDefn->GetDomainName());
 
     m_poFeatureDefn->DeleteFieldDefn(iFieldToDelete);
+
+    if (m_iFIDAsRegularColumnIndex > iFieldToDelete)
+        m_iFIDAsRegularColumnIndex--;
 
     if (iFieldToDelete < m_iAreaField)
         m_iAreaField--;
@@ -1870,7 +1960,8 @@ static double GetLength(const OGRMultiSurface *poMS)
 
 bool OGROpenFileGDBLayer::PrepareFileGDBFeature(OGRFeature *poFeature,
                                                 std::vector<OGRField> &fields,
-                                                const OGRGeometry *&poGeom)
+                                                const OGRGeometry *&poGeom,
+                                                bool bUpdate)
 {
     // Check geometry type
     poGeom = poFeature->GetGeometryRef();
@@ -1958,8 +2049,12 @@ bool OGROpenFileGDBLayer::PrepareFileGDBFeature(OGRFeature *poFeature,
         }
 
         // Treat empty geometries as NULL, like the FileGDB driver
-        if (poGeom->IsEmpty())
+        if (poGeom->IsEmpty() &&
+            !CPLTestBool(CPLGetConfigOption(
+                "OGR_OPENFILEGDB_WRITE_EMPTY_GEOMETRY", "NO")))
+        {
             poGeom = nullptr;
+        }
     }
 
     if (m_iAreaField >= 0)
@@ -2011,6 +2106,8 @@ bool OGROpenFileGDBLayer::PrepareFileGDBFeature(OGRFeature *poFeature,
     m_aosTempStrings.clear();
     for (int i = 0; i < m_poFeatureDefn->GetFieldCount(); ++i)
     {
+        if (i == m_iFIDAsRegularColumnIndex)
+            continue;
         const auto poFieldDefn = m_poFeatureDefn->GetFieldDefn(i);
         const int idxFileGDB =
             m_poLyrTable->GetFieldIdx(poFieldDefn->GetNameRef());
@@ -2115,23 +2212,83 @@ bool OGROpenFileGDBLayer::PrepareFileGDBFeature(OGRFeature *poFeature,
                 break;
             case FGFT_GLOBALID:
             {
-                if (poFeature->GetRawFieldRef(i)->String[0] != '\0' &&
-                    CPLTestBool(CPLGetConfigOption(
-                        "OPENFILEGDB_REGENERATE_GLOBALID", "YES")))
+                if (bUpdate)
                 {
-                    CPLError(CE_Warning, CPLE_AppDefined,
-                             "Value found in a GlobalID field. It will be "
-                             "replaced by a "
-                             "newly generated UUID.");
+                    m_aosTempStrings.emplace_back(
+                        poFeature->GetFieldAsString(i));
+                    fields[idxFileGDB].String = &m_aosTempStrings.back()[0];
                 }
-                m_aosTempStrings.emplace_back(OFGDBGenerateUUID());
-                fields[idxFileGDB].String = &m_aosTempStrings.back()[0];
+                else if (poFeature->GetRawFieldRef(i)->String[0] != '\0')
+                {
+                    if (CPLTestBool(CPLGetConfigOption(
+                            "OPENFILEGDB_REGENERATE_GLOBALID", "YES")))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Value found in a GlobalID field. It will be "
+                                 "replaced by a "
+                                 "newly generated UUID.");
+                        m_aosTempStrings.emplace_back(OFGDBGenerateUUID());
+                        fields[idxFileGDB].String = &m_aosTempStrings.back()[0];
+                    }
+                    else
+                    {
+                        m_aosTempStrings.emplace_back(
+                            poFeature->GetFieldAsString(i));
+                        fields[idxFileGDB].String = &m_aosTempStrings.back()[0];
+                    }
+                }
+                else
+                {
+                    m_aosTempStrings.emplace_back(OFGDBGenerateUUID());
+                    fields[idxFileGDB].String = &m_aosTempStrings.back()[0];
+                }
                 break;
             }
         }
     }
 
     return true;
+}
+
+/************************************************************************/
+/*                   CheckFIDAndFIDColumnConsistency()                  */
+/************************************************************************/
+
+static bool CheckFIDAndFIDColumnConsistency(const OGRFeature *poFeature,
+                                            int iFIDAsRegularColumnIndex)
+{
+    bool ok = false;
+    if (!poFeature->IsFieldSetAndNotNull(iFIDAsRegularColumnIndex))
+    {
+        // nothing to do
+    }
+    else if (poFeature->GetDefnRef()
+                 ->GetFieldDefn(iFIDAsRegularColumnIndex)
+                 ->GetType() == OFTReal)
+    {
+        const double dfFID =
+            poFeature->GetFieldAsDouble(iFIDAsRegularColumnIndex);
+        if (dfFID >= static_cast<double>(std::numeric_limits<int64_t>::min()) &&
+            dfFID <= static_cast<double>(std::numeric_limits<int64_t>::max()))
+        {
+            const auto nFID = static_cast<GIntBig>(dfFID);
+            if (nFID == poFeature->GetFID())
+            {
+                ok = true;
+            }
+        }
+    }
+    else if (poFeature->GetFieldAsInteger64(iFIDAsRegularColumnIndex) ==
+             poFeature->GetFID())
+    {
+        ok = true;
+    }
+    if (!ok)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Inconsistent values of FID and field of same name");
+    }
+    return ok;
 }
 
 /************************************************************************/
@@ -2152,6 +2309,54 @@ OGRErr OGROpenFileGDBLayer::ICreateFeature(OGRFeature *poFeature)
         return OGRERR_FAILURE;
     }
 
+    /* In case the FID column has also been created as a regular field */
+    if (m_iFIDAsRegularColumnIndex >= 0)
+    {
+        if (poFeature->GetFID() == OGRNullFID)
+        {
+            if (poFeature->IsFieldSetAndNotNull(m_iFIDAsRegularColumnIndex))
+            {
+                if (m_poFeatureDefn->GetFieldDefn(m_iFIDAsRegularColumnIndex)
+                        ->GetType() == OFTReal)
+                {
+                    bool ok = false;
+                    const double dfFID =
+                        poFeature->GetFieldAsDouble(m_iFIDAsRegularColumnIndex);
+                    if (dfFID >= static_cast<double>(
+                                     std::numeric_limits<int64_t>::min()) &&
+                        dfFID <= static_cast<double>(
+                                     std::numeric_limits<int64_t>::max()))
+                    {
+                        const auto nFID = static_cast<GIntBig>(dfFID);
+                        if (static_cast<double>(nFID) == dfFID)
+                        {
+                            poFeature->SetFID(nFID);
+                            ok = true;
+                        }
+                    }
+                    if (!ok)
+                    {
+                        CPLError(
+                            CE_Failure, CPLE_AppDefined,
+                            "Value of FID %g cannot be parsed to an Integer64",
+                            dfFID);
+                        return OGRERR_FAILURE;
+                    }
+                }
+                else
+                {
+                    poFeature->SetFID(poFeature->GetFieldAsInteger64(
+                        m_iFIDAsRegularColumnIndex));
+                }
+            }
+        }
+        else if (!CheckFIDAndFIDColumnConsistency(poFeature,
+                                                  m_iFIDAsRegularColumnIndex))
+        {
+            return OGRERR_FAILURE;
+        }
+    }
+
     const auto nFID64Bit = poFeature->GetFID();
     if (nFID64Bit < -1 || nFID64Bit == 0 || nFID64Bit > INT_MAX)
     {
@@ -2166,7 +2371,7 @@ OGRErr OGROpenFileGDBLayer::ICreateFeature(OGRFeature *poFeature)
 
     const OGRGeometry *poGeom = nullptr;
     std::vector<OGRField> fields;
-    if (!PrepareFileGDBFeature(poFeature, fields, poGeom))
+    if (!PrepareFileGDBFeature(poFeature, fields, poGeom, /*bUpdate=*/false))
         return OGRERR_FAILURE;
 
     m_eSpatialIndexState = SPI_INVALID;
@@ -2197,6 +2402,13 @@ OGRErr OGROpenFileGDBLayer::ISetFeature(OGRFeature *poFeature)
         return OGRERR_FAILURE;
     }
 
+    /* In case the FID column has also been created as a regular field */
+    if (m_iFIDAsRegularColumnIndex >= 0 &&
+        !CheckFIDAndFIDColumnConsistency(poFeature, m_iFIDAsRegularColumnIndex))
+    {
+        return OGRERR_FAILURE;
+    }
+
     const GIntBig nFID = poFeature->GetFID();
     if (nFID <= 0 || !CPL_INT64_FITS_ON_INT32(nFID))
         return OGRERR_NON_EXISTING_FEATURE;
@@ -2209,7 +2421,7 @@ OGRErr OGROpenFileGDBLayer::ISetFeature(OGRFeature *poFeature)
 
     const OGRGeometry *poGeom = nullptr;
     std::vector<OGRField> fields;
-    if (!PrepareFileGDBFeature(poFeature, fields, poGeom))
+    if (!PrepareFileGDBFeature(poFeature, fields, poGeom, /*bUpdate=*/true))
         return OGRERR_FAILURE;
 
     m_eSpatialIndexState = SPI_INVALID;
@@ -2325,7 +2537,7 @@ void OGROpenFileGDBLayer::RefreshXMLDefinitionInMemory()
             CPLCreateXMLElementAndValue(GPFieldInfoEx, "FieldType",
                                         "esriFieldTypeOID");
             CPLCreateXMLElementAndValue(GPFieldInfoEx, "IsNullable", "false");
-            CPLCreateXMLElementAndValue(GPFieldInfoEx, "Length", "12");
+            CPLCreateXMLElementAndValue(GPFieldInfoEx, "Length", "4");
             CPLCreateXMLElementAndValue(GPFieldInfoEx, "Precision", "0");
             CPLCreateXMLElementAndValue(GPFieldInfoEx, "Scale", "0");
             CPLCreateXMLElementAndValue(GPFieldInfoEx, "Required", "true");

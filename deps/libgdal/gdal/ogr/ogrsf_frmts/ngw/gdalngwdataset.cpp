@@ -39,7 +39,8 @@ class NGWWrapperRasterBand : public GDALProxyRasterBand
     GDALRasterBand *poBaseBand;
 
   protected:
-    virtual GDALRasterBand *RefUnderlyingRasterBand() const override
+    virtual GDALRasterBand *
+    RefUnderlyingRasterBand(bool /*bForceOpen*/) const override
     {
         return poBaseBand;
     }
@@ -380,7 +381,7 @@ bool OGRNGWDataset::Init(int nOpenFlagsIn)
 
                 CPLFree(pszRasterUrl);
 
-                poRasterDS = reinterpret_cast<GDALDataset *>(GDALOpenEx(
+                poRasterDS = GDALDataset::FromHandle(GDALOpenEx(
                     pszConnStr,
                     GDAL_OF_READONLY | GDAL_OF_RASTER | GDAL_OF_INTERNAL,
                     nullptr, nullptr, nullptr));
@@ -597,7 +598,7 @@ void OGRNGWDataset::AddRaster(const CPLJSONObject &oRasterJsonObj,
  * ICreateLayer
  */
 OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
-                                      OGRSpatialReference *poSpatialRef,
+                                      const OGRSpatialReference *poSpatialRef,
                                       OGRwkbGeometryType eGType,
                                       char **papszOptions)
 {
@@ -633,8 +634,9 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
         return nullptr;
     }
 
-    poSpatialRef->AutoIdentifyEPSG();
-    const char *pszEPSG = poSpatialRef->GetAuthorityCode(nullptr);
+    OGRSpatialReference *poSRSClone = poSpatialRef->Clone();
+    poSRSClone->AutoIdentifyEPSG();
+    const char *pszEPSG = poSRSClone->GetAuthorityCode(nullptr);
     int nEPSG = -1;
     if (pszEPSG != nullptr)
     {
@@ -645,6 +647,7 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Unsupported spatial reference EPSG code: %d", nEPSG);
+        poSRSClone->Release();
         return nullptr;
     }
 
@@ -666,6 +669,7 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
                          "Use the layer creation option OVERWRITE=YES to "
                          "replace it.",
                          pszNameIn);
+                poSRSClone->Release();
                 return nullptr;
             }
         }
@@ -674,7 +678,6 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
     // Create layer.
     std::string osKey = CSLFetchNameValueDef(papszOptions, "KEY", "");
     std::string osDesc = CSLFetchNameValueDef(papszOptions, "DESCRIPTION", "");
-    OGRSpatialReference *poSRSClone = poSpatialRef->Clone();
     poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     OGRNGWLayer *poLayer =
         new OGRNGWLayer(this, pszNameIn, poSRSClone, eGType, osKey, osDesc);
@@ -837,10 +840,12 @@ CPLErr OGRNGWDataset::SetMetadataItem(const char *pszName, const char *pszValue,
 /*
  * FlushCache()
  */
-void OGRNGWDataset::FlushCache(bool bAtClosing)
+CPLErr OGRNGWDataset::FlushCache(bool bAtClosing)
 {
-    GDALDataset::FlushCache(bAtClosing);
-    FlushMetadata(GetMetadata("NGW"));
+    CPLErr eErr = GDALDataset::FlushCache(bAtClosing);
+    if (!FlushMetadata(GetMetadata("NGW")))
+        eErr = CE_Failure;
+    return eErr;
 }
 
 /*

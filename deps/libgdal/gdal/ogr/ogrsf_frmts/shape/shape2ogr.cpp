@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <utility>
 
 #include "cpl_conv.h"
 #include "cpl_error.h"
@@ -111,7 +112,8 @@ static OGRLinearRing *CreateLinearRing(SHPObject *psShape, int ring, bool bHasZ,
 /*      representation.                                                 */
 /************************************************************************/
 
-OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape)
+OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape,
+                              bool &bHasWarnedWrongWindingOrder)
 {
 #if DEBUG_VERBOSE
     CPLDebug("Shape", "SHPReadOGRObject( iShape=%d )", iShape);
@@ -325,8 +327,112 @@ OGRGeometry *SHPReadOGRObject(SHPHandle hSHP, int iShape, SHPObject *psShape)
                     CreateLinearRing(psShape, iRing, bHasZ, bHasM));
             }
 
+            // Tries to detect bad geometries where a multi-part multipolygon is
+            // written as a single-part multipolygon with its parts as inner
+            // rings, like done by QGIS <= 3.28.11 with GDAL >= 3.7
+            // Cf https://github.com/qgis/QGIS/issues/54537
+            bool bUseSlowMethod = false;
+            if (!bHasZ && !bHasM)
+            {
+                bool bFoundCW = false;
+                for (int iRing = 1; iRing < psShape->nParts; iRing++)
+                {
+                    if (tabPolygons[iRing]->getExteriorRing()->isClockwise())
+                    {
+                        bFoundCW = true;
+                        break;
+                    }
+                }
+                if (!bFoundCW)
+                {
+                    // Only inner rings
+                    OGREnvelope sFirstEnvelope;
+                    OGREnvelope sCurEnvelope;
+                    auto poExteriorRing = tabPolygons[0]->getExteriorRing();
+                    tabPolygons[0]->getEnvelope(&sFirstEnvelope);
+                    for (int iRing = 1; iRing < psShape->nParts; iRing++)
+                    {
+                        tabPolygons[iRing]->getEnvelope(&sCurEnvelope);
+                        if (!sFirstEnvelope.Intersects(sCurEnvelope))
+                        {
+                            // If the envelopes of the rings don't intersect,
+                            // then it is clearly a multi-part polygon
+                            bUseSlowMethod = true;
+                            break;
+                        }
+                        else
+                        {
+                            // Otherwise take 4 points at each extremity of
+                            // the inner rings and check if there are in the
+                            // outer ring. If none are within it, then it is
+                            // very likely a outer ring (or an invalid ring
+                            // which is neither a outer nor a inner ring)
+                            auto poRing = tabPolygons[iRing]->getExteriorRing();
+                            const auto nNumPoints = poRing->getNumPoints();
+                            OGRPoint p;
+                            OGRPoint leftPoint(
+                                std::numeric_limits<double>::infinity(), 0);
+                            OGRPoint rightPoint(
+                                -std::numeric_limits<double>::infinity(), 0);
+                            OGRPoint bottomPoint(
+                                0, std::numeric_limits<double>::infinity());
+                            OGRPoint topPoint(
+                                0, -std::numeric_limits<double>::infinity());
+                            for (int iPoint = 0; iPoint < nNumPoints - 1;
+                                 ++iPoint)
+                            {
+                                poRing->getPoint(iPoint, &p);
+                                if (p.getX() < leftPoint.getX() ||
+                                    (p.getX() == leftPoint.getX() &&
+                                     p.getY() < leftPoint.getY()))
+                                {
+                                    leftPoint = p;
+                                }
+                                if (p.getX() > rightPoint.getX() ||
+                                    (p.getX() == rightPoint.getX() &&
+                                     p.getY() > rightPoint.getY()))
+                                {
+                                    rightPoint = p;
+                                }
+                                if (p.getY() < bottomPoint.getY() ||
+                                    (p.getY() == bottomPoint.getY() &&
+                                     p.getX() > bottomPoint.getX()))
+                                {
+                                    bottomPoint = p;
+                                }
+                                if (p.getY() > topPoint.getY() ||
+                                    (p.getY() == topPoint.getY() &&
+                                     p.getX() < topPoint.getX()))
+                                {
+                                    topPoint = p;
+                                }
+                            }
+                            if (!poExteriorRing->isPointInRing(&leftPoint) &&
+                                !poExteriorRing->isPointInRing(&rightPoint) &&
+                                !poExteriorRing->isPointInRing(&bottomPoint) &&
+                                !poExteriorRing->isPointInRing(&topPoint))
+                            {
+                                bUseSlowMethod = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (bUseSlowMethod && !bHasWarnedWrongWindingOrder)
+                    {
+                        bHasWarnedWrongWindingOrder = true;
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "%s contains polygon(s) with rings with "
+                                 "invalid winding order. Autocorrecting them, "
+                                 "but that shapefile should be corrected using "
+                                 "ogr2ogr for example.",
+                                 VSI_SHP_GetFilename(hSHP->fpSHP));
+                    }
+                }
+            }
+
             int isValidGeometry = FALSE;
-            const char *papszOptions[] = {"METHOD=ONLY_CCW", nullptr};
+            const char *papszOptions[] = {
+                bUseSlowMethod ? "METHOD=DEFAULT" : "METHOD=ONLY_CCW", nullptr};
             OGRGeometry **tabGeom =
                 reinterpret_cast<OGRGeometry **>(tabPolygons);
             poOGR = OGRGeometryFactory::organizePolygons(
@@ -565,88 +671,43 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
     }
 
     /* ==================================================================== */
-    /*      Arcs from simple line strings.                                  */
-    /* ==================================================================== */
-    else if ((hSHP->nShapeType == SHPT_ARC || hSHP->nShapeType == SHPT_ARCM ||
-              hSHP->nShapeType == SHPT_ARCZ) &&
-             wkbFlatten(poGeom->getGeometryType()) == wkbLineString)
-    {
-        const OGRLineString *poArc = poGeom->toLineString();
-        const int nNumPoints = poArc->getNumPoints();
-        const bool bHasZ =
-            (hSHP->nShapeType == SHPT_ARCM || hSHP->nShapeType == SHPT_ARCZ);
-        const bool bHasM = wkbHasM(eLayerGeomType) && bHasZ;
-        const bool bIsGeomMeasured = CPL_TO_BOOL(poGeom->IsMeasured());
-        std::vector<double> adfX;
-        std::vector<double> adfY;
-        std::vector<double> adfZ;
-        std::vector<double> adfM;
-        try
-        {
-            adfX.reserve(nNumPoints);
-            adfY.reserve(nNumPoints);
-            if (bHasZ)
-                adfZ.reserve(nNumPoints);
-            if (bHasM)
-                adfM.reserve(nNumPoints);
-        }
-        catch (const std::exception &e)
-        {
-            CPLError(CE_Failure, CPLE_OutOfMemory, "%s", e.what());
-            return OGRERR_FAILURE;
-        }
-
-        for (int iPoint = 0; iPoint < nNumPoints; iPoint++)
-        {
-            adfX.push_back(poArc->getX(iPoint));
-            adfY.push_back(poArc->getY(iPoint));
-            if (bHasZ)
-                adfZ.push_back(poArc->getZ(iPoint));
-            if (bHasM)
-            {
-                if (bIsGeomMeasured)
-                    adfM.push_back(poArc->getM(iPoint));
-                else
-                    adfM.push_back(-std::numeric_limits<double>::max());
-            }
-        }
-        if (!CheckNonFiniteCoordinates(adfX) ||
-            !CheckNonFiniteCoordinates(adfY) ||
-            !CheckNonFiniteCoordinates(adfZ) ||
-            !CheckNonFiniteCoordinates(adfM))
-        {
-            return OGRERR_FAILURE;
-        }
-
-        SHPObject *psShape = SHPCreateObject(
-            hSHP->nShapeType, -1, 0, nullptr, nullptr,
-            static_cast<int>(adfX.size()), adfX.data(), adfY.data(),
-            bHasZ ? adfZ.data() : nullptr, bHasM ? adfM.data() : nullptr);
-        const int nReturnedShapeID = SHPWriteObject(hSHP, iShape, psShape);
-        SHPDestroyObject(psShape);
-
-        if (nReturnedShapeID == -1)
-            return OGRERR_FAILURE;
-    }
-    /* ==================================================================== */
-    /*      Arcs - Try to treat as MultiLineString.                         */
+    /*      Arcs                                                            */
     /* ==================================================================== */
     else if (hSHP->nShapeType == SHPT_ARC || hSHP->nShapeType == SHPT_ARCM ||
              hSHP->nShapeType == SHPT_ARCZ)
     {
-        auto poForcedGeom = std::unique_ptr<OGRGeometry>(
-            OGRGeometryFactory::forceToMultiLineString(poGeom->clone()));
-
-        if (wkbFlatten(poForcedGeom->getGeometryType()) != wkbMultiLineString)
+        std::unique_ptr<OGRGeometry> poGeomToDelete;  // keep in that scope
+        const OGRMultiLineString *poML = nullptr;
+        OGRMultiLineString oMLFromLineString;
+        const auto eFlatGeomType = wkbFlatten(poGeom->getGeometryType());
+        if (eFlatGeomType == wkbMultiLineString)
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "Attempt to write non-linestring (%s) geometry to "
-                     "ARC type shapefile.",
-                     poGeom->getGeometryName());
-
-            return OGRERR_UNSUPPORTED_GEOMETRY_TYPE;
+            poML = poGeom->toMultiLineString();
         }
-        const OGRMultiLineString *poML = poForcedGeom->toMultiLineString();
+        else if (eFlatGeomType == wkbLineString)
+        {
+            // Borrow the geometry
+            oMLFromLineString.addGeometryDirectly(
+                const_cast<OGRLineString *>(poGeom->toLineString()));
+            poML = &oMLFromLineString;
+        }
+        else
+        {
+            poGeomToDelete = std::unique_ptr<OGRGeometry>(
+                OGRGeometryFactory::forceToMultiLineString(poGeom->clone()));
+            if (wkbFlatten(poGeomToDelete->getGeometryType()) !=
+                wkbMultiLineString)
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "Attempt to write non-linestring (%s) geometry to "
+                         "ARC type shapefile.",
+                         poGeom->getGeometryName());
+
+                return OGRERR_UNSUPPORTED_GEOMETRY_TYPE;
+            }
+            poML = poGeomToDelete->toMultiLineString();
+        }
+
         const int nNumGeometries = poML->getNumGeometries();
 
         int nTotalPoints = 0;
@@ -689,6 +750,9 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
         catch (const std::exception &e)
         {
             CPLError(CE_Failure, CPLE_OutOfMemory, "%s", e.what());
+            // Give back the borrowed line string
+            if (eFlatGeomType == wkbLineString)
+                oMLFromLineString.removeGeometry(0, /* bDelete=*/false);
             return OGRERR_FAILURE;
         }
 
@@ -724,6 +788,11 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                 }
             }
         }
+
+        // Give back the borrowed line string
+        if (eFlatGeomType == wkbLineString)
+            oMLFromLineString.removeGeometry(0, /* bDelete=*/false);
+
         if (!CheckNonFiniteCoordinates(adfX) ||
             !CheckNonFiniteCoordinates(adfY) ||
             !CheckNonFiniteCoordinates(adfZ) ||
@@ -751,7 +820,8 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
              hSHP->nShapeType == SHPT_POLYGONM ||
              hSHP->nShapeType == SHPT_POLYGONZ)
     {
-        std::vector<const OGRLinearRing *> apoRings;
+        // bool = true means outer ring
+        std::vector<std::pair<const OGRLinearRing *, bool>> apoRings;
         const OGRwkbGeometryType eType = wkbFlatten(poGeom->getGeometryType());
         std::unique_ptr<OGRGeometry> poGeomToDelete;
 
@@ -768,6 +838,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
             {
                 const int nSrcRings = poPoly->getNumInteriorRings() + 1;
                 apoRings.reserve(nSrcRings);
+                bool bFirstRing = true;
                 for (const auto poRing : poPoly)
                 {
                     const int nNumPoints = poRing->getNumPoints();
@@ -775,7 +846,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                     // Ignore LINEARRING EMPTY.
                     if (nNumPoints != 0)
                     {
-                        apoRings.push_back(poRing);
+                        apoRings.push_back(std::make_pair(poRing, bFirstRing));
                     }
                     else
                     {
@@ -783,6 +854,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                                  "Ignore LINEARRING EMPTY inside POLYGON in "
                                  "shapefile writer.");
                     }
+                    bFirstRing = false;
                 }
             }
         }
@@ -842,6 +914,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                         2 * apoRings.size(), apoRings.size() + apoRings.size() +
                                                  nNumInteriorRings + 1));
                 }
+                bool bFirstRing = true;
                 for (const auto poRing : poPoly)
                 {
                     const int nNumPoints = poRing->getNumPoints();
@@ -849,7 +922,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                     // Ignore LINEARRING EMPTY.
                     if (nNumPoints != 0)
                     {
-                        apoRings.push_back(poRing);
+                        apoRings.push_back(std::make_pair(poRing, bFirstRing));
                     }
                     else
                     {
@@ -857,6 +930,7 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
                                  "Ignore LINEARRING EMPTY inside POLYGON in "
                                  "shapefile writer.");
                     }
+                    bFirstRing = false;
                 }
             }
         }
@@ -892,8 +966,8 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
 
         // Count vertices.
         int nVertex = 0;
-        for (const auto &poRing : apoRings)
-            nVertex += poRing->getNumPoints();
+        for (const auto &ring : apoRings)
+            nVertex += ring.first->getNumPoints();
 
         const bool bHasZ = (hSHP->nShapeType == SHPT_POLYGONM ||
                             hSHP->nShapeType == SHPT_POLYGONZ);
@@ -922,13 +996,20 @@ static OGRErr SHPWriteOGRObject(SHPHandle hSHP, int iShape,
         }
 
         // Collect vertices.
-        for (const auto &poRing : apoRings)
+        for (const auto &ring : apoRings)
         {
+            const auto poRing = ring.first;
+            const bool bIsOuterRing = ring.second;
             anRingStart.push_back(static_cast<int>(adfX.size()));
 
             const int nNumPoints = poRing->getNumPoints();
-            for (int iPoint = 0; iPoint < nNumPoints; iPoint++)
+            // Exterior ring must be clockwise oriented in shapefiles
+            const bool bInvertOrder =
+                !bRewind && CPL_TO_BOOL(bIsOuterRing ? !poRing->isClockwise()
+                                                     : poRing->isClockwise());
+            for (int i = 0; i < nNumPoints; i++)
             {
+                const int iPoint = bInvertOrder ? nNumPoints - 1 - i : i;
                 adfX.push_back(poRing->getX(iPoint));
                 adfY.push_back(poRing->getY(iPoint));
                 if (bHasZ)
@@ -1223,7 +1304,8 @@ OGRFeatureDefn *SHPReadOGRFeatureDefn(const char *pszName, SHPHandle hSHP,
 
 OGRFeature *SHPReadOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
                               OGRFeatureDefn *poDefn, int iShape,
-                              SHPObject *psShape, const char *pszSHPEncoding)
+                              SHPObject *psShape, const char *pszSHPEncoding,
+                              bool &bHasWarnedWrongWindingOrder)
 
 {
     if (iShape < 0 || (hSHP != nullptr && iShape >= hSHP->nRecords) ||
@@ -1256,7 +1338,8 @@ OGRFeature *SHPReadOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
     {
         if (!poDefn->IsGeometryIgnored())
         {
-            OGRGeometry *poGeometry = SHPReadOGRObject(hSHP, iShape, psShape);
+            OGRGeometry *poGeometry = SHPReadOGRObject(
+                hSHP, iShape, psShape, bHasWarnedWrongWindingOrder);
 
             // Two possibilities are expected here (both are tested by
             // GDAL Autotests):
@@ -1363,12 +1446,6 @@ OGRFeature *SHPReadOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
 
                 const char *const pszDateValue =
                     DBFReadStringAttribute(hDBF, iShape, iField);
-
-                // Some DBF files have fields filled with spaces
-                // (trimmed by DBFReadStringAttribute) to indicate null
-                // values for dates (#4265).
-                if (pszDateValue[0] == '\0')
-                    continue;
 
                 OGRField sFld;
                 memset(&sFld, 0, sizeof(sFld));
@@ -1499,10 +1576,21 @@ OGRErr SHPWriteOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
     /* -------------------------------------------------------------------- */
     /*      Write out dummy field value if it exists.                       */
     /* -------------------------------------------------------------------- */
-    if (DBFGetFieldCount(hDBF) == 1 && poDefn->GetFieldCount() == 0)
+    if (poDefn->GetFieldCount() == 0)
     {
-        DBFWriteIntegerAttribute(hDBF, static_cast<int>(poFeature->GetFID()), 0,
-                                 static_cast<int>(poFeature->GetFID()));
+        if (DBFGetFieldCount(hDBF) == 1)
+        {
+            DBFWriteIntegerAttribute(hDBF,
+                                     static_cast<int>(poFeature->GetFID()), 0,
+                                     static_cast<int>(poFeature->GetFID()));
+        }
+        else if (DBFGetFieldCount(hDBF) == 0)
+        {
+            // Far from being nominal... Could happen if deleting all fields
+            // of a DBF with rows
+            DBFWriteAttributeDirectly(
+                hDBF, static_cast<int>(poFeature->GetFID()), -1, nullptr);
+        }
     }
 
     /* -------------------------------------------------------------------- */
@@ -1668,6 +1756,12 @@ OGRErr SHPWriteOGRFeature(SHPHandle hSHP, DBFHandle hDBF,
                     CPLError(
                         CE_Warning, CPLE_NotSupported,
                         "Year < 0 or > 9999 is not a valid date for shapefile");
+                }
+                else if (psField->Date.Year == 0 && psField->Date.Month == 0 &&
+                         psField->Date.Day == 0)
+                {
+                    DBFWriteNULLAttribute(
+                        hDBF, static_cast<int>(poFeature->GetFID()), iField);
                 }
                 else
                 {

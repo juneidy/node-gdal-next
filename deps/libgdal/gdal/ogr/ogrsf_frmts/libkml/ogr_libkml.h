@@ -253,7 +253,7 @@ class OGRLIBKMLDataSource final : public OGRDataSource
     OGRErr DeleteLayer(int) override;
 
     OGRLayer *ICreateLayer(const char *pszName,
-                           OGRSpatialReference *poSpatialRef = nullptr,
+                           const OGRSpatialReference *poSpatialRef = nullptr,
                            OGRwkbGeometryType eGType = wkbUnknown,
                            char **papszOptions = nullptr) override;
 
@@ -264,7 +264,7 @@ class OGRLIBKMLDataSource final : public OGRDataSource
     int Open(const char *pszFilename, int bUpdate);
     int Create(const char *pszFilename, char **papszOptions);
 
-    void FlushCache(bool bAtClosing) override;
+    CPLErr FlushCache(bool bAtClosing) override;
     int TestCapability(const char *) override;
 
     kmldom::KmlFactory *GetKmlFactory()
@@ -313,9 +313,9 @@ class OGRLIBKMLDataSource final : public OGRDataSource
 
   private:
     /***** methods to write out various datasource types at destroy *****/
-    void WriteKml();
-    void WriteKmz();
-    void WriteDir();
+    bool WriteKml();
+    bool WriteKmz();
+    bool WriteDir();
 
     /***** methods to open various datasource types *****/
     int OpenKmz(const char *pszFilename, int bUpdate);
@@ -329,11 +329,11 @@ class OGRLIBKMLDataSource final : public OGRDataSource
 
     /***** methods to create layers on various datasource types *****/
     OGRLIBKMLLayer *CreateLayerKml(const char *pszLayerName,
-                                   OGRSpatialReference *poOgrSRS,
+                                   const OGRSpatialReference *poOgrSRS,
                                    OGRwkbGeometryType eGType,
                                    char **papszOptions);
     OGRLIBKMLLayer *CreateLayerKmz(const char *pszLayerName,
-                                   OGRSpatialReference *poOgrSRS,
+                                   const OGRSpatialReference *poOgrSRS,
                                    OGRwkbGeometryType eGType,
                                    char **papszOptions);
 

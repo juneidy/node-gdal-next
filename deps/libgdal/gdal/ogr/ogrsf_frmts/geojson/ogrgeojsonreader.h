@@ -199,6 +199,7 @@ class OGRGeoJSONReader : public OGRGeoJSONBaseReader
     VSILFILE *fp_;
     bool bCanEasilyAppend_;
     bool bFCHasBBOX_;
+    bool bOriginalIdModifiedEmitted_ = false;
 
     size_t nBufferSize_;
     GByte *pabyBuffer_;
@@ -224,6 +225,14 @@ class OGRGeoJSONReader : public OGRGeoJSONBaseReader
     void ReadFeatureCollection(OGRGeoJSONLayer *poLayer, json_object *poObj);
     size_t SkipPrologEpilogAndUpdateJSonPLikeWrapper(size_t nRead);
 };
+
+void OGRGeoJSONGenerateFeatureDefnDealWithID(
+    json_object *poObj, json_object *poObjProps, int &nPrevFieldIdx,
+    std::map<std::string, int> &oMapFieldNameToIdx,
+    std::vector<std::unique_ptr<OGRFieldDefn>> &apoFieldDefn,
+    gdal::DirectedAcyclicGraph<int, std::string> &dag,
+    bool &bFeatureLevelIdAsFID, bool &bFeatureLevelIdAsAttribute,
+    bool &bNeedFID64);
 
 void OGRGeoJSONReaderSetField(OGRLayer *poLayer, OGRFeature *poFeature,
                               int nField, const char *pszAttrPrefix,
@@ -256,7 +265,7 @@ json_object CPL_DLL *CPL_json_object_object_get(struct json_object *obj,
 bool CPL_DLL OGRJSonParse(const char *pszText, json_object **ppoObj,
                           bool bVerboseError = true);
 
-bool OGRGeoJSONUpdateLayerGeomType(OGRLayer *poLayer, bool &bFirstGeom,
+bool OGRGeoJSONUpdateLayerGeomType(bool &bFirstGeom,
                                    OGRwkbGeometryType eGeomType,
                                    OGRwkbGeometryType &eLayerGeomType);
 
@@ -264,8 +273,12 @@ bool OGRGeoJSONUpdateLayerGeomType(OGRLayer *poLayer, bool &bFirstGeom,
 /*                 GeoJSON Geometry Translators                         */
 /************************************************************************/
 
+OGRwkbGeometryType OGRGeoJSONGetOGRGeometryType(json_object *poObj);
+
 bool OGRGeoJSONReadRawPoint(json_object *poObj, OGRPoint &point);
-OGRGeometry CPL_DLL *OGRGeoJSONReadGeometry(json_object *poObj);
+OGRGeometry CPL_DLL *
+OGRGeoJSONReadGeometry(json_object *poObj,
+                       OGRSpatialReference *poParentSRS = nullptr);
 OGRPoint *OGRGeoJSONReadPoint(json_object *poObj);
 OGRMultiPoint *OGRGeoJSONReadMultiPoint(json_object *poObj);
 OGRLineString *OGRGeoJSONReadLineString(json_object *poObj, bool bRaw = false);

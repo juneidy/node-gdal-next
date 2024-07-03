@@ -39,11 +39,17 @@
 #include <string>
 #include <set>
 
-int cmpStr(std::string s1, std::string s2);
+namespace gdal
+{
+namespace ili2
+{
+int cmpStr(const std::string &s1, const std::string &s2);
 
-std::string ltrim(std::string tmpstr);
-std::string rtrim(std::string tmpstr);
-std::string trim(std::string tmpstr);
+std::string ltrim(const std::string &tmpstr);
+std::string rtrim(const std::string &tmpstr);
+std::string trim(const std::string &tmpstr);
+}  // namespace ili2
+}  // namespace gdal
 
 class ILI2Reader;
 
@@ -119,9 +125,9 @@ class ILI2Reader : public IILI2Reader
     void SetFieldValues(OGRFeature *feature, DOMElement *elem);
     const char *GetLayerName(/*IOM_BASKET model, IOM_OBJECT table*/);
     void AddField(OGRLayer *layer /*, IOM_BASKET model, IOM_OBJECT obj*/);
-    OGRCircularString *getArc(DOMElement *elem);
-    OGRGeometry *getGeometry(DOMElement *elem, int type);
-    void setFieldDefn(OGRFeatureDefn *featureDef, DOMElement *elem);
+    static OGRCircularString *getArc(DOMElement *elem);
+    static OGRGeometry *getGeometry(DOMElement *elem, int type);
+    static void setFieldDefn(OGRFeatureDefn *featureDef, DOMElement *elem);
 };
 
 #endif

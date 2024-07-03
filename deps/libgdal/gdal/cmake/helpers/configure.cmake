@@ -40,8 +40,13 @@ check_include_file("dlfcn.h" HAVE_DLFCN_H)
 
 check_type_size("int" SIZEOF_INT)
 check_type_size("unsigned long" SIZEOF_UNSIGNED_LONG)
+check_type_size("long int" SIZEOF_LONG_INT)
 check_type_size("void*" SIZEOF_VOIDP)
 check_type_size("size_t" SIZEOF_SIZE_T)
+
+check_function_exists(ctime_r HAVE_CTIME_R)
+check_function_exists(gmtime_r HAVE_GMTIME_R)
+check_function_exists(localtime_r HAVE_LOCALTIME_R)
 
 if(MSVC AND NOT BUILD_SHARED_LIBS)
   set(CPL_DISABLE_DLL 1)
@@ -57,7 +62,6 @@ if (MSVC)
   set(HAVE_SEARCH_H 1)
   set(HAVE_DIRECT_H 1)
 
-  set(HAVE_LOCALTIME_R 0)
   set(HAVE_DLFCN_H 1)
 
   set(VSI_STAT64 _stat64)
@@ -109,15 +113,15 @@ else ()
     "
         #define _GNU_SOURCE
         #include <pthread.h>
-        int main() { pthread_spinlock_t spin; return 1; }
+        int main() { pthread_spinlock_t spin; return pthread_spin_lock(&spin); }
         "
-    HAVE_PTHREAD_SPINLOCK)
+    HAVE_PTHREAD_SPIN_LOCK)
 
   check_c_source_compiles(
     "
         #define _GNU_SOURCE
         #include <sys/mman.h>
-        int main() { return (mremap(0,0,0,0,0)); }
+        int main() { return (mremap(0,0,0,0,0) != 0); }
         "
     HAVE_5ARGS_MREMAP)
 
@@ -129,12 +133,6 @@ else ()
     HAVE_PTHREAD_ATFORK)
 
   check_include_file("sys/stat.h" HAVE_SYS_STAT_H)
-  if (${CMAKE_SYSTEM} MATCHES "Linux")
-      check_include_file("linux/fs.h" HAVE_LINUX_FS_H)
-      if( NOT HAVE_LINUX_FS_H )
-        message(FATAL_ERROR "Required linux/fs.h file is missing.")
-      endif()
-  endif ()
 
   check_function_exists(readlink HAVE_READLINK)
   check_function_exists(posix_spawnp HAVE_POSIX_SPAWNP)
@@ -148,6 +146,12 @@ else ()
 
   check_function_exists(getrlimit HAVE_GETRLIMIT)
   check_symbol_exists(RLIMIT_AS "sys/resource.h" HAVE_RLIMIT_AS)
+
+  # For internal libjson-c
+  check_include_file(sys/random.h HAVE_SYS_RANDOM_H)
+  if (HAVE_SYS_RANDOM_H)
+    check_symbol_exists(getrandom "sys/random.h" HAVE_GETRANDOM)
+  endif()
 
   check_function_exists(ftell64 HAVE_FTELL64)
   if (HAVE_FTELL64)
@@ -253,7 +257,7 @@ else ()
   # available at build time.
   # This is also necessary for Mac Catalyst builds.
   # Cf https://lists.osgeo.org/pipermail/gdal-dev/2022-August/056174.html
-  if (${CMAKE_SYSTEM_NAME} MATCHES "iOS" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  if (${CMAKE_SYSTEM_NAME} MATCHES "iOS|visionOS|tvOS|watchOS|Darwin")
     set(VSI_FOPEN64 "fopen")
     set(VSI_FTRUNCATE64 "ftruncate")
     set(VSI_FTELL64 "ftell")

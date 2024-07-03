@@ -35,24 +35,30 @@
 /*                               Usage()                                */
 /************************************************************************/
 
-static void Usage(const char *pszErrorMsg = nullptr)
+static void Usage(bool bIsError, const char *pszErrorMsg = nullptr)
 
 {
-    printf(
-        "Usage: gdal_grid [--help-general]\n"
+    fprintf(
+        bIsError ? stderr : stdout,
+        "Usage: gdal_grid [--help] [--help-general]\n"
+        "    [-oo <NAME>=<VALUE>]...\n"
         "    [-ot {Byte/Int16/UInt16/UInt32/Int32/Float32/Float64/\n"
         "          CInt16/CInt32/CFloat32/CFloat64}]\n"
-        "    [-of format] [-co \"NAME=VALUE\"]\n"
-        "    [-zfield field_name] [-z_increase increase_value] [-z_multiply "
-        "multiply_value]\n"
-        "    [-a_srs srs_def] [-spat xmin ymin xmax ymax]\n"
-        "    [-clipsrc <xmin ymin xmax ymax>|WKT|datasource|spat_extent]\n"
-        "    [-clipsrcsql sql_statement] [-clipsrclayer layer]\n"
-        "    [-clipsrcwhere expression]\n"
-        "    [-l layername]* [-where expression] [-sql select_statement]\n"
-        "    [-txe xmin xmax] [-tye ymin ymax] [-tr xres yres] [-outsize xsize "
-        "ysize]\n"
-        "    [-a algorithm[:parameter1=value1]*]"
+        "    [-of <format>] [-co <NAME>=<VALUE>]...\n"
+        "    [-zfield <field_name>] [-z_increase <increase_value>] "
+        "[-z_multiply "
+        "<multiply_value>]\n"
+        "    [-a_srs <srs_def>] [-spat <xmin> <ymin> <xmax> <ymax>]\n"
+        "    [-clipsrc <xmin> <ymin> <xmax> "
+        "<ymax>|<WKT>|<datasource>|spat_extent]\n"
+        "    [-clipsrcsql <sql_statement>] [-clipsrclayer <layer>]\n"
+        "    [-clipsrcwhere <expression>]\n"
+        "    [-l <layername>]... [-where <expression>] [-sql "
+        "<select_statement>]\n"
+        "    [-txe <xmin> <xmax>] [-tye <ymin> <ymax>] [-tr <xres> <yres>] "
+        "[-outsize <xsize> "
+        "<ysize>]\n"
+        "    [-a <algorithm>[:<parameter1>=<value1>]...]"
         "    [-q]\n"
         "    <src_datasource> <dst_filename>\n"
         "\n"
@@ -87,32 +93,7 @@ static void Usage(const char *pszErrorMsg = nullptr)
         fprintf(stderr, "\nFAILURE: %s\n", pszErrorMsg);
 
     GDALDestroyDriverManager();
-    exit(1);
-}
-/************************************************************************/
-/*                         GDALGridOptionsForBinaryNew()                */
-/************************************************************************/
-
-static GDALGridOptionsForBinary *GDALGridOptionsForBinaryNew(void)
-{
-    return static_cast<GDALGridOptionsForBinary *>(
-        CPLCalloc(1, sizeof(GDALGridOptionsForBinary)));
-}
-
-/************************************************************************/
-/*                         GDALGridOptionsForBinaryFree()               */
-/************************************************************************/
-
-static void
-GDALGridOptionsForBinaryFree(GDALGridOptionsForBinary *psOptionsForBinary)
-{
-    if (psOptionsForBinary == nullptr)
-        return;
-
-    CPLFree(psOptionsForBinary->pszSource);
-    CPLFree(psOptionsForBinary->pszDest);
-    CPLFree(psOptionsForBinary->pszFormat);
-    CPLFree(psOptionsForBinary);
+    exit(bIsError ? 1 : 0);
 }
 
 /************************************************************************/
@@ -147,52 +128,52 @@ MAIN_START(argc, argv)
         }
         else if (EQUAL(argv[i], "--help"))
         {
-            Usage();
+            Usage(false);
         }
     }
 
-    GDALGridOptionsForBinary *psOptionsForBinary =
-        GDALGridOptionsForBinaryNew();
+    GDALGridOptionsForBinary sOptionsForBinary;
     /* coverity[tainted_data] */
     GDALGridOptions *psOptions =
-        GDALGridOptionsNew(argv + 1, psOptionsForBinary);
+        GDALGridOptionsNew(argv + 1, &sOptionsForBinary);
     CSLDestroy(argv);
 
     if (psOptions == nullptr)
     {
-        Usage();
+        Usage(true);
     }
 
-    if (!(psOptionsForBinary->bQuiet))
+    if (!(sOptionsForBinary.bQuiet))
     {
         GDALGridOptionsSetProgress(psOptions, GDALTermProgress, nullptr);
     }
 
-    if (psOptionsForBinary->pszSource == nullptr)
-        Usage("No input file specified.");
-    if (psOptionsForBinary->pszDest == nullptr)
-        Usage("No output file specified.");
+    if (sOptionsForBinary.osSource.empty())
+        Usage(true, "No input file specified.");
+    if (!sOptionsForBinary.bDestSpecified)
+        Usage(true, "No output file specified.");
 
     /* -------------------------------------------------------------------- */
     /*      Open input file.                                                */
     /* -------------------------------------------------------------------- */
-    GDALDatasetH hInDS = GDALOpenEx(psOptionsForBinary->pszSource,
+    GDALDatasetH hInDS = GDALOpenEx(sOptionsForBinary.osSource.c_str(),
                                     GDAL_OF_VECTOR | GDAL_OF_VERBOSE_ERROR,
-                                    nullptr, nullptr, nullptr);
+                                    /*papszAllowedDrivers=*/nullptr,
+                                    sOptionsForBinary.aosOpenOptions.List(),
+                                    /*papszSiblingFiles=*/nullptr);
     if (hInDS == nullptr)
         exit(1);
 
     int bUsageError = FALSE;
-    GDALDatasetH hOutDS =
-        GDALGrid(psOptionsForBinary->pszDest, hInDS, psOptions, &bUsageError);
+    GDALDatasetH hOutDS = GDALGrid(sOptionsForBinary.osDest.c_str(), hInDS,
+                                   psOptions, &bUsageError);
     if (bUsageError == TRUE)
-        Usage();
+        Usage(true);
     int nRetCode = hOutDS ? 0 : 1;
 
     GDALClose(hInDS);
     GDALClose(hOutDS);
     GDALGridOptionsFree(psOptions);
-    GDALGridOptionsForBinaryFree(psOptionsForBinary);
 
     OGRCleanupAll();
     GDALDestroyDriverManager();

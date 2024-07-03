@@ -103,6 +103,7 @@ void CPL_DLL GDALRegister_IDA(void);
 void CPL_DLL GDALRegister_NDF(void);
 void CPL_DLL GDALRegister_RMF(void);
 void CPL_DLL GDALRegister_BAG(void);
+void CPL_DLL GDALRegister_S102(void);
 void CPL_DLL GDALRegister_HDF5(void);
 void CPL_DLL GDALRegister_HDF5Image(void);
 void CPL_DLL GDALRegister_MSGN(void);
@@ -204,6 +205,8 @@ void CPL_DLL GDALRegister_JPEGXL(void);
 void CPL_DLL GDALRegister_BASISU(void);
 void CPL_DLL GDALRegister_KTX2(void);
 void CPL_DLL GDALRegister_BASISU_KTX2(void);
+void CPL_DLL GDALRegister_NOAA_B(void);
+void CPL_DLL GDALRegister_NSIDCbin(void);
 CPL_C_END
 
 #endif /* ndef GDAL_FRMTS_H_INCLUDED */

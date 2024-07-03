@@ -67,7 +67,7 @@ OGRGeoJSONLayer::OGRGeoJSONLayer(const char *pszName,
                                  OGRGeoJSONReader *poReader)
     : OGRMemLayer(pszName, poSRSIn, eGType), poDS_(poDS), poReader_(poReader),
       bHasAppendedFeatures_(false), bUpdated_(false),
-      bOriginalIdModified_(false), nTotalFeatureCount_(0), nNextFID_(0)
+      bOriginalIdModified_(false), nTotalFeatureCount_(0)
 {
     SetAdvertizeUTF8(true);
     SetUpdatable(poDS->IsUpdatable());
@@ -126,7 +126,6 @@ void OGRGeoJSONLayer::ResetReading()
     if (poReader_)
     {
         TerminateAppendSession();
-        nNextFID_ = 0;
         poReader_->ResetReading();
     }
     else
@@ -150,11 +149,6 @@ OGRFeature *OGRGeoJSONLayer::GetNextFeature()
             OGRFeature *poFeature = poReader_->GetNextFeature(this);
             if (poFeature == nullptr)
                 return nullptr;
-            if (poFeature->GetFID() == OGRNullFID)
-            {
-                poFeature->SetFID(nNextFID_);
-                nNextFID_++;
-            }
             if ((m_poFilterGeom == nullptr ||
                  FilterGeometry(
                      poFeature->GetGeomFieldRef(m_iGeomFieldFilter))) &&
@@ -232,7 +226,6 @@ bool OGRGeoJSONLayer::IngestAll()
         OGRGeoJSONReader *poReader = poReader_;
         poReader_ = nullptr;
 
-        nNextFID_ = 0;
         nTotalFeatureCount_ = -1;
         bool bRet = poReader->IngestAll(this);
         delete poReader;
@@ -497,7 +490,7 @@ void OGRGeoJSONLayer::AddFeature(OGRFeature *poFeature)
                     CE_Warning, CPLE_AppDefined,
                     "Several features with id = " CPL_FRMT_GIB " have been "
                     "found. Altering it to be unique. This warning will not "
-                    "be emitted for this layer",
+                    "be emitted anymore for this layer",
                     nFID);
                 bOriginalIdModified_ = true;
             }
@@ -515,9 +508,10 @@ void OGRGeoJSONLayer::AddFeature(OGRFeature *poFeature)
     if (!CPL_INT64_FITS_ON_INT32(nFID))
         SetMetadataItem(OLMD_FID64, "YES");
 
+    const bool bIsUpdatable = IsUpdatable();
     SetUpdatable(true);  // Temporary toggle on updatable flag.
     CPL_IGNORE_RET_VAL(OGRMemLayer::SetFeature(poFeature));
-    SetUpdatable(poDS_->IsUpdatable());
+    SetUpdatable(bIsUpdatable);
     SetUpdated(false);
 }
 
@@ -533,22 +527,20 @@ void OGRGeoJSONLayer::DetectGeometryType()
     ResetReading();
     bool bFirstGeometry = true;
     OGRwkbGeometryType eLayerGeomType = wkbUnknown;
-    OGRFeature *poFeature = nullptr;
-    while ((poFeature = GetNextFeature()) != nullptr)
+    for (const auto &poFeature : *this)
     {
-        OGRGeometry *poGeometry = poFeature->GetGeometryRef();
+        const OGRGeometry *poGeometry = poFeature->GetGeometryRef();
         if (nullptr != poGeometry)
         {
             OGRwkbGeometryType eGeomType = poGeometry->getGeometryType();
-            if (!OGRGeoJSONUpdateLayerGeomType(this, bFirstGeometry, eGeomType,
+            if (!OGRGeoJSONUpdateLayerGeomType(bFirstGeometry, eGeomType,
                                                eLayerGeomType))
             {
-                delete poFeature;
                 break;
             }
         }
-        delete poFeature;
     }
+    GetLayerDefn()->SetGeomType(eLayerGeomType);
 
     ResetReading();
 }

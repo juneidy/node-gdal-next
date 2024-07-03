@@ -51,109 +51,6 @@
 #include "filegdb_fielddomain.h"
 #include "filegdb_relationship.h"
 
-#include <random>
-#include <sstream>
-
-/************************************************************************/
-/*                        CPLGettimeofday()                             */
-/************************************************************************/
-
-#if defined(_WIN32) && !defined(__CYGWIN__)
-#include <sys/timeb.h>
-
-namespace
-{
-struct CPLTimeVal
-{
-    time_t tv_sec; /* seconds */
-    long tv_usec;  /* and microseconds */
-};
-}  // namespace
-
-static int CPLGettimeofday(struct CPLTimeVal *tp, void * /* timezonep*/)
-{
-    struct _timeb theTime;
-
-    _ftime(&theTime);
-    tp->tv_sec = static_cast<time_t>(theTime.time);
-    tp->tv_usec = theTime.millitm * 1000;
-    return 0;
-}
-#else
-#include <sys/time.h> /* for gettimeofday() */
-#define CPLTimeVal timeval
-#define CPLGettimeofday(t, u) gettimeofday(t, u)
-#endif
-
-/***********************************************************************/
-/*                      OFGDBGenerateUUID()                            */
-/***********************************************************************/
-
-// Probably not the best UUID generator ever. One issue is that mt19937
-// uses only a 32-bit seed.
-std::string OFGDBGenerateUUID()
-{
-    struct CPLTimeVal tv;
-    memset(&tv, 0, sizeof(tv));
-    static uint32_t nCounter = 0;
-    const bool bReproducibleUUID =
-        CPLTestBool(CPLGetConfigOption("OPENFILEGDB_REPRODUCIBLE_UUID", "NO"));
-
-    std::stringstream ss;
-
-    {
-        if (!bReproducibleUUID)
-            CPLGettimeofday(&tv, nullptr);
-        std::mt19937 gen(++nCounter +
-                         (bReproducibleUUID
-                              ? 0
-                              : static_cast<unsigned>(tv.tv_sec ^ tv.tv_usec)));
-        std::uniform_int_distribution<> dis(0, 15);
-
-        ss << "{";
-        ss << std::hex;
-        for (int i = 0; i < 8; i++)
-        {
-            ss << dis(gen);
-        }
-        ss << "-";
-        for (int i = 0; i < 4; i++)
-        {
-            ss << dis(gen);
-        }
-        ss << "-4";
-        for (int i = 0; i < 3; i++)
-        {
-            ss << dis(gen);
-        }
-    }
-
-    {
-        if (!bReproducibleUUID)
-            CPLGettimeofday(&tv, nullptr);
-        std::mt19937 gen(++nCounter +
-                         (bReproducibleUUID
-                              ? 0
-                              : static_cast<unsigned>(tv.tv_sec ^ tv.tv_usec)));
-        std::uniform_int_distribution<> dis(0, 15);
-        std::uniform_int_distribution<> dis2(8, 11);
-
-        ss << "-";
-        ss << dis2(gen);
-        for (int i = 0; i < 3; i++)
-        {
-            ss << dis(gen);
-        }
-        ss << "-";
-        for (int i = 0; i < 12; i++)
-        {
-            ss << dis(gen);
-        };
-        ss << "}";
-        return ss.str();
-    }
-}
-
 /***********************************************************************/
 /*                    GetExistingSpatialRef()                          */
 /***********************************************************************/
@@ -664,7 +561,7 @@ bool OGROpenFileGDBDataSource::CreateGDBSystemCatalog()
 {
     // Write GDB_SystemCatalog file
     m_osGDBSystemCatalogFilename =
-        CPLFormFilename(m_pszName, "a00000001.gdbtable", nullptr);
+        CPLFormFilename(m_osDirName.c_str(), "a00000001.gdbtable", nullptr);
     FileGDBTable oTable;
     if (!oTable.Create(m_osGDBSystemCatalogFilename.c_str(), 4, FGTGT_NONE,
                        false, false) ||
@@ -715,7 +612,7 @@ bool OGROpenFileGDBDataSource::CreateGDBDBTune()
 {
     // Write GDB_DBTune file
     const std::string osFilename(
-        CPLFormFilename(m_pszName, "a00000002.gdbtable", nullptr));
+        CPLFormFilename(m_osDirName.c_str(), "a00000002.gdbtable", nullptr));
     FileGDBTable oTable;
     if (!oTable.Create(osFilename.c_str(), 4, FGTGT_NONE, false, false) ||
         !oTable.CreateField(cpl::make_unique<FileGDBField>(
@@ -807,7 +704,7 @@ bool OGROpenFileGDBDataSource::CreateGDBSpatialRefs()
 {
     // Write GDB_SpatialRefs file
     m_osGDBSpatialRefsFilename =
-        CPLFormFilename(m_pszName, "a00000003.gdbtable", nullptr);
+        CPLFormFilename(m_osDirName.c_str(), "a00000003.gdbtable", nullptr);
     FileGDBTable oTable;
     if (!oTable.Create(m_osGDBSpatialRefsFilename.c_str(), 4, FGTGT_NONE, false,
                        false) ||
@@ -887,7 +784,7 @@ bool OGROpenFileGDBDataSource::CreateGDBItems()
     }
 
     m_osGDBItemsFilename =
-        CPLFormFilename(m_pszName, "a00000004.gdbtable", nullptr);
+        CPLFormFilename(m_osDirName.c_str(), "a00000004.gdbtable", nullptr);
     FileGDBTable oTable;
     if (!oTable.Create(m_osGDBItemsFilename.c_str(), 4, FGTGT_POLYGON, false,
                        false) ||
@@ -998,7 +895,7 @@ bool OGROpenFileGDBDataSource::CreateGDBItemTypes()
 {
     // Write GDB_ItemTypes file
     const std::string osFilename(
-        CPLFormFilename(m_pszName, "a00000005.gdbtable", nullptr));
+        CPLFormFilename(m_osDirName.c_str(), "a00000005.gdbtable", nullptr));
     FileGDBTable oTable;
     if (!oTable.Create(osFilename.c_str(), 4, FGTGT_NONE, false, false) ||
         !oTable.CreateField(cpl::make_unique<FileGDBField>(
@@ -1112,7 +1009,7 @@ bool OGROpenFileGDBDataSource::CreateGDBItemRelationships()
 {
     // Write GDB_ItemRelationships file
     m_osGDBItemRelationshipsFilename =
-        CPLFormFilename(m_pszName, "a00000006.gdbtable", nullptr);
+        CPLFormFilename(m_osDirName.c_str(), "a00000006.gdbtable", nullptr);
     FileGDBTable oTable;
     if (!oTable.Create(m_osGDBItemRelationshipsFilename.c_str(), 4, FGTGT_NONE,
                        false, false) ||
@@ -1156,7 +1053,7 @@ bool OGROpenFileGDBDataSource::CreateGDBItemRelationshipTypes()
 {
     // Write GDB_ItemRelationshipTypes file
     const std::string osFilename(
-        CPLFormFilename(m_pszName, "a00000007.gdbtable", nullptr));
+        CPLFormFilename(m_osDirName.c_str(), "a00000007.gdbtable", nullptr));
     FileGDBTable oTable;
     if (!oTable.Create(osFilename.c_str(), 4, FGTGT_NONE, false, false) ||
         !oTable.CreateField(cpl::make_unique<FileGDBField>(
@@ -1308,8 +1205,7 @@ bool OGROpenFileGDBDataSource::Create(const char *pszName)
         return false;
     }
 
-    m_pszName = CPLStrdup(pszName);
-    m_osDirName = m_pszName;
+    m_osDirName = pszName;
     eAccess = GA_Update;
 
     {
@@ -1346,10 +1242,9 @@ bool OGROpenFileGDBDataSource::Create(const char *pszName)
 /*                             ICreateLayer()                           */
 /************************************************************************/
 
-OGRLayer *OGROpenFileGDBDataSource::ICreateLayer(const char *pszLayerName,
-                                                 OGRSpatialReference *poSRS,
-                                                 OGRwkbGeometryType eType,
-                                                 char **papszOptions)
+OGRLayer *OGROpenFileGDBDataSource::ICreateLayer(
+    const char *pszLayerName, const OGRSpatialReference *poSRS,
+    OGRwkbGeometryType eType, char **papszOptions)
 {
     if (eAccess != GA_Update)
         return nullptr;
@@ -1370,7 +1265,7 @@ OGRLayer *OGROpenFileGDBDataSource::ICreateLayer(const char *pszLayerName,
     oTable.Close();
 
     const std::string osFilename(CPLFormFilename(
-        m_pszName, CPLSPrintf("a%08x.gdbtable", nTableNum), nullptr));
+        m_osDirName.c_str(), CPLSPrintf("a%08x.gdbtable", nTableNum), nullptr));
 
     if (wkbFlatten(eType) == wkbLineString)
         eType = OGR_GT_SetModifier(wkbMultiLineString, OGR_GT_HasZ(eType),
@@ -1541,13 +1436,18 @@ OGRErr OGROpenFileGDBDataSource::DeleteLayer(int iLayer)
 /*                             FlushCache()                             */
 /************************************************************************/
 
-void OGROpenFileGDBDataSource::FlushCache(bool /*bAtClosing*/)
+CPLErr OGROpenFileGDBDataSource::FlushCache(bool /*bAtClosing*/)
 {
     if (eAccess != GA_Update)
-        return;
+        return CE_None;
 
+    CPLErr eErr = CE_None;
     for (auto &poLayer : m_apoLayers)
-        poLayer->SyncToDisk();
+    {
+        if (poLayer->SyncToDisk() != OGRERR_NONE)
+            eErr = CE_Failure;
+    }
+    return eErr;
 }
 
 /************************************************************************/

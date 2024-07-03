@@ -217,6 +217,7 @@ OGRGeometryH CPL_DLL OGR_G_Intersection(OGRGeometryH,
 OGRGeometryH CPL_DLL OGR_G_Union(OGRGeometryH,
                                  OGRGeometryH) CPL_WARN_UNUSED_RESULT;
 OGRGeometryH CPL_DLL OGR_G_UnionCascaded(OGRGeometryH) CPL_WARN_UNUSED_RESULT;
+OGRGeometryH CPL_DLL OGR_G_UnaryUnion(OGRGeometryH) CPL_WARN_UNUSED_RESULT;
 OGRGeometryH CPL_DLL OGR_G_PointOnSurface(OGRGeometryH) CPL_WARN_UNUSED_RESULT;
 /*OGRGeometryH CPL_DLL OGR_G_Polygonize( OGRGeometryH *, int);*/
 /*OGRGeometryH CPL_DLL OGR_G_Polygonizer_getCutEdges( OGRGeometryH *, int);*/
@@ -230,6 +231,7 @@ double CPL_DLL OGR_G_Distance(OGRGeometryH, OGRGeometryH);
 double CPL_DLL OGR_G_Distance3D(OGRGeometryH, OGRGeometryH);
 double CPL_DLL OGR_G_Length(OGRGeometryH);
 double CPL_DLL OGR_G_Area(OGRGeometryH);
+bool CPL_DLL OGR_G_IsClockwise(OGRGeometryH hGeom);
 int CPL_DLL OGR_G_Centroid(OGRGeometryH, OGRGeometryH);
 OGRGeometryH CPL_DLL OGR_G_Value(OGRGeometryH,
                                  double dfDistance) CPL_WARN_UNUSED_RESULT;
@@ -388,6 +390,8 @@ int CPL_DLL OGR_Fld_GetWidth(OGRFieldDefnH);
 void CPL_DLL OGR_Fld_SetWidth(OGRFieldDefnH, int);
 int CPL_DLL OGR_Fld_GetPrecision(OGRFieldDefnH);
 void CPL_DLL OGR_Fld_SetPrecision(OGRFieldDefnH, int);
+int CPL_DLL OGR_Fld_GetTZFlag(OGRFieldDefnH);
+void CPL_DLL OGR_Fld_SetTZFlag(OGRFieldDefnH, int);
 void CPL_DLL OGR_Fld_Set(OGRFieldDefnH, const char *, OGRFieldType, int, int,
                          OGRJustification);
 int CPL_DLL OGR_Fld_IsIgnored(OGRFieldDefnH hDefn);
@@ -401,6 +405,8 @@ void CPL_DLL OGR_Fld_SetDefault(OGRFieldDefnH hDefn, const char *);
 int CPL_DLL OGR_Fld_IsDefaultDriverSpecific(OGRFieldDefnH hDefn);
 const char CPL_DLL *OGR_Fld_GetDomainName(OGRFieldDefnH hDefn);
 void CPL_DLL OGR_Fld_SetDomainName(OGRFieldDefnH hDefn, const char *);
+const char CPL_DLL *OGR_Fld_GetComment(OGRFieldDefnH hDefn);
+void CPL_DLL OGR_Fld_SetComment(OGRFieldDefnH hDefn, const char *);
 
 const char CPL_DLL *OGR_GetFieldTypeName(OGRFieldType);
 const char CPL_DLL *OGR_GetFieldSubTypeName(OGRFieldSubType);
@@ -500,6 +506,8 @@ int CPL_DLL OGR_F_GetFieldAsInteger(OGRFeatureH, int);
 GIntBig CPL_DLL OGR_F_GetFieldAsInteger64(OGRFeatureH, int);
 double CPL_DLL OGR_F_GetFieldAsDouble(OGRFeatureH, int);
 const char CPL_DLL *OGR_F_GetFieldAsString(OGRFeatureH, int);
+const char CPL_DLL *OGR_F_GetFieldAsISO8601DateTime(OGRFeatureH, int,
+                                                    CSLConstList);
 const int CPL_DLL *OGR_F_GetFieldAsIntegerList(OGRFeatureH, int, int *);
 const GIntBig CPL_DLL *OGR_F_GetFieldAsInteger64List(OGRFeatureH, int, int *);
 const double CPL_DLL *OGR_F_GetFieldAsDoubleList(OGRFeatureH, int, int *);
@@ -542,6 +550,8 @@ OGRErr CPL_DLL OGR_F_SetGeomField(OGRFeatureH hFeat, int iField,
 GIntBig CPL_DLL OGR_F_GetFID(OGRFeatureH);
 OGRErr CPL_DLL OGR_F_SetFID(OGRFeatureH, GIntBig);
 void CPL_DLL OGR_F_DumpReadable(OGRFeatureH, FILE *);
+char CPL_DLL *OGR_F_DumpReadableAsString(OGRFeatureH,
+                                         CSLConstList) CPL_WARN_UNUSED_RESULT;
 OGRErr CPL_DLL OGR_F_SetFrom(OGRFeatureH, OGRFeatureH, int);
 OGRErr CPL_DLL OGR_F_SetFromWithMap(OGRFeatureH, OGRFeatureH, int, const int *);
 
@@ -702,13 +712,34 @@ OGRFeatureH CPL_DLL OGR_L_GetNextFeature(OGRLayerH) CPL_WARN_UNUSED_RESULT;
     OGR_F_Destroy(hFeat);                                                      \
     }
 
-/** Data type for a Arrow C stream Include ogr_recordbatch.h to get the
+/** Data type for a Arrow C stream. Include ogr_recordbatch.h to get the
  * definition. */
 struct ArrowArrayStream;
 
 bool CPL_DLL OGR_L_GetArrowStream(OGRLayerH hLayer,
                                   struct ArrowArrayStream *out_stream,
                                   char **papszOptions);
+
+/** Data type for a Arrow C schema. Include ogr_recordbatch.h to get the
+ * definition. */
+struct ArrowSchema;
+
+bool CPL_DLL OGR_L_IsArrowSchemaSupported(OGRLayerH hLayer,
+                                          const struct ArrowSchema *schema,
+                                          char **papszOptions,
+                                          char **ppszErrorMsg);
+bool CPL_DLL OGR_L_CreateFieldFromArrowSchema(OGRLayerH hLayer,
+                                              const struct ArrowSchema *schema,
+                                              char **papszOptions);
+
+/** Data type for a Arrow C array. Include ogr_recordbatch.h to get the
+ * definition. */
+struct ArrowArray;
+
+bool CPL_DLL OGR_L_WriteArrowBatch(OGRLayerH hLayer,
+                                   const struct ArrowSchema *schema,
+                                   struct ArrowArray *array,
+                                   char **papszOptions);
 
 OGRErr CPL_DLL OGR_L_SetNextByIndex(OGRLayerH, GIntBig);
 OGRFeatureH CPL_DLL OGR_L_GetFeature(OGRLayerH, GIntBig) CPL_WARN_UNUSED_RESULT;
@@ -718,8 +749,17 @@ OGRErr CPL_DLL OGR_L_CreateFeature(OGRLayerH,
 OGRErr CPL_DLL OGR_L_DeleteFeature(OGRLayerH, GIntBig) CPL_WARN_UNUSED_RESULT;
 OGRErr CPL_DLL OGR_L_UpsertFeature(OGRLayerH,
                                    OGRFeatureH) CPL_WARN_UNUSED_RESULT;
+OGRErr CPL_DLL
+OGR_L_UpdateFeature(OGRLayerH, OGRFeatureH, int nUpdatedFieldsCount,
+                    const int *panUpdatedFieldsIdx, int nUpdatedGeomFieldsCount,
+                    const int *panUpdatedGeomFieldsIdx,
+                    bool bUpdateStyleString) CPL_WARN_UNUSED_RESULT;
 OGRFeatureDefnH CPL_DLL OGR_L_GetLayerDefn(OGRLayerH);
 OGRSpatialReferenceH CPL_DLL OGR_L_GetSpatialRef(OGRLayerH);
+OGRSpatialReferenceH CPL_DLL *
+OGR_L_GetSupportedSRSList(OGRLayerH hLayer, int iGeomField, int *pnCount);
+OGRErr CPL_DLL OGR_L_SetActiveSRS(OGRLayerH hLayer, int iGeomField,
+                                  OGRSpatialReferenceH hSRS);
 int CPL_DLL OGR_L_FindFieldIndex(OGRLayerH, const char *, int bExactMatch);
 GIntBig CPL_DLL OGR_L_GetFeatureCount(OGRLayerH, int);
 OGRErr CPL_DLL OGR_L_GetExtent(OGRLayerH, OGREnvelope *, int);

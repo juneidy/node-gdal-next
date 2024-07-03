@@ -325,10 +325,9 @@ OGRErr OGRMSSQLSpatialDataSource::DeleteLayer(int iLayer)
 /*                            CreateLayer()                             */
 /************************************************************************/
 
-OGRLayer *OGRMSSQLSpatialDataSource::ICreateLayer(const char *pszLayerName,
-                                                  OGRSpatialReference *poSRS,
-                                                  OGRwkbGeometryType eType,
-                                                  char **papszOptions)
+OGRLayer *OGRMSSQLSpatialDataSource::ICreateLayer(
+    const char *pszLayerName, const OGRSpatialReference *poSRS,
+    OGRwkbGeometryType eType, char **papszOptions)
 
 {
     char *pszTableName = nullptr;
@@ -1515,15 +1514,31 @@ OGRSpatialReference *OGRMSSQLSpatialDataSource::FetchSRS(int nId)
     /* -------------------------------------------------------------------- */
     if (poSRS)
     {
-        panSRID = (int *)CPLRealloc(panSRID, sizeof(int) * (nKnownSRID + 1));
-        papoSRS = (OGRSpatialReference **)CPLRealloc(
-            papoSRS, sizeof(void *) * (nKnownSRID + 1));
-        panSRID[nKnownSRID] = nId;
-        papoSRS[nKnownSRID] = poSRS;
-        nKnownSRID++;
+        AddSRIDToCache(nId, poSRS);
     }
 
     return poSRS;
+}
+
+/************************************************************************/
+/*                         AddSRIDToCache()                             */
+/*                                                                      */
+/*      Note: this will not add a reference on the poSRS object. Make   */
+/*      sure it is freshly created, or add a reference yourself if not. */
+/************************************************************************/
+
+void OGRMSSQLSpatialDataSource::AddSRIDToCache(int nId,
+                                               OGRSpatialReference *poSRS)
+{
+    /* -------------------------------------------------------------------- */
+    /*      Add to the cache.                                               */
+    /* -------------------------------------------------------------------- */
+    panSRID = (int *)CPLRealloc(panSRID, sizeof(int) * (nKnownSRID + 1));
+    papoSRS = (OGRSpatialReference **)CPLRealloc(papoSRS, sizeof(void *) *
+                                                              (nKnownSRID + 1));
+    panSRID[nKnownSRID] = nId;
+    papoSRS[nKnownSRID] = poSRS;
+    nKnownSRID++;
 }
 
 /************************************************************************/
@@ -1533,7 +1548,7 @@ OGRSpatialReference *OGRMSSQLSpatialDataSource::FetchSRS(int nId)
 /*      it to the table.                                                */
 /************************************************************************/
 
-int OGRMSSQLSpatialDataSource::FetchSRSId(OGRSpatialReference *poSRS)
+int OGRMSSQLSpatialDataSource::FetchSRSId(const OGRSpatialReference *poSRS)
 
 {
     char *pszWKT = nullptr;
@@ -1542,6 +1557,19 @@ int OGRMSSQLSpatialDataSource::FetchSRSId(OGRSpatialReference *poSRS)
 
     if (poSRS == nullptr)
         return 0;
+    /* -------------------------------------------------------------------- */
+    /*      First, we look through our SRID cache, is it there?             */
+    /* -------------------------------------------------------------------- */
+    for (int i = 0; i < nKnownSRID; i++)
+    {
+        if (papoSRS[i] == poSRS)
+            return panSRID[i];
+    }
+    for (int i = 0; i < nKnownSRID; i++)
+    {
+        if (papoSRS[i] != nullptr && papoSRS[i]->IsSame(poSRS))
+            return panSRID[i];
+    }
 
     OGRSpatialReference oSRS(*poSRS);
     // cppcheck-suppress uselessAssignmentPtrArg
@@ -1591,6 +1619,12 @@ int OGRMSSQLSpatialDataSource::FetchSRSId(OGRSpatialReference *poSRS)
         if (oStmt.ExecuteSQL() && oStmt.Fetch() && oStmt.GetColData(0))
         {
             nSRSId = atoi(oStmt.GetColData(0));
+            if (nSRSId != 0)
+            {
+                auto poCachedSRS = new OGRSpatialReference(oSRS);
+                poCachedSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+                AddSRIDToCache(nSRSId, poCachedSRS);
+            }
             return nSRSId;
         }
     }

@@ -31,10 +31,13 @@ add_library(
   gdalwarpoperation.cpp
   llrasterize.cpp
   polygonize.cpp
+  polygonize_polygonizer_impl.cpp
   rasterfill.cpp
   thinplatespline.cpp
   gdal_simplesurf.cpp
-  viewshed.cpp)
+  viewshed.cpp
+  gdalgenericinverse.cpp
+)
 
 add_dependencies(alg generate_gdal_version_h)
 

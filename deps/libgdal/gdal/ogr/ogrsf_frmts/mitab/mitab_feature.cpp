@@ -374,6 +374,13 @@ int TABFeature::ReadRecordFromDATFile(TABDATFile *poDATFile)
                 SetField(iField, nValue);
                 break;
             }
+            case TABFLargeInt:
+            {
+                const GInt64 nValue = poDATFile->ReadLargeIntField(
+                    poDATFile->GetFieldWidth(iField));
+                SetField(iField, nValue);
+                break;
+            }
             case TABFFloat:
             {
                 const double dValue =
@@ -538,6 +545,11 @@ int TABFeature::WriteRecordToDATFile(TABDATFile *poDATFile,
             case TABFSmallInt:
                 nStatus = poDATFile->WriteSmallIntField(
                     static_cast<GInt16>(GetFieldAsInteger(iField)), poINDFile,
+                    panIndexNo[iField]);
+                break;
+            case TABFLargeInt:
+                nStatus = poDATFile->WriteLargeIntField(
+                    static_cast<GInt64>(GetFieldAsInteger64(iField)), poINDFile,
                     panIndexNo[iField]);
                 break;
             case TABFFloat:
@@ -2138,7 +2150,6 @@ int TABPolyline::ReadGeometryFromMAPFile(
     double dXMax = 0.0;
     double dYMax = 0.0;
     OGRGeometry *poGeometry = nullptr;
-    OGRLineString *poLine = nullptr;
     GBool bComprCoord = poObjHdr->IsCompressedType();
     TABMAPCoordBlock *poCoordBlock = nullptr;
 
@@ -2156,7 +2167,7 @@ int TABPolyline::ReadGeometryFromMAPFile(
 
         m_bSmooth = FALSE;
 
-        poLine = new OGRLineString();
+        auto poLine = new OGRLineString();
         poGeometry = poLine;
         poLine->setNumPoints(2);
 
@@ -2238,7 +2249,7 @@ int TABPolyline::ReadGeometryFromMAPFile(
 
         poCoordBlock->SetComprCoordOrigin(m_nComprOrgX, m_nComprOrgY);
 
-        poLine = new OGRLineString();
+        auto poLine = new OGRLineString();
         poGeometry = poLine;
         poLine->setNumPoints(numPoints);
 
@@ -2391,7 +2402,7 @@ int TABPolyline::ReadGeometryFromMAPFile(
             const int numSectionVertices = pasSecHdrs[iSection].numVertices;
             GInt32 *pnXYPtr = panXY + (pasSecHdrs[iSection].nVertexOffset * 2);
 
-            poLine = new OGRLineString();
+            auto poLine = new OGRLineString();
             poLine->setNumPoints(numSectionVertices);
 
             for (int i = 0; i < numSectionVertices; i++)
@@ -2407,7 +2418,6 @@ int TABPolyline::ReadGeometryFromMAPFile(
             {
                 CPLAssert(false);  // Just in case lower-level lib is modified
             }
-            poLine = nullptr;
         }
 
         CPLFree(pasSecHdrs);
@@ -5713,7 +5723,7 @@ int TABText::WriteGeometryToMAPFile(TABMAPFile *poMapFile,
     GInt32 nCoordBlockPtr = poCoordBlock->GetCurAddress();
 
     // This string was escaped before 20050714
-    CPLString oTmpString(m_pszString);
+    CPLString oTmpString(m_pszString ? m_pszString : "");
     if (!poMapFile->GetEncoding().empty())
     {
         oTmpString.Recode(CPL_ENC_UTF8, poMapFile->GetEncoding());

@@ -53,6 +53,23 @@ extern "C" void RegisterOGROAPIF();
 #define MEDIA_TYPE_APPLICATION_XML "application/xml"
 #define MEDIA_TYPE_JSON_SCHEMA "application/schema+json"
 
+constexpr const char *OGC_CRS84_WKT =
+    "GEOGCRS[\"WGS 84 (CRS84)\",ENSEMBLE[\"World Geodetic System 1984 "
+    "ensemble\",MEMBER[\"World Geodetic System 1984 "
+    "(Transit)\"],MEMBER[\"World Geodetic System 1984 (G730)\"],MEMBER[\"World "
+    "Geodetic System 1984 (G873)\"],MEMBER[\"World Geodetic System 1984 "
+    "(G1150)\"],MEMBER[\"World Geodetic System 1984 (G1674)\"],MEMBER[\"World "
+    "Geodetic System 1984 (G1762)\"],MEMBER[\"World Geodetic System 1984 "
+    "(G2139)\"],ELLIPSOID[\"WGS "
+    "84\",6378137,298.257223563,LENGTHUNIT[\"metre\",1]],ENSEMBLEACCURACY[2.0]]"
+    ",PRIMEM[\"Greenwich\",0,ANGLEUNIT[\"degree\",0.0174532925199433]],CS["
+    "ellipsoidal,2],AXIS[\"geodetic longitude "
+    "(Lon)\",east,ORDER[1],ANGLEUNIT[\"degree\",0.0174532925199433]],AXIS["
+    "\"geodetic latitude "
+    "(Lat)\",north,ORDER[2],ANGLEUNIT[\"degree\",0.0174532925199433]],USAGE["
+    "SCOPE[\"Not "
+    "known.\"],AREA[\"World.\"],BBOX[-90,-180,90,180]],ID[\"OGC\",\"CRS84\"]]";
+
 /************************************************************************/
 /*                           OGROAPIFDataset                             */
 /************************************************************************/
@@ -66,8 +83,14 @@ class OGROAPIFDataset final : public GDALDataset
     CPLString m_osRootURL;
     CPLString m_osUserQueryParams;
     CPLString m_osUserPwd;
-    int m_nPageSize = 10;
+    int m_nPageSize = 1000;
+    int m_nInitialRequestPageSize = 20;
+    bool m_bPageSizeSetFromOpenOptions = false;
     std::vector<std::unique_ptr<OGRLayer>> m_apoLayers;
+    std::string m_osAskedCRS{};
+    OGRSpatialReference m_oAskedCRS{};
+    bool m_bAskedCRSIsRequired = false;
+    bool m_bServerFeaturesAxisOrderGISFriendly = false;
 
     bool m_bAPIDocLoaded = false;
     CPLJSONDocument m_oAPIDoc;
@@ -86,8 +109,15 @@ class OGROAPIFDataset final : public GDALDataset
                       ", " MEDIA_TYPE_JSON,
                       CPLStringList *paosHeaders = nullptr);
 
-    bool LoadJSONCollection(const CPLJSONObject &oCollection);
+    bool LoadJSONCollection(const CPLJSONObject &oCollection,
+                            const CPLJSONArray &oGlobalCRSList);
     bool LoadJSONCollections(const CPLString &osResultIn);
+
+    /**
+     * Determines the page size by making a call to the API endpoint to get the server's
+     * default and max limits for the collection items specified by itemsUrl
+     */
+    void DeterminePageSizeFromAPI(const std::string &itemsUrl);
 
   public:
     OGROAPIFDataset() = default;
@@ -115,9 +145,15 @@ class OGROAPIFLayer final : public OGRLayer
     OGROAPIFDataset *m_poDS = nullptr;
     OGRFeatureDefn *m_poFeatureDefn = nullptr;
     bool m_bIsGeographicCRS = false;
+    bool m_bCRSHasGISFriendlyOrder = false;
+    bool m_bHasEmittedContentCRSWarning = false;
+    bool m_bHasEmittedJsonCRWarning = false;
+    std::string m_osActiveCRS{};
     CPLString m_osURL;
     CPLString m_osPath;
     OGREnvelope m_oExtent;
+    OGREnvelope m_oOriginalExtent;
+    OGRSpatialReference m_oOriginalExtentCRS;
     bool m_bFeatureDefnEstablished = false;
     std::unique_ptr<GDALDataset> m_poUnderlyingDS;
     OGRLayer *m_poUnderlyingLayer = nullptr;
@@ -125,6 +161,8 @@ class OGROAPIFLayer final : public OGRLayer
     CPLString m_osGetURL;
     CPLString m_osAttributeFilter;
     CPLString m_osGetID;
+    std::vector<std::string> m_oSupportedCRSList{};
+    OGRLayer::GetSupportedSRSListRetType m_apoSupportedCRSList{};
     bool m_bFilterMustBeClientSideEvaluated = false;
     bool m_bGotQueryableAttributes = false;
     std::set<CPLString> m_aoSetQueryableAttributes;
@@ -152,10 +190,13 @@ class OGROAPIFLayer final : public OGRLayer
     bool SupportsResultTypeHits();
     void GetQueryableAttributes();
     void GetSchema();
+    void ComputeExtent();
 
   public:
     OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
-                  const CPLJSONArray &oBBOX, const CPLJSONArray &oCRS,
+                  const CPLJSONArray &oBBOX, const std::string &osBBOXCrs,
+                  std::vector<std::string> &&oCRSList,
+                  const std::string &osActiveCRS, double dfCoordinateEpoch,
                   const CPLJSONArray &oLinks);
 
     ~OGROAPIFLayer();
@@ -184,6 +225,11 @@ class OGROAPIFLayer final : public OGRLayer
         OGRLayer::SetSpatialFilter(iGeomField, poGeom);
     }
     OGRErr SetAttributeFilter(const char *pszQuery) override;
+
+    const OGRLayer::GetSupportedSRSListRetType &
+    GetSupportedSRSList(int iGeomField) override;
+    OGRErr SetActiveSRS(int iGeomField,
+                        const OGRSpatialReference *poSRS) override;
 };
 
 /************************************************************************/
@@ -293,8 +339,15 @@ bool OGROAPIFDataset::Download(const CPLString &osURL, const char *pszAccept,
         return false;
     }
 #endif
-    char **papszOptions = CSLSetNameValue(
-        nullptr, "HEADERS", (CPLString("Accept: ") + pszAccept).c_str());
+    char **papszOptions = nullptr;
+
+    if (pszAccept)
+    {
+        papszOptions =
+            CSLSetNameValue(papszOptions, "HEADERS",
+                            (CPLString("Accept: ") + pszAccept).c_str());
+    }
+
     if (!m_osUserPwd.empty())
     {
         papszOptions =
@@ -336,57 +389,68 @@ bool OGROAPIFDataset::Download(const CPLString &osURL, const char *pszAccept,
 
     if (psResult->pszContentType)
         osContentType = psResult->pszContentType;
-    bool bFoundExpectedContentType = false;
 
+    // Do not check content type if not specified
+    bool bFoundExpectedContentType = pszAccept ? false : true;
+
+    if (!bFoundExpectedContentType)
+    {
 #ifndef REMOVE_HACK
-    if (strstr(pszAccept, "json"))
-    {
-        if (strstr(osURL, "raw.githubusercontent.com") &&
-            strstr(osURL, ".json"))
+        // cppcheck-suppress nullPointer
+        if (strstr(pszAccept, "json"))
+        {
+            if (strstr(osURL, "raw.githubusercontent.com") &&
+                strstr(osURL, ".json"))
+            {
+                bFoundExpectedContentType = true;
+            }
+            else if (psResult->pszContentType != nullptr &&
+                     (CheckContentType(psResult->pszContentType,
+                                       MEDIA_TYPE_JSON) ||
+                      CheckContentType(psResult->pszContentType,
+                                       MEDIA_TYPE_GEOJSON)))
+            {
+                bFoundExpectedContentType = true;
+            }
+        }
+#endif
+
+        // cppcheck-suppress nullPointer
+        if (strstr(pszAccept, "xml") && psResult->pszContentType != nullptr &&
+            (CheckContentType(psResult->pszContentType, MEDIA_TYPE_TEXT_XML) ||
+             CheckContentType(psResult->pszContentType,
+                              MEDIA_TYPE_APPLICATION_XML)))
         {
             bFoundExpectedContentType = true;
         }
-        else if (psResult->pszContentType != nullptr &&
-                 (CheckContentType(psResult->pszContentType, MEDIA_TYPE_JSON) ||
-                  CheckContentType(psResult->pszContentType,
-                                   MEDIA_TYPE_GEOJSON)))
-        {
-            bFoundExpectedContentType = true;
-        }
-    }
-#endif
 
-    if (strstr(pszAccept, "xml") && psResult->pszContentType != nullptr &&
-        (CheckContentType(psResult->pszContentType, MEDIA_TYPE_TEXT_XML) ||
-         CheckContentType(psResult->pszContentType,
-                          MEDIA_TYPE_APPLICATION_XML)))
-    {
-        bFoundExpectedContentType = true;
-    }
-
-    if (strstr(pszAccept, MEDIA_TYPE_JSON_SCHEMA) &&
-        psResult->pszContentType != nullptr &&
-        (CheckContentType(psResult->pszContentType, MEDIA_TYPE_JSON) ||
-         CheckContentType(psResult->pszContentType, MEDIA_TYPE_JSON_SCHEMA)))
-    {
-        bFoundExpectedContentType = true;
-    }
-
-    for (const char *pszMediaType : {
-             MEDIA_TYPE_JSON,
-             MEDIA_TYPE_GEOJSON,
-             MEDIA_TYPE_OAPI_3_0,
-#ifndef REMOVE_SUPPORT_FOR_OLD_VERSIONS
-             MEDIA_TYPE_OAPI_3_0_ALT,
-#endif
-         })
-    {
-        if (strstr(pszAccept, pszMediaType) &&
+        // cppcheck-suppress nullPointer
+        if (strstr(pszAccept, MEDIA_TYPE_JSON_SCHEMA) &&
             psResult->pszContentType != nullptr &&
-            CheckContentType(psResult->pszContentType, pszMediaType))
+            (CheckContentType(psResult->pszContentType, MEDIA_TYPE_JSON) ||
+             CheckContentType(psResult->pszContentType,
+                              MEDIA_TYPE_JSON_SCHEMA)))
         {
             bFoundExpectedContentType = true;
-            break;
+        }
+
+        for (const char *pszMediaType : {
+                 MEDIA_TYPE_JSON,
+                 MEDIA_TYPE_GEOJSON,
+                 MEDIA_TYPE_OAPI_3_0,
+#ifndef REMOVE_SUPPORT_FOR_OLD_VERSIONS
+                 MEDIA_TYPE_OAPI_3_0_ALT,
+#endif
+             })
+        {
+            // cppcheck-suppress nullPointer
+            if (strstr(pszAccept, pszMediaType) &&
+                psResult->pszContentType != nullptr &&
+                CheckContentType(psResult->pszContentType, pszMediaType))
+            {
+                bFoundExpectedContentType = true;
+                break;
+            }
         }
     }
 
@@ -475,10 +539,10 @@ const CPLJSONDocument &OGROAPIFDataset::GetAPIDoc()
                 }
                 const auto osRel(oLink.GetString("rel"));
                 const auto osType(oLink.GetString("type"));
-                if (osRel == "service-desc"
+                if (EQUAL(osRel.c_str(), "service-desc")
 #ifndef REMOVE_SUPPORT_FOR_OLD_VERSIONS
                     // Needed for http://beta.fmi.fi/data/3/wfs/sofp
-                    || osRel == "service"
+                    || EQUAL(osRel.c_str(), "service")
 #endif
                 )
                 {
@@ -539,7 +603,8 @@ const CPLJSONDocument &OGROAPIFDataset::GetAPIDoc()
 /*                         LoadJSONCollection()                         */
 /************************************************************************/
 
-bool OGROAPIFDataset::LoadJSONCollection(const CPLJSONObject &oCollection)
+bool OGROAPIFDataset::LoadJSONCollection(const CPLJSONObject &oCollection,
+                                         const CPLJSONArray &oGlobalCRSList)
 {
     if (oCollection.GetType() != CPLJSONObject::Type::Object)
         return false;
@@ -562,14 +627,145 @@ bool OGROAPIFDataset::LoadJSONCollection(const CPLJSONObject &oCollection)
     CPLString osTitle(oCollection.GetString("title"));
     CPLString osDescription(oCollection.GetString("description"));
     CPLJSONArray oBBOX = oCollection.GetArray("extent/spatial/bbox");
+#ifndef REMOVE_HACK_FOR_NLS_FINLAND_SERVICES
+    if (!oBBOX.IsValid())
+        oBBOX = oCollection.GetArray("extent/spatialExtent/bbox");
+#endif
 #ifndef REMOVE_SUPPORT_FOR_OLD_VERSIONS
     if (!oBBOX.IsValid())
         oBBOX = oCollection.GetArray("extent/spatial");
 #endif
-    CPLJSONArray oCRS = oCollection.GetArray("crs");
+    const std::string osBBOXCrs = oCollection.GetString("extent/spatial/crs");
+
+    // Deal with CRS list
+    const CPLJSONArray oCRSListOri = oCollection.GetArray("crs");
+    std::vector<std::string> oCRSList;
+    std::string osActiveCRS;
+    double dfCoordinateEpoch = 0.0;
+    if (oCRSListOri.IsValid())
+    {
+        std::set<std::string> oSetCRS;
+        for (const auto &oCRS : oCRSListOri)
+        {
+            if (oCRS.ToString() == "#/crs")
+            {
+                if (!oGlobalCRSList.IsValid())
+                {
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "Collection %s refer to #/crs global CRS list, "
+                             "which is missing",
+                             osTitle.c_str());
+                }
+                else
+                {
+                    for (const auto &oGlobalCRS : oGlobalCRSList)
+                    {
+                        const auto osCRS = oGlobalCRS.ToString();
+                        if (oSetCRS.find(osCRS) == oSetCRS.end())
+                        {
+                            oSetCRS.insert(osCRS);
+                            oCRSList.push_back(osCRS);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                const auto osCRS = oCRS.ToString();
+                if (oSetCRS.find(osCRS) == oSetCRS.end())
+                {
+                    oSetCRS.insert(osCRS);
+                    oCRSList.push_back(osCRS);
+                }
+            }
+        }
+
+        if (!m_oAskedCRS.IsEmpty())
+        {
+            for (const auto &osCRS : oCRSList)
+            {
+                OGRSpatialReference oSRS;
+                if (oSRS.SetFromUserInput(
+                        osCRS.c_str(),
+                        OGRSpatialReference::
+                            SET_FROM_USER_INPUT_LIMITATIONS_get()) ==
+                    OGRERR_NONE)
+                {
+                    if (oSRS.IsSame(&m_oAskedCRS))
+                    {
+                        osActiveCRS = osCRS;
+                        break;
+                    }
+                }
+            }
+            if (osActiveCRS.empty())
+            {
+                if (m_bAskedCRSIsRequired)
+                {
+                    std::string osList;
+                    for (const auto &osCRS : oCRSList)
+                    {
+                        if (!osList.empty())
+                            osList += ", ";
+                        if (osCRS.find(
+                                "http://www.opengis.net/def/crs/EPSG/0/") == 0)
+                            osList +=
+                                "EPSG:" +
+                                osCRS.substr(strlen(
+                                    "http://www.opengis.net/def/crs/EPSG/0/"));
+                        else if (osCRS.find("https://www.opengis.net/def/crs/"
+                                            "EPSG/0/") == 0)
+                            osList +=
+                                "EPSG:" +
+                                osCRS.substr(strlen(
+                                    "https://www.opengis.net/def/crs/EPSG/0/"));
+                        else if (osCRS.find("http://www.opengis.net/def/crs/"
+                                            "OGC/1.3/") == 0)
+                            osList +=
+                                "OGC:" +
+                                osCRS.substr(strlen(
+                                    "http://www.opengis.net/def/crs/OGC/1.3/"));
+                        else if (osCRS.find("https://www.opengis.net/def/crs/"
+                                            "OGC/1.3/") == 0)
+                            osList += "OGC:" + osCRS.substr(strlen(
+                                                   "https://www.opengis.net/"
+                                                   "def/crs/OGC/1.3/"));
+                        else
+                            osList += osCRS;
+                    }
+                    CPLError(CE_Failure, CPLE_AppDefined,
+                             "CRS %s not found in list of CRS valid for "
+                             "collection %s. Available CRS are %s.",
+                             m_osAskedCRS.c_str(), osTitle.c_str(),
+                             osList.c_str());
+                    return false;
+                }
+                else
+                {
+                    CPLDebug("OAPIF",
+                             "CRS %s not found in list of CRS valid for "
+                             "collection %s",
+                             m_osAskedCRS.c_str(), osTitle.c_str());
+                }
+            }
+        }
+    }
+
+    // storageCRS is in the "OGC API - Features - Part 2: Coordinate Reference
+    // Systems" extension
+    const std::string osStorageCRS = oCollection.GetString("storageCrs");
+    const double dfStorageCrsCoordinateEpoch =
+        oCollection.GetDouble("storageCrsCoordinateEpoch");
+    if (osActiveCRS.empty() || osActiveCRS == osStorageCRS)
+    {
+        osActiveCRS = osStorageCRS;
+        dfCoordinateEpoch = dfStorageCrsCoordinateEpoch;
+    }
+
     const auto oLinks = oCollection.GetArray("links");
-    auto poLayer =
-        cpl::make_unique<OGROAPIFLayer>(this, osName, oBBOX, oCRS, oLinks);
+    auto poLayer = cpl::make_unique<OGROAPIFLayer>(
+        this, osName, oBBOX, osBBOXCrs, std::move(oCRSList), osActiveCRS,
+        dfCoordinateEpoch, oLinks);
     if (!osTitle.empty())
         poLayer->SetMetadataItem("TITLE", osTitle.c_str());
     if (!osDescription.empty())
@@ -632,9 +828,11 @@ bool OGROAPIFDataset::LoadJSONCollections(const CPLString &osResultIn)
             return false;
         }
 
+        const auto oGlobalCRSList = oRoot.GetArray("crs");
+
         for (int i = 0; i < oCollections.Size(); i++)
         {
-            LoadJSONCollection(oCollections[i]);
+            LoadJSONCollection(oCollections[i], oGlobalCRSList);
         }
 
         osResult.clear();
@@ -654,7 +852,7 @@ bool OGROAPIFDataset::LoadJSONCollections(const CPLString &osResultIn)
                 {
                     continue;
                 }
-                if (oLink.GetString("rel") == "next")
+                if (EQUAL(oLink.GetString("rel").c_str(), "next"))
                 {
                     osNextURL = oLink.GetString("href");
                     nCountRelNext++;
@@ -679,6 +877,143 @@ bool OGROAPIFDataset::LoadJSONCollections(const CPLString &osResultIn)
         }
     }
     return !m_apoLayers.empty();
+}
+
+void OGROAPIFDataset::DeterminePageSizeFromAPI(const std::string &itemsUrl)
+{
+    // Try to get max limit from api
+    int nMaximum{-1};
+    int nDefault{-1};
+    // Not sure if min should be considered
+    //int nMinimum { -1 };
+    const CPLJSONDocument &oDoc{GetAPIDoc()};
+    const auto &oRoot = oDoc.GetRoot();
+
+    bool bFound{false};
+
+    // limit from api document
+    if (oRoot.IsValid())
+    {
+
+        const auto paths{oRoot.GetObj("paths")};
+
+        if (paths.IsValid())
+        {
+
+            const auto pathName{itemsUrl.substr(m_osRootURL.length())};
+            const auto path{paths.GetObj(pathName)};
+
+            if (path.IsValid())
+            {
+
+                const auto parameters{path.GetArray("get/parameters")};
+
+                // check $ref
+                for (const auto &param : parameters)
+                {
+                    const auto ref{param.GetString("$ref")};
+                    if (ref.find("limit") != std::string::npos)
+                    {
+                        // Examine ref
+                        if (ref.find("http") == 0 &&
+                            ref.find(".yml") == std::string::npos &&
+                            ref.find(".yaml") ==
+                                std::string::
+                                    npos)  // Remote document, skip yaml
+                        {
+                            // Only reinject auth if the URL matches
+                            auto limitUrl{ref.find(m_osRootURL) == 0
+                                              ? ReinjectAuthInURL(ref)
+                                              : ref};
+                            std::string fragment;
+                            const auto hashPos{limitUrl.find('#')};
+                            if (hashPos != std::string::npos)
+                            {
+                                // Remove leading #
+                                fragment = limitUrl.substr(hashPos + 1);
+                                limitUrl = limitUrl.substr(0, hashPos);
+                            }
+                            CPLString osResult;
+                            CPLString osContentType;
+                            // Do not limit accepted content-types, external resources may have any
+                            if (!Download(limitUrl, nullptr, osResult,
+                                          osContentType))
+                            {
+                                CPLDebug("OAPIF",
+                                         "Could not download OPENAPI $ref: %s",
+                                         ref.c_str());
+                                return;
+                            }
+
+                            // We cannot trust the content-type, try JSON (YAML not implemented)
+
+                            // Try JSON
+                            CPLJSONDocument oLimitDoc;
+                            if (oLimitDoc.LoadMemory(osResult))
+                            {
+                                const auto oLimitRoot{oLimitDoc.GetRoot()};
+                                if (oLimitRoot.IsValid())
+                                {
+                                    const auto oLimit{
+                                        oLimitRoot.GetObj(fragment)};
+                                    if (oLimit.IsValid())
+                                    {
+                                        nMaximum = oLimit.GetInteger(
+                                            "schema/maximum", -1);
+                                        //nMinimum = oLimit.GetInteger( "schema/minimum", -1 );
+                                        nDefault = oLimit.GetInteger(
+                                            "schema/default", -1);
+                                        bFound = true;
+                                    }
+                                }
+                            }
+                        }
+                        else if (ref.find('#') == 0)  // Local ref
+                        {
+                            const auto oLimit{oRoot.GetObj(ref.substr(1))};
+                            if (oLimit.IsValid())
+                            {
+                                nMaximum =
+                                    oLimit.GetInteger("schema/maximum", -1);
+                                //nMinimum = oLimit.GetInteger( "schema/minimum", -1 );
+                                nDefault =
+                                    oLimit.GetInteger("schema/default", -1);
+                                bFound = true;
+                            }
+                        }
+                        else
+                        {
+                            CPLDebug("OAPIF", "Could not open OPENAPI $ref: %s",
+                                     ref.c_str());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (bFound)
+    {
+        // Initially set to GDAL's default (1000)
+        int pageSize{m_nPageSize};
+        if (nDefault > 0 && nMaximum > 0)
+        {
+            // Use the default, but if it is below GDAL's default (1000), aim for 1000
+            // but clamp to the maximum limit
+            pageSize = std::min(std::max(pageSize, nDefault), nMaximum);
+        }
+        else if (nDefault > 0)
+            pageSize = std::max(pageSize, nDefault);
+        else if (nMaximum > 0)
+            pageSize = nMaximum;
+
+        if (m_nPageSize != pageSize)
+        {
+            CPLDebug("OAPIF", "Page size set from OPENAPI schema: %d",
+                     pageSize);
+            m_nPageSize = pageSize;
+        }
+    }
 }
 
 /************************************************************************/
@@ -744,11 +1079,70 @@ bool OGROAPIFDataset::Open(GDALOpenInfo *poOpenInfo)
 
     m_bIgnoreSchema = CPLTestBool(CSLFetchNameValueDef(
         poOpenInfo->papszOpenOptions, "IGNORE_SCHEMA", "FALSE"));
-    m_nPageSize =
-        atoi(CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "PAGE_SIZE",
-                                  CPLSPrintf("%d", m_nPageSize)));
+
+    const int pageSize = atoi(
+        CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "PAGE_SIZE", "-1"));
+
+    if (pageSize > 0)
+    {
+        m_nPageSize = pageSize;
+        m_bPageSizeSetFromOpenOptions = true;
+    }
+
+    const int initialRequestPageSize = atoi(CSLFetchNameValueDef(
+        poOpenInfo->papszOpenOptions, "INITIAL_REQUEST_PAGE_SIZE", "-1"));
+
+    if (initialRequestPageSize >= 1)
+    {
+        m_nInitialRequestPageSize = initialRequestPageSize;
+    }
+
     m_osUserPwd =
         CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "USERPWD", "");
+    std::string osCRS =
+        CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "CRS", "");
+    std::string osPreferredCRS =
+        CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "PREFERRED_CRS", "");
+    if (!osCRS.empty())
+    {
+        if (!osPreferredCRS.empty())
+        {
+            CPLError(
+                CE_Failure, CPLE_AppDefined,
+                "CRS and PREFERRED_CRS open options are mutually exclusive.");
+            return false;
+        }
+        m_osAskedCRS = osCRS;
+        if (m_oAskedCRS.SetFromUserInput(
+                osCRS.c_str(),
+                OGRSpatialReference::SET_FROM_USER_INPUT_LIMITATIONS_get()) !=
+            OGRERR_NONE)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined, "Invalid value for CRS");
+            return false;
+        }
+        m_bAskedCRSIsRequired = true;
+    }
+    else if (!osPreferredCRS.empty())
+    {
+        m_osAskedCRS = osPreferredCRS;
+        if (m_oAskedCRS.SetFromUserInput(
+                osPreferredCRS.c_str(),
+                OGRSpatialReference::SET_FROM_USER_INPUT_LIMITATIONS_get()) !=
+            OGRERR_NONE)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Invalid value for PREFERRED_CRS");
+            return false;
+        }
+    }
+
+    m_bServerFeaturesAxisOrderGISFriendly =
+        EQUAL(CSLFetchNameValueDef(poOpenInfo->papszOpenOptions,
+                                   "SERVER_FEATURE_AXIS_ORDER",
+                                   "AUTHORITY_COMPLIANT"),
+              "GIS_FRIENDLY");
+
     CPLString osResult;
     CPLString osContentType;
 
@@ -765,7 +1159,7 @@ bool OGROAPIFDataset::Open(GDALOpenInfo *poOpenInfo)
             return false;
         }
         const auto &oRoot = oDoc.GetRoot();
-        return LoadJSONCollection(oRoot);
+        return LoadJSONCollection(oRoot, CPLJSONArray());
     }
 
     if (!Download(ConcatenateURLParts(m_osRootURL, "/collections"),
@@ -806,18 +1200,49 @@ static int OGROAPIFDriverIdentify(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
+/*                      HasGISFriendlyAxisOrder()                       */
+/************************************************************************/
+
+static bool HasGISFriendlyAxisOrder(const OGRSpatialReference *poSRS)
+{
+    const auto &axisMapping = poSRS->GetDataAxisToSRSAxisMapping();
+    return axisMapping.size() >= 2 && axisMapping[0] == 1 &&
+           axisMapping[1] == 2;
+}
+
+/************************************************************************/
 /*                           OGROAPIFLayer()                             */
 /************************************************************************/
 
 OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
                              const CPLJSONArray &oBBOX,
-                             const CPLJSONArray & /* oCRS */,
+                             const std::string &osBBOXCrs,
+                             std::vector<std::string> &&oCRSList,
+                             const std::string &osActiveCRS,
+                             double dfCoordinateEpoch,
                              const CPLJSONArray &oLinks)
     : m_poDS(poDS)
 {
     m_poFeatureDefn = new OGRFeatureDefn(osName);
     m_poFeatureDefn->Reference();
     SetDescription(osName);
+    m_oSupportedCRSList = std::move(oCRSList);
+
+    OGRSpatialReference *poSRS = new OGRSpatialReference();
+    poSRS->SetFromUserInput(
+        !osActiveCRS.empty() ? osActiveCRS.c_str() : SRS_WKT_WGS84_LAT_LONG,
+        OGRSpatialReference::SET_FROM_USER_INPUT_LIMITATIONS_get());
+    poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+    m_bIsGeographicCRS = poSRS->IsGeographic();
+    m_bCRSHasGISFriendlyOrder =
+        osActiveCRS.empty() || HasGISFriendlyAxisOrder(poSRS);
+    m_osActiveCRS = osActiveCRS;
+    if (dfCoordinateEpoch > 0)
+        poSRS->SetCoordinateEpoch(dfCoordinateEpoch);
+    m_poFeatureDefn->GetGeomFieldDefn(0)->SetSpatialRef(poSRS);
+
+    poSRS->Release();
+
     if (oBBOX.IsValid() && oBBOX.Size() > 0)
     {
         CPLJSONArray oRealBBOX;
@@ -835,29 +1260,45 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
 #endif
         if (oRealBBOX.Size() == 4 || oRealBBOX.Size() == 6)
         {
-            m_oExtent.MinX = oRealBBOX[0].ToDouble();
-            m_oExtent.MinY = oRealBBOX[1].ToDouble();
-            m_oExtent.MaxX =
+            m_oOriginalExtent.MinX = oRealBBOX[0].ToDouble();
+            m_oOriginalExtent.MinY = oRealBBOX[1].ToDouble();
+            m_oOriginalExtent.MaxX =
                 oRealBBOX[oRealBBOX.Size() == 6 ? 3 : 2].ToDouble();
-            m_oExtent.MaxY =
+            m_oOriginalExtent.MaxY =
                 oRealBBOX[oRealBBOX.Size() == 6 ? 4 : 3].ToDouble();
 
-            // Handle bbox over antimerdian, which we do not support properly
+            m_oOriginalExtentCRS.SetFromUserInput(
+                !osBBOXCrs.empty() ? osBBOXCrs.c_str() : OGC_CRS84_WKT,
+                OGRSpatialReference::SET_FROM_USER_INPUT_LIMITATIONS_get());
+
+            // Handle bbox over antimeridian, which we do not support properly
             // in OGR
-            if (m_oExtent.MinX > m_oExtent.MaxX &&
-                fabs(m_oExtent.MinX) <= 180.0 && fabs(m_oExtent.MaxX) <= 180.0)
+            if (m_oOriginalExtentCRS.IsGeographic())
             {
-                m_oExtent.MinX = -180.0;
-                m_oExtent.MaxX = 180.0;
+                const bool bSwitchXY =
+                    !HasGISFriendlyAxisOrder(&m_oOriginalExtentCRS);
+                if (bSwitchXY)
+                {
+                    std::swap(m_oOriginalExtent.MinX, m_oOriginalExtent.MinY);
+                    std::swap(m_oOriginalExtent.MaxX, m_oOriginalExtent.MaxY);
+                }
+
+                if (m_oOriginalExtent.MinX > m_oOriginalExtent.MaxX &&
+                    fabs(m_oOriginalExtent.MinX) <= 180.0 &&
+                    fabs(m_oOriginalExtent.MaxX) <= 180.0)
+                {
+                    m_oOriginalExtent.MinX = -180.0;
+                    m_oOriginalExtent.MaxX = 180.0;
+                }
+
+                if (bSwitchXY)
+                {
+                    std::swap(m_oOriginalExtent.MinX, m_oOriginalExtent.MinY);
+                    std::swap(m_oOriginalExtent.MaxX, m_oOriginalExtent.MaxY);
+                }
             }
         }
     }
-
-    OGRSpatialReference *poSRS = new OGRSpatialReference();
-    poSRS->SetFromUserInput(SRS_WKT_WGS84_LAT_LONG);
-    poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    m_poFeatureDefn->GetGeomFieldDefn(0)->SetSpatialRef(poSRS);
-    poSRS->Release();
 
     // Default to what the spec mandates for the /items URL, but check links
     // later
@@ -878,7 +1319,7 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
             const auto osRel(oLink.GetString("rel"));
             const auto osURL = oLink.GetString("href");
             const auto type = oLink.GetString("type");
-            if (osRel == "describedBy")
+            if (EQUAL(osRel.c_str(), "describedby"))
             {
                 if (type == MEDIA_TYPE_TEXT_XML ||
                     type == MEDIA_TYPE_APPLICATION_XML)
@@ -895,14 +1336,14 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
                     m_bDescribedByIsXML = false;
                 }
             }
-            else if (osRel == "queryables")
+            else if (EQUAL(osRel.c_str(), "queryables"))
             {
                 if (type == MEDIA_TYPE_JSON || m_osQueryablesURL.empty())
                 {
                     m_osQueryablesURL = m_poDS->ReinjectAuthInURL(osURL);
                 }
             }
-            else if (osRel == "items")
+            else if (EQUAL(osRel.c_str(), "items"))
             {
                 if (type == MEDIA_TYPE_GEOJSON)
                 {
@@ -916,8 +1357,6 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
         }
     }
 
-    m_bIsGeographicCRS = true;
-
     OGROAPIFLayer::ResetReading();
 }
 
@@ -928,6 +1367,100 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset *poDS, const CPLString &osName,
 OGROAPIFLayer::~OGROAPIFLayer()
 {
     m_poFeatureDefn->Release();
+}
+
+/************************************************************************/
+/*                        GetSupportedSRSList()                         */
+/************************************************************************/
+
+const OGRLayer::GetSupportedSRSListRetType &
+OGROAPIFLayer::GetSupportedSRSList(int /*iGeomField*/)
+{
+    if (!m_oSupportedCRSList.empty() && m_apoSupportedCRSList.empty())
+    {
+        for (const auto &osCRS : m_oSupportedCRSList)
+        {
+            auto poSRS = std::unique_ptr<OGRSpatialReference,
+                                         OGRSpatialReferenceReleaser>(
+                new OGRSpatialReference());
+            if (poSRS->SetFromUserInput(
+                    osCRS.c_str(),
+                    OGRSpatialReference::
+                        SET_FROM_USER_INPUT_LIMITATIONS_get()) == OGRERR_NONE)
+            {
+                m_apoSupportedCRSList.emplace_back(std::move(poSRS));
+            }
+        }
+    }
+    return m_apoSupportedCRSList;
+}
+
+/************************************************************************/
+/*                          SetActiveSRS()                              */
+/************************************************************************/
+
+OGRErr OGROAPIFLayer::SetActiveSRS(int /*iGeomField*/,
+                                   const OGRSpatialReference *poSRS)
+{
+    if (poSRS == nullptr)
+        return OGRERR_FAILURE;
+    const char *const apszOptions[] = {
+        "IGNORE_DATA_AXIS_TO_SRS_AXIS_MAPPING=YES", nullptr};
+    for (const auto &osCRS : m_oSupportedCRSList)
+    {
+        OGRSpatialReference oTmpSRS;
+        if (oTmpSRS.SetFromUserInput(
+                osCRS.c_str(),
+                OGRSpatialReference::SET_FROM_USER_INPUT_LIMITATIONS_get()) ==
+                OGRERR_NONE &&
+            oTmpSRS.IsSame(poSRS, apszOptions))
+        {
+            m_osActiveCRS = osCRS;
+            auto poGeomFieldDefn = m_poFeatureDefn->GetGeomFieldDefn(0);
+            if (poGeomFieldDefn)
+            {
+                OGRSpatialReference *poSRSClone = poSRS->Clone();
+                poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+                poGeomFieldDefn->SetSpatialRef(poSRSClone);
+                m_bIsGeographicCRS = poSRSClone->IsGeographic();
+                m_bCRSHasGISFriendlyOrder = HasGISFriendlyAxisOrder(poSRSClone);
+                poSRSClone->Release();
+            }
+            m_oExtent = OGREnvelope();
+            SetSpatialFilter(nullptr);
+            ResetReading();
+            return OGRERR_NONE;
+        }
+    }
+    return OGRERR_FAILURE;
+}
+
+/************************************************************************/
+/*                         ComputeExtent()                              */
+/************************************************************************/
+
+void OGROAPIFLayer::ComputeExtent()
+{
+    m_oExtent = m_oOriginalExtent;
+    const auto poGeomFieldDefn = m_poFeatureDefn->GetGeomFieldDefn(0);
+    if (poGeomFieldDefn)
+    {
+        const OGRSpatialReference *poSRS = poGeomFieldDefn->GetSpatialRef();
+        if (poSRS && !poSRS->IsSame(&m_oOriginalExtentCRS))
+        {
+            auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+                OGRCreateCoordinateTransformation(&m_oOriginalExtentCRS,
+                                                  poSRS));
+            if (poCT)
+            {
+                poCT->TransformBounds(
+                    m_oOriginalExtent.MinX, m_oOriginalExtent.MinY,
+                    m_oOriginalExtent.MaxX, m_oOriginalExtent.MaxY,
+                    &m_oExtent.MinX, &m_oExtent.MinY, &m_oExtent.MaxX,
+                    &m_oExtent.MaxY, 20);
+            }
+        }
+    }
 }
 
 /************************************************************************/
@@ -1258,9 +1791,25 @@ void OGROAPIFLayer::EstablishFeatureDefn()
 
     GetSchema();
 
+    if (!m_poDS->m_bPageSizeSetFromOpenOptions)
+    {
+        const int nOldPageSize{m_poDS->m_nPageSize};
+        m_poDS->DeterminePageSizeFromAPI(m_osURL);
+        // cppcheck-suppress knownConditionTrueFalse
+        if (nOldPageSize != m_poDS->m_nPageSize)
+        {
+            m_osGetURL = CPLURLAddKVP(m_osGetURL, "limit",
+                                      CPLSPrintf("%d", m_poDS->m_nPageSize));
+        }
+    }
+
     CPLJSONDocument oDoc;
     CPLString osURL(m_osURL);
-    osURL = CPLURLAddKVP(osURL, "limit", CPLSPrintf("%d", m_poDS->m_nPageSize));
+
+    osURL = CPLURLAddKVP(
+        osURL, "limit",
+        CPLSPrintf("%d", std::min(m_poDS->m_nInitialRequestPageSize,
+                                  m_poDS->m_nPageSize)));
     if (!m_poDS->DownloadJSon(osURL, oDoc))
         return;
 
@@ -1321,7 +1870,9 @@ void OGROAPIFLayer::EstablishFeatureDefn()
     const auto &oRoot = oDoc.GetRoot();
     GIntBig nFeatures = oRoot.GetLong("numberMatched", -1);
     if (nFeatures >= 0)
+    {
         m_nTotalFeatureCount = nFeatures;
+    }
 
     auto oFeatures = oRoot.GetArray("features");
     if (oFeatures.IsValid() && oFeatures.Size() > 0)
@@ -1391,10 +1942,24 @@ CPLString OGROAPIFLayer::AddFilters(const CPLString &osURL)
         }
         if (bAddBBoxFilter)
         {
+            if (!m_bCRSHasGISFriendlyOrder)
+            {
+                std::swap(dfMinX, dfMinY);
+                std::swap(dfMaxX, dfMaxY);
+            }
             osURLNew = CPLURLAddKVP(osURLNew, "bbox",
                                     CPLSPrintf("%.18g,%.18g,%.18g,%.18g",
                                                dfMinX, dfMinY, dfMaxX, dfMaxY));
+            if (!m_osActiveCRS.empty())
+            {
+                osURLNew =
+                    CPLURLAddKVP(osURLNew, "bbox-crs", m_osActiveCRS.c_str());
+            }
         }
+    }
+    if (!m_osActiveCRS.empty())
+    {
+        osURLNew = CPLURLAddKVP(osURLNew, "crs", m_osActiveCRS.c_str());
     }
     if (!m_osAttributeFilter.empty())
     {
@@ -1436,6 +2001,62 @@ OGRFeature *OGROAPIFLayer::GetNextRawFeature()
                 return nullptr;
             }
 
+            const std::string osContentCRS =
+                aosHeaders.FetchNameValueDef("Content-Crs", "");
+            if (!m_bHasEmittedContentCRSWarning && !osContentCRS.empty())
+            {
+                if (m_osActiveCRS.empty())
+                {
+                    if (osContentCRS !=
+                            "<http://www.opengis.net/def/crs/OGC/1.3/CRS84>" &&
+                        osContentCRS !=
+                            "<http://www.opengis.net/def/crs/OGC/0/CRS84h>")
+                    {
+                        m_bHasEmittedContentCRSWarning = true;
+                        CPLDebug("OAPIF",
+                                 "Got Content-CRS = %s, but expected OGC:CRS84 "
+                                 "instead. "
+                                 "Content-CRS will be ignored",
+                                 osContentCRS.c_str());
+                    }
+                }
+                else
+                {
+                    if (osContentCRS != '<' + m_osActiveCRS + '>')
+                    {
+                        m_bHasEmittedContentCRSWarning = true;
+                        CPLDebug(
+                            "OAPIF",
+                            "Got Content-CRS = %s, but expected %s instead. "
+                            "Content-CRS will be ignored",
+                            osContentCRS.c_str(), m_osActiveCRS.c_str());
+                    }
+                }
+            }
+            else if (!m_bHasEmittedContentCRSWarning)
+            {
+                if (!m_osActiveCRS.empty())
+                {
+                    m_bHasEmittedContentCRSWarning = true;
+                    CPLDebug("OAPIF",
+                             "Dit not get Content-CRS header. "
+                             "Assuming %s is returned",
+                             m_osActiveCRS.c_str());
+                }
+            }
+
+            if (!m_bHasEmittedJsonCRWarning)
+            {
+                const auto oJsonCRS = m_oCurDoc.GetRoot().GetObj("crs");
+                if (oJsonCRS.IsValid())
+                {
+                    m_bHasEmittedJsonCRWarning = true;
+                    CPLDebug("OAPIF",
+                             "JSON response contains %s. It will be ignored.",
+                             oJsonCRS.ToString().c_str());
+                }
+            }
+
             CPLString osTmpFilename(CPLSPrintf("/vsimem/oapif_%p.json", this));
             m_oCurDoc.Save(osTmpFilename);
             m_poUnderlyingDS =
@@ -1473,7 +2094,7 @@ OGRFeature *OGROAPIFLayer::GetNextRawFeature()
                         {
                             continue;
                         }
-                        if (oLink.GetString("rel") == "next")
+                        if (EQUAL(oLink.GetString("rel").c_str(), "next"))
                         {
                             nCountRelNext++;
                             auto type = oLink.GetString("type");
@@ -1568,6 +2189,9 @@ OGRFeature *OGROAPIFLayer::GetNextRawFeature()
     auto poGeom = poFeature->GetGeometryRef();
     if (poGeom)
     {
+        if (!m_bCRSHasGISFriendlyOrder &&
+            !m_poDS->m_bServerFeaturesAxisOrderGISFriendly)
+            poGeom->swapXY();
         poGeom->assignSpatialReference(GetSpatialRef());
     }
     if (m_bHasIntIdMember)
@@ -1680,6 +2304,7 @@ bool OGROAPIFLayer::SupportsResultTypeHits()
 
 GIntBig OGROAPIFLayer::GetFeatureCount(int bForce)
 {
+
     if (m_poFilterGeom == nullptr && m_poAttrQuery == nullptr)
     {
         GetLayerDefn();
@@ -1740,8 +2365,10 @@ GIntBig OGROAPIFLayer::GetFeatureCount(int bForce)
 
 OGRErr OGROAPIFLayer::GetExtent(OGREnvelope *psEnvelope, int bForce)
 {
-    if (m_oExtent.IsInit())
+    if (m_oOriginalExtent.IsInit())
     {
+        if (!m_oExtent.IsInit())
+            ComputeExtent();
         *psEnvelope = m_oExtent;
         return OGRERR_NONE;
     }
@@ -2487,7 +3114,7 @@ int OGROAPIFLayer::TestCapability(const char *pszCap)
     }
     if (EQUAL(pszCap, OLCFastGetExtent))
     {
-        return m_oExtent.IsInit();
+        return m_oOriginalExtent.IsInit();
     }
     if (EQUAL(pszCap, OLCStringsAsUTF8))
     {
@@ -2541,11 +3168,25 @@ void RegisterOGROAPIF()
         "  <Option name='PAGE_SIZE' type='int' "
         "description='Maximum number of features to retrieve in a single "
         "request'/>"
+        "  <Option name='INITIAL_REQUEST_PAGE_SIZE' type='int' "
+        "description='Maximum number of features to retrieve in the initial "
+        "request issued to determine the schema from a feature sample'/>"
         "  <Option name='USERPWD' type='string' "
         "description='Basic authentication as username:password'/>"
         "  <Option name='IGNORE_SCHEMA' type='boolean' "
         "description='Whether the XML Schema or JSON Schema should be ignored' "
         "default='NO'/>"
+        "  <Option name='CRS' type='string' "
+        "description='CRS identifier to use for layers'/>"
+        "  <Option name='PREFERRED_CRS' type='string' "
+        "description='Preferred CRS identifier to use for layers'/>"
+        "  <Option name='SERVER_FEATURE_AXIS_ORDER' type='string-select' "
+        "description='Coordinate axis order of GeoJSON features returned by "
+        "the server' "
+        "default='AUTHORITY_COMPLIANT'>"
+        "    <Value>AUTHORITY_COMPLIANT</Value>"
+        "    <Value>GIS_FRIENDLY</Value>"
+        "  </Option>"
         "</OpenOptionList>");
 
     poDriver->pfnIdentify = OGROAPIFDriverIdentify;

@@ -82,6 +82,13 @@
 #include <sys/uio.h>
 #endif
 
+#if defined(__MACH__) && defined(__APPLE__)
+#define HAS_CASE_INSENSITIVE_FILE_SYSTEM
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#endif
+
 #include <limits>
 #include <new>
 
@@ -138,7 +145,7 @@
 
 #ifndef BUILD_WITHOUT_64BIT_OFFSET
 // Ensure we have working 64 bit API
-static_assert(sizeof(VSI_FTELL64(nullptr)) == sizeof(vsi_l_offset),
+static_assert(sizeof(VSI_FTELL64(stdout)) == sizeof(vsi_l_offset),
               "File API does not seem to support 64-bit offset. "
               "If you still want to build GDAL without > 4GB file support, "
               "add the -DBUILD_WITHOUT_64BIT_OFFSET define");
@@ -190,6 +197,11 @@ class VSIUnixStdioFilesystemHandler final : public VSIFilesystemHandler
 
     VSIDIR *OpenDir(const char *pszPath, int nRecurseDepth,
                     const char *const *papszOptions) override;
+
+#ifdef HAS_CASE_INSENSITIVE_FILE_SYSTEM
+    std::string
+    GetCanonicalFilename(const std::string &osFilename) const override;
+#endif
 
 #ifdef VSI_COUNT_BYTES_READ
     void AddToTotal(vsi_l_offset nBytes);
@@ -272,13 +284,18 @@ VSIUnixStdioHandle::VSIUnixStdioHandle(
 int VSIUnixStdioHandle::Close()
 
 {
+    if (!fp)
+        return 0;
+
     VSIDebug1("VSIUnixStdioHandle::Close(%p)", fp);
 
 #ifdef VSI_COUNT_BYTES_READ
     poFS->AddToTotal(nTotalBytesRead);
 #endif
 
-    return fclose(fp);
+    int ret = fclose(fp);
+    fp = nullptr;
+    return ret;
 }
 
 /************************************************************************/
@@ -550,7 +567,9 @@ int VSIUnixStdioHandle::Truncate(vsi_l_offset nNewSize)
 /************************************************************************/
 
 #ifdef __linux
+#if !defined(MISSING_LINUX_FS_H)
 #include <linux/fs.h>  // FS_IOC_FIEMAP
+#endif
 #ifdef FS_IOC_FIEMAP
 #include <linux/types.h>   // for types used in linux/fiemap.h
 #include <linux/fiemap.h>  // struct fiemap
@@ -1195,6 +1214,34 @@ void VSIUnixStdioFilesystemHandler::AddToTotal(vsi_l_offset nBytes)
     nTotalBytesRead += nBytes;
 }
 
+#endif
+
+/************************************************************************/
+/*                      GetCanonicalFilename()                          */
+/************************************************************************/
+
+#ifdef HAS_CASE_INSENSITIVE_FILE_SYSTEM
+std::string VSIUnixStdioFilesystemHandler::GetCanonicalFilename(
+    const std::string &osFilename) const
+{
+    char szResolvedPath[PATH_MAX];
+    const char *pszFilename = osFilename.c_str();
+    if (realpath(pszFilename, szResolvedPath))
+    {
+        const char *pszFilenameLastPart = strrchr(pszFilename, '/');
+        const char *pszResolvedFilenameLastPart = strrchr(szResolvedPath, '/');
+        if (pszFilenameLastPart && pszResolvedFilenameLastPart &&
+            EQUAL(pszFilenameLastPart, pszResolvedFilenameLastPart))
+        {
+            std::string osRet;
+            osRet.assign(pszFilename, pszFilenameLastPart - pszFilename);
+            osRet += pszResolvedFilenameLastPart;
+            return osRet;
+        }
+        return szResolvedPath;
+    }
+    return osFilename;
+}
 #endif
 
 /************************************************************************/

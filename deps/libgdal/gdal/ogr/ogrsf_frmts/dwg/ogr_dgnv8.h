@@ -144,7 +144,7 @@ class OGRDGNV8DataSource final : public GDALDataset
     int Open(const char *, bool bUpdate);
     bool PreCreate(const char *, char **);
 
-    OGRLayer *ICreateLayer(const char *, OGRSpatialReference * = nullptr,
+    OGRLayer *ICreateLayer(const char *, const OGRSpatialReference * = nullptr,
                            OGRwkbGeometryType = wkbUnknown,
                            char ** = nullptr) override;
 
@@ -155,7 +155,7 @@ class OGRDGNV8DataSource final : public GDALDataset
     OGRLayer *GetLayer(int) override;
 
     int TestCapability(const char *) override;
-    virtual void FlushCache(bool bAtClosing) override;
+    virtual CPLErr FlushCache(bool bAtClosing) override;
 
     virtual char **GetMetadataDomainList() override;
     virtual char **GetMetadata(const char *pszDomain = "") override;

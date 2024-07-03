@@ -80,7 +80,7 @@ class STACITDataset final : public VRTDataset
     bool SetupDataset(GDALOpenInfo *poOpenInfo,
                       const std::string &osSTACITFilename,
                       std::map<std::string, Collection> &oMapCollection);
-    bool
+    void
     SetSubdatasets(const std::string &osFilename,
                    const std::map<std::string, Collection> &oMapCollection);
 
@@ -218,15 +218,8 @@ static void ParseAsset(const CPLJSONObject &jAsset,
     };
 
     auto oProjEPSG = GetAssetOrFeatureProperty("proj:epsg");
-    if (!oProjEPSG.IsValid())
-    {
-        CPLDebug("STACIT",
-                 "Skipping asset %s that lacks the 'proj:epsg' member",
-                 osAssetName.c_str());
-        return;
-    }
     std::string osProjUserString;
-    if (oProjEPSG.GetType() != CPLJSONObject::Type::Null)
+    if (oProjEPSG.IsValid() && oProjEPSG.GetType() != CPLJSONObject::Type::Null)
     {
         osProjUserString = "EPSG:" + oProjEPSG.ToString();
     }
@@ -519,6 +512,16 @@ bool STACITDataset::SetupDataset(
                 osRet += osFilename;
             }
         }
+        else if (STARTS_WITH(osFilename.c_str(), "file://"))
+        {
+            osRet = osFilename.substr(strlen("file://"));
+        }
+        else if (STARTS_WITH(osFilename.c_str(), "s3://"))
+        {
+            osRet = "/vsis3/";
+            osRet += osFilename.substr(strlen("s3://"));
+        }
+
         else
         {
             osRet = osFilename;
@@ -635,7 +638,7 @@ bool STACITDataset::SetupDataset(
 /*                         SetSubdatasets()                             */
 /************************************************************************/
 
-bool STACITDataset::SetSubdatasets(
+void STACITDataset::SetSubdatasets(
     const std::string &osFilename,
     const std::map<std::string, Collection> &oMapCollection)
 {
@@ -685,7 +688,6 @@ bool STACITDataset::SetSubdatasets(
         }
     }
     GDALDataset::SetMetadata(aosSubdatasets.List(), "SUBDATASETS");
-    return true;
 }
 
 /************************************************************************/
@@ -879,7 +881,8 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
     {
         // If there's more than one asset type or more than one SRS, expose
         // subdatasets.
-        return SetSubdatasets(osFilename, oMapCollection);
+        SetSubdatasets(osFilename, oMapCollection);
+        return true;
     }
     else
     {

@@ -430,7 +430,9 @@ OGRErr OGREditableLayer::ICreateFeature(OGRFeature *poFeature)
 
 OGRErr OGREditableLayer::IUpsertFeature(OGRFeature *poFeature)
 {
-    if (GetFeature(poFeature->GetFID()))
+    auto poFeatureExisting =
+        std::unique_ptr<OGRFeature>(GetFeature(poFeature->GetFID()));
+    if (poFeatureExisting)
     {
         return ISetFeature(poFeature);
     }
@@ -438,6 +440,24 @@ OGRErr OGREditableLayer::IUpsertFeature(OGRFeature *poFeature)
     {
         return ICreateFeature(poFeature);
     }
+}
+
+/************************************************************************/
+/*                            IUpdateFeature()                          */
+/************************************************************************/
+
+OGRErr OGREditableLayer::IUpdateFeature(OGRFeature *poFeature,
+                                        int nUpdatedFieldsCount,
+                                        const int *panUpdatedFieldsIdx,
+                                        int nUpdatedGeomFieldsCount,
+                                        const int *panUpdatedGeomFieldsIdx,
+                                        bool bUpdateStyleString)
+{
+    // Do not use OGRLayerDecorator::IUpdateFeature() which will forward
+    // to the decorated layer
+    return OGRLayer::IUpdateFeature(
+        poFeature, nUpdatedFieldsCount, panUpdatedFieldsIdx,
+        nUpdatedGeomFieldsCount, panUpdatedGeomFieldsIdx, bUpdateStyleString);
 }
 
 /************************************************************************/
@@ -530,6 +550,16 @@ OGRGeometry *OGREditableLayer::GetSpatialFilter()
 OGRErr OGREditableLayer::SetAttributeFilter(const char *poAttrFilter)
 {
     return OGRLayer::SetAttributeFilter(poAttrFilter);
+}
+
+/************************************************************************/
+/*                           GetArrowStream()                           */
+/************************************************************************/
+
+bool OGREditableLayer::GetArrowStream(struct ArrowArrayStream *out_stream,
+                                      CSLConstList papszOptions)
+{
+    return OGRLayer::GetArrowStream(out_stream, papszOptions);
 }
 
 /************************************************************************/
@@ -786,6 +816,7 @@ OGRErr OGREditableLayer::AlterFieldDefn(int iField,
         poFieldDefn->SetNullable(poMemFieldDefn->IsNullable());
         poFieldDefn->SetUnique(poMemFieldDefn->IsUnique());
         poFieldDefn->SetDomainName(poMemFieldDefn->GetDomainName());
+        poFieldDefn->SetComment(poMemFieldDefn->GetComment());
         m_bStructureModified = true;
     }
     return eErr;

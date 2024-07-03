@@ -3,6 +3,26 @@ add_gdal_driver(
   SOURCES cogdriver.cpp
           cogdriver.h
           gtiff.h
+          gtiffbitmapband.h
+          gtiffbitmapband.cpp
+          gtiffdataset.h
+          gtiffdataset.cpp
+          gtiffdataset_read.cpp
+          gtiffdataset_write.cpp
+          gtiffjpegoverviewds.h
+          gtiffjpegoverviewds.cpp
+          gtiffoddbitsband.h
+          gtiffoddbitsband.cpp
+          gtiffrasterband.h
+          gtiffrasterband.cpp
+          gtiffrasterband_read.cpp
+          gtiffrasterband_write.cpp
+          gtiffrgbaband.h
+          gtiffrgbaband.cpp
+          gtiffsplitband.h
+          gtiffsplitband.cpp
+          gtiffsplitbitmapband.h
+          gtiffsplitbitmapband.cpp
           gt_jpeg_copy.h
           gt_citation.h
           gt_overview.h
@@ -76,9 +96,11 @@ if (GDAL_USE_JXL)
     set(CMAKE_REQUIRED_LIBRARIES ${JXL_LIBRARIES})
     check_function_exists(JxlEncoderFrameSettingsSetOption HAVE_JxlEncoderFrameSettingsSetOption)
     check_function_exists(JxlEncoderFrameSettingsCreate HAVE_JxlEncoderFrameSettingsCreate)
+    check_function_exists(JxlEncoderSetFrameLossless HAVE_JxlEncoderSetFrameLossless)
     check_function_exists(JxlEncoderSetFrameDistance HAVE_JxlEncoderSetFrameDistance)
     check_function_exists(JxlEncoderSetCodestreamLevel HAVE_JxlEncoderSetCodestreamLevel)
     check_function_exists(JxlEncoderInitExtraChannelInfo HAVE_JxlEncoderInitExtraChannelInfo)
+    check_function_exists(JxlEncoderSetExtraChannelDistance HAVE_JxlEncoderSetExtraChannelDistance)
     cmake_pop_check_state()
     target_sources(gdal_GTIFF PRIVATE tif_jxl.c)
     target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JXL)
@@ -88,6 +110,9 @@ if (GDAL_USE_JXL)
     if (HAVE_JxlEncoderFrameSettingsCreate)
       target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JxlEncoderFrameSettingsCreate)
     endif ()
+    if (HAVE_JxlEncoderSetFrameLossless)
+      target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JxlEncoderSetFrameLossless)
+    endif ()
     if (HAVE_JxlEncoderSetFrameDistance)
       target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JxlEncoderSetFrameDistance)
     endif ()
@@ -96,6 +121,9 @@ if (GDAL_USE_JXL)
     endif ()
     if (HAVE_JxlEncoderInitExtraChannelInfo)
       target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JxlExtraChannels)
+    endif ()
+    if (HAVE_JxlEncoderSetExtraChannelDistance)
+      target_compile_definitions(gdal_GTIFF PRIVATE -DHAVE_JxlEncoderSetExtraChannelDistance)
     endif ()
     gdal_target_link_libraries(gdal_GTIFF PRIVATE JXL::JXL)
   else ()

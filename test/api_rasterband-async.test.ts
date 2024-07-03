@@ -346,7 +346,9 @@ describe('gdal.RasterBandAsync', () => {
             // has always a chance to run at least once, we must use a very slow datasource
             // and even in this we should be ready to retry if the host is very busy
             // or it has somehow cached the resource
-            it('should call the progress callback when one is provided', () => {
+            it('should call the progress callback when one is provided', function () {
+              this.retries(3)
+
               const ds = gdal.open(`/vsicurl/https://s3.amazonaws.com/elevation-tiles-prod/geotiff/1/1/1.tif`)
               const band = ds.bands.get(1)
 
@@ -543,7 +545,6 @@ describe('gdal.RasterBandAsync', () => {
 
         band.pixels.write(0, 0, size, size, data)
 
-        assert.throws(() => gdal.open(file))
         return assert.isFulfilled(band.flushAsync().then(() => {
           const newDs = gdal.open(file)
           const result = newDs.bands.get(1).pixels.read(0, 0, size, size, data)

@@ -2232,7 +2232,7 @@ void CPLCleanupTLS()
 /*                          CPLCreateSpinLock()                         */
 /************************************************************************/
 
-#if defined(HAVE_PTHREAD_SPINLOCK)
+#if defined(HAVE_PTHREAD_SPIN_LOCK)
 #define HAVE_SPINLOCK_IMPL
 
 struct _CPLSpinLock
@@ -2310,7 +2310,7 @@ void CPLDestroySpinLock(CPLSpinLock *psSpin)
     pthread_spin_destroy(&(psSpin->spin));
     free(psSpin);
 }
-#endif  // HAVE_PTHREAD_SPINLOCK
+#endif  // HAVE_PTHREAD_SPIN_LOCK
 
 #endif  // def CPL_MULTIPROC_PTHREAD
 
@@ -2582,7 +2582,6 @@ void CPLReleaseLock(CPLLock *psLock)
     bool bHitMaxDiff = false;
     GIntBig nMaxDiff = 0;
     double dfAvgDiff = 0;
-    GUIntBig nIters = 0;
     if (psLock->bDebugPerf && CPLAtomicDec(&(psLock->nCurrentHolders)) == 0)
     {
         const GUIntBig nStopTime = CPLrdtscp();
@@ -2595,8 +2594,7 @@ void CPLReleaseLock(CPLLock *psLock)
         }
         nMaxDiff = psLock->nMaxDiff;
         psLock->nIters++;
-        nIters = psLock->nIters;
-        psLock->dfAvgDiff += (nDiffTime - psLock->dfAvgDiff) / nIters;
+        psLock->dfAvgDiff += (nDiffTime - psLock->dfAvgDiff) / psLock->nIters;
         dfAvgDiff = psLock->dfAvgDiff;
     }
 #endif

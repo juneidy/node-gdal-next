@@ -33,6 +33,7 @@
 #include "tilematrixset.hpp"
 #include "gdal_utils.h"
 #include "ogrsf_frmts.h"
+#include "ogr_spatialref.h"
 
 #ifdef OGR_ENABLE_DRIVER_GML
 #include "parsexsd.h"
@@ -94,6 +95,9 @@ class OGCAPIDataset final : public GDALDataset
 
     bool InitFromFile(GDALOpenInfo *poOpenInfo);
     bool InitFromURL(GDALOpenInfo *poOpenInfo);
+    void ProcessScale(CPLJSONObject &oScaleDenominator, const double dfXMin,
+                      const double dfYMin, const double dfXMax,
+                      const double dfYMax);
     bool InitFromCollection(GDALOpenInfo *poOpenInfo, CPLJSONDocument &oDoc);
     bool Download(const CPLString &osURL, const char *pszPostContent,
                   const char *pszAccept, CPLString &osResult,
@@ -111,7 +115,7 @@ class OGCAPIDataset final : public GDALDataset
                         double dfYMin, double dfXMax, double dfYMax);
     bool InitWithTilesAPI(GDALOpenInfo *poOpenInfo, const CPLString &osTilesURL,
                           bool bIsMap, double dfXMin, double dfYMin,
-                          double dfXMax, double dfYMax,
+                          double dfXMax, double dfYMax, bool bBBOXIsInCRS84,
                           const CPLJSONObject &oJsonCollection);
     bool InitWithCoverageAPI(GDALOpenInfo *poOpenInfo,
                              const CPLString &osTilesURL, double dfXMin,
@@ -227,6 +231,8 @@ class OGCAPITiledLayer final
 {
     OGCAPIDataset *m_poDS = nullptr;
     bool m_bFeatureDefnEstablished = false;
+    bool m_bEstablishFieldsCalled =
+        false;  // prevent recursion in EstablishFields()
     OGCAPITiledLayerFeatureDefn *m_poFeatureDefn = nullptr;
     OGREnvelope m_sEnvelope{};
     CPLString m_osTileData{};
@@ -656,6 +662,39 @@ bool OGCAPIDataset::InitFromFile(GDALOpenInfo *poOpenInfo)
 }
 
 /************************************************************************/
+/*                        ProcessScale()                          */
+/************************************************************************/
+
+void OGCAPIDataset::ProcessScale(CPLJSONObject &oScaleDenominator,
+                                 const double dfXMin, const double dfYMin,
+                                 const double dfXMax, const double dfYMax)
+
+{
+    double dfRes = 1e-8;  // arbitrary
+    if (oScaleDenominator.IsValid())
+    {
+        const double dfScaleDenominator = oScaleDenominator.ToDouble();
+        constexpr double HALF_CIRCUMFERENCE = 6378137 * M_PI;
+        dfRes = dfScaleDenominator / ((HALF_CIRCUMFERENCE / 180) / 0.28e-3);
+    }
+
+    double dfXSize = (dfXMax - dfXMin) / dfRes;
+    double dfYSize = (dfYMax - dfYMin) / dfRes;
+    while (dfXSize > INT_MAX || dfYSize > INT_MAX)
+    {
+        dfXSize /= 2;
+        dfYSize /= 2;
+    }
+
+    nRasterXSize = std::max(1, static_cast<int>(0.5 + dfXSize));
+    nRasterYSize = std::max(1, static_cast<int>(0.5 + dfYSize));
+    m_adfGeoTransform[0] = dfXMin;
+    m_adfGeoTransform[1] = (dfXMax - dfXMin) / nRasterXSize;
+    m_adfGeoTransform[3] = dfYMax;
+    m_adfGeoTransform[5] = -(dfYMax - dfYMin) / nRasterYSize;
+}
+
+/************************************************************************/
 /*                        InitFromCollection()                          */
 /************************************************************************/
 
@@ -687,6 +726,8 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
         CPLError(CE_Failure, CPLE_AppDefined, "Invalid bbox");
         return false;
     }
+    const bool bBBOXIsInCRS84 =
+        CSLFetchNameValue(poOpenInfo->papszOpenOptions, "MINX") == nullptr;
     const double dfXMin =
         CPLAtof(CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "MINX",
                                      CPLSPrintf("%.18g", oBbox[0].ToDouble())));
@@ -701,36 +742,26 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
                                      CPLSPrintf("%.18g", oBbox[3].ToDouble())));
 
     auto oScaleDenominator = oRoot["scaleDenominator"];
-    double dfRes = 1e-8;  // arbitrary
-    if (oScaleDenominator.IsValid())
-    {
-        const double dfScaleDenominator = oScaleDenominator.ToDouble();
-        constexpr double HALF_CIRCUMFERENCE = 6378137 * M_PI;
-        dfRes = dfScaleDenominator / ((HALF_CIRCUMFERENCE / 180) / 0.28e-3);
-    }
 
-    double dfXSize = (dfXMax - dfXMin) / dfRes;
-    double dfYSize = (dfYMax - dfYMin) / dfRes;
-    while (dfXSize > INT_MAX || dfYSize > INT_MAX)
-    {
-        dfXSize /= 2;
-        dfYSize /= 2;
-    }
-
-    nRasterXSize = std::max(1, static_cast<int>(0 + 5 + dfXSize));
-    nRasterYSize = std::max(1, static_cast<int>(0.5 + dfYSize));
-    m_adfGeoTransform[0] = dfXMin;
-    m_adfGeoTransform[1] = (dfXMax - dfXMin) / nRasterXSize;
-    m_adfGeoTransform[3] = dfYMax;
-    m_adfGeoTransform[5] = -(dfYMax - dfYMin) / nRasterYSize;
+    ProcessScale(oScaleDenominator, dfXMin, dfYMin, dfXMax, dfYMax);
 
     bool bFoundMap = false;
+
     CPLString osTilesetsMapURL;
+    bool bTilesetsMapURLJson = false;
+
     CPLString osTilesetsVectorURL;
+    bool bTilesetsVectorURLJson = false;
+
     CPLString osCoverageURL;
     bool bCoverageGeotiff = false;
-    CPLString osItemsJsonURL;
+
+    CPLString osItemsURL;
+    bool bItemsJson = false;
+
     CPLString osSelfURL;
+    bool bSelfJson = false;
+
     for (const auto &oLink : oLinks)
     {
         const auto osRel = oLink.GetString("rel");
@@ -741,19 +772,35 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
         {
             bFoundMap = true;
         }
-        else if ((osRel ==
+        else if (!bTilesetsMapURLJson &&
+                 (osRel ==
                       "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map" ||
-                  osRel == "[ogc-rel:tilesets-map]") &&
-                 osType == "application/json")
+                  osRel == "[ogc-rel:tilesets-map]"))
         {
-            osTilesetsMapURL = BuildURL(oLink["href"].ToString());
+            if (osType == MEDIA_TYPE_JSON)
+            {
+                bTilesetsMapURLJson = true;
+                osTilesetsMapURL = BuildURL(oLink["href"].ToString());
+            }
+            else if (osType.empty())
+            {
+                osTilesetsMapURL = BuildURL(oLink["href"].ToString());
+            }
         }
-        else if ((osRel == "http://www.opengis.net/def/rel/ogc/1.0/"
+        else if (!bTilesetsVectorURLJson &&
+                 (osRel == "http://www.opengis.net/def/rel/ogc/1.0/"
                            "tilesets-vector" ||
-                  osRel == "[ogc-rel:tilesets-vector]") &&
-                 osType == "application/json")
+                  osRel == "[ogc-rel:tilesets-vector]"))
         {
-            osTilesetsVectorURL = BuildURL(oLink["href"].ToString());
+            if (osType == MEDIA_TYPE_JSON)
+            {
+                bTilesetsVectorURLJson = true;
+                osTilesetsVectorURL = BuildURL(oLink["href"].ToString());
+            }
+            else if (osType.empty())
+            {
+                osTilesetsVectorURL = BuildURL(oLink["href"].ToString());
+            }
         }
         else if ((osRel == "http://www.opengis.net/def/rel/ogc/1.0/coverage" ||
                   osRel == "[ogc-rel:coverage]") &&
@@ -772,19 +819,34 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
         {
             osCoverageURL = BuildURL(oLink["href"].ToString());
         }
-        else if (osRel == "items" && (osType == "application/geo+json" ||
-                                      osType == "application/json"))
+        else if (!bItemsJson && osRel == "items")
         {
-            osItemsJsonURL = BuildURL(oLink["href"].ToString());
+            if (osType == MEDIA_TYPE_GEOJSON || osType == MEDIA_TYPE_JSON)
+            {
+                bItemsJson = true;
+                osItemsURL = BuildURL(oLink["href"].ToString());
+            }
+            else if (osType.empty())
+            {
+                osItemsURL = BuildURL(oLink["href"].ToString());
+            }
         }
-        else if (osRel == "self" && osType == "application/json")
+        else if (!bSelfJson && osRel == "self")
         {
-            osSelfURL = BuildURL(oLink["href"].ToString());
+            if (osType == "application/json")
+            {
+                bSelfJson = true;
+                osSelfURL = BuildURL(oLink["href"].ToString());
+            }
+            else if (osType.empty())
+            {
+                osSelfURL = BuildURL(oLink["href"].ToString());
+            }
         }
     }
 
     if (!bFoundMap && osTilesetsMapURL.empty() && osTilesetsVectorURL.empty() &&
-        osCoverageURL.empty() && osSelfURL.empty() && osItemsJsonURL.empty())
+        osCoverageURL.empty() && osSelfURL.empty() && osItemsURL.empty())
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Missing map, tilesets, coverage or items relation in links");
@@ -805,11 +867,12 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
         bool bRet = false;
         if (!osTilesetsMapURL.empty())
             bRet = InitWithTilesAPI(poOpenInfo, osTilesetsMapURL, true, dfXMin,
-                                    dfYMin, dfXMax, dfYMax, oDoc.GetRoot());
-        if (!osTilesetsVectorURL.empty())
-            bRet =
-                InitWithTilesAPI(poOpenInfo, osTilesetsVectorURL, false, dfXMin,
-                                 dfYMin, dfXMax, dfYMax, oDoc.GetRoot());
+                                    dfYMin, dfXMax, dfYMax, bBBOXIsInCRS84,
+                                    oDoc.GetRoot());
+        if (!bRet && !osTilesetsVectorURL.empty())
+            bRet = InitWithTilesAPI(poOpenInfo, osTilesetsVectorURL, false,
+                                    dfXMin, dfYMin, dfXMax, dfYMax,
+                                    bBBOXIsInCRS84, oDoc.GetRoot());
         return bRet;
     }
     else if ((EQUAL(pszAPI, "AUTO") || EQUAL(pszAPI, "MAP")) && bFoundMap)
@@ -818,7 +881,7 @@ bool OGCAPIDataset::InitFromCollection(GDALOpenInfo *poOpenInfo,
                               dfYMax);
     }
     else if ((EQUAL(pszAPI, "AUTO") || EQUAL(pszAPI, "ITEMS")) &&
-             !osSelfURL.empty() && !osItemsJsonURL.empty() &&
+             !osSelfURL.empty() && !osItemsURL.empty() &&
              (poOpenInfo->nOpenFlags & GDAL_OF_VECTOR) != 0)
     {
         m_poOAPIFDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
@@ -858,10 +921,15 @@ bool OGCAPIDataset::InitFromURL(GDALOpenInfo *poOpenInfo)
             for (const auto &oLink : oLinks)
             {
                 if (oLink["rel"].ToString() == "data" &&
-                    oLink["type"].ToString() == "application/json")
+                    oLink["type"].ToString() == MEDIA_TYPE_JSON)
                 {
                     osURL = BuildURL(oLink["href"].ToString());
                     break;
+                }
+                else if (oLink["rel"].ToString() == "data" &&
+                         !oLink.GetObj("type").IsValid())
+                {
+                    osURL = BuildURL(oLink["href"].ToString());
                 }
             }
             if (!osURL.empty())
@@ -1467,6 +1535,7 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                                      const CPLString &osTilesURL, bool bIsMap,
                                      double dfXMin, double dfYMin,
                                      double dfXMax, double dfYMax,
+                                     bool bBBOXIsInCRS84,
                                      const CPLJSONObject &oJsonCollection)
 {
     CPLJSONDocument oDoc;
@@ -1512,11 +1581,18 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
         CPLString osCandidateTilesetURL;
         for (const auto &oLink : oLinks)
         {
-            if (oLink["rel"].ToString() == "self" &&
-                oLink["type"].ToString() == "application/json")
+            if (oLink["rel"].ToString() == "self")
             {
-                osCandidateTilesetURL = BuildURL(oLink["href"].ToString());
-                break;
+                const auto osType = oLink["type"].ToString();
+                if (osType == MEDIA_TYPE_JSON)
+                {
+                    osCandidateTilesetURL = BuildURL(oLink["href"].ToString());
+                    break;
+                }
+                else if (osType.empty())
+                {
+                    osCandidateTilesetURL = BuildURL(oLink["href"].ToString());
+                }
             }
         }
         if (pszRequiredTileMatrixSet != nullptr)
@@ -1563,15 +1639,24 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
     CPLString osMVT_URL;
     CPLString osGEOJSON_URL;
     CPLString osTilingSchemeURL;
+    bool bTilingSchemeURLJson = false;
     for (const auto &oLink : oLinks)
     {
         const auto osRel = oLink.GetString("rel");
         const auto osType = oLink.GetString("type");
 
-        if (osRel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme" &&
-            osType == "application/json")
+        if (!bTilingSchemeURLJson &&
+            osRel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme")
         {
-            osTilingSchemeURL = BuildURL(oLink["href"].ToString());
+            if (osType == MEDIA_TYPE_JSON)
+            {
+                bTilingSchemeURLJson = true;
+                osTilingSchemeURL = BuildURL(oLink["href"].ToString());
+            }
+            else if (osType.empty())
+            {
+                osTilingSchemeURL = BuildURL(oLink["href"].ToString());
+            }
         }
         else if (bIsMap)
         {
@@ -1670,6 +1755,7 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
     if (!DownloadJSon(osTilingSchemeURL.c_str(), oDoc, nullptr,
                       MEDIA_TYPE_JSON))
         return false;
+
     auto tms = gdal::TileMatrixSet::parse(oDoc.SaveAsString().c_str());
     if (tms == nullptr)
         return false;
@@ -1684,7 +1770,6 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
 
     bool bFoundSomething = false;
-#ifdef OGR_ENABLE_DRIVER_GML
     if (!osVectorURL.empty() && (poOpenInfo->nOpenFlags & GDAL_OF_VECTOR) != 0)
     {
         const auto osVectorType = oJsonCollection.GetString("vectorType");
@@ -1706,12 +1791,14 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
             }
         }
 
+#ifdef OGR_ENABLE_DRIVER_GML
         std::vector<std::unique_ptr<OGRFieldDefn>> apoFields;
         bool bGotSchema = false;
         if (!osXMLSchemaURL.empty())
         {
             bGotSchema = ParseXMLSchema(osXMLSchemaURL, apoFields, eGeomType);
         }
+#endif
 
         for (const auto &tileMatrix : tms->tileMatrixList())
         {
@@ -1759,19 +1846,33 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                     tileMatrix, eGeomType));
             poLayer->SetMinMaxXY(minCol, minRow, maxCol, maxRow);
             poLayer->SetExtent(dfXMin, dfYMin, dfXMax, dfYMax);
+#ifdef OGR_ENABLE_DRIVER_GML
             if (bGotSchema)
                 poLayer->SetFields(apoFields);
+#endif
             m_apoLayers.emplace_back(std::move(poLayer));
         }
 
         bFoundSomething = true;
     }
-#else
-    CPL_IGNORE_RET_VAL(oJsonCollection);
-#endif
 
     if (!osRasterURL.empty() && (poOpenInfo->nOpenFlags & GDAL_OF_RASTER) != 0)
     {
+        if (bBBOXIsInCRS84)
+        {
+            // Reproject the extent if needed
+            OGRSpatialReference oCRS84;
+            oCRS84.importFromEPSG(4326);
+            oCRS84.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+            auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+                OGRCreateCoordinateTransformation(&oCRS84, &m_oSRS));
+            if (poCT)
+            {
+                poCT->TransformBounds(dfXMin, dfYMin, dfXMax, dfYMax, &dfXMin,
+                                      &dfYMin, &dfXMax, &dfYMax, 21);
+            }
+        }
+
         const bool bCache = CPLTestBool(
             CSLFetchNameValueDef(poOpenInfo->papszOpenOptions, "CACHE", "YES"));
         const int nMaxConnections = atoi(CSLFetchNameValueDef(
@@ -1802,6 +1903,15 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                 // Tile matrix level not in known limits
                 continue;
             }
+
+            if (dfXMax - dfXMin < tileMatrix.mResX ||
+                dfYMax - dfYMin < tileMatrix.mResY)
+            {
+                // skip levels for which the extent is smaller than the size
+                // of one pixel
+                continue;
+            }
+
             CPLString osURL(osRasterURL);
             osURL.replaceAll("{tileMatrix}", tileMatrix.mId.c_str());
             osURL.replaceAll("{tileRow}", "${y}");
@@ -1819,16 +1929,6 @@ bool OGCAPIDataset::InitWithTilesAPI(GDALOpenInfo *poOpenInfo,
                 int minCol = 0;
                 int maxCol = tileMatrix.mMatrixWidth - 1;
                 int maxRow = minRow + rowCount - 1;
-                if (oLimitsIter != oMapTileMatrixSetLimits.end())
-                {
-                    // Take into account tileMatrixSetLimits
-                    minCol = std::max(minCol, oLimitsIter->second.minTileCol);
-                    minRow = std::max(minRow, oLimitsIter->second.minTileRow);
-                    maxCol = std::min(maxCol, oLimitsIter->second.maxTileCol);
-                    maxRow = std::min(maxRow, oLimitsIter->second.maxTileRow);
-                    if (minCol > maxCol || minRow > maxRow)
-                        return CPLString();
-                }
                 double dfStripMinX =
                     dfOriX + minCol * tileMatrix.mTileWidth * tileMatrix.mResX;
                 double dfStripMaxX = dfOriX + (maxCol + 1) *
@@ -2187,6 +2287,7 @@ OGCAPITiledLayer::OGCAPITiledLayer(
 
 OGCAPITiledLayer::~OGCAPITiledLayer()
 {
+    m_poFeatureDefn->InvalidateLayer();
     m_poFeatureDefn->Release();
 }
 
@@ -2458,10 +2559,62 @@ OGRFeature *OGCAPITiledLayer::GetFeature(GIntBig nFID)
 
 void OGCAPITiledLayer::EstablishFields()
 {
-    if (!m_bFeatureDefnEstablished)
+    if (!m_bFeatureDefnEstablished && !m_bEstablishFieldsCalled)
     {
-        m_bFeatureDefnEstablished = true;
-        delete GetNextRawFeature();
+        m_bEstablishFieldsCalled = true;
+
+        // Try up to 10 requests in order. We could probably remove that
+        // to use just the fallback logic.
+        for (int i = 0; i < 10; ++i)
+        {
+            bool bEmptyContent = false;
+            m_poUnderlyingDS.reset(OpenTile(m_nCurX, m_nCurY, bEmptyContent));
+            if (bEmptyContent || !m_poUnderlyingDS)
+            {
+                if (!IncrementTileIndices())
+                    break;
+                continue;
+            }
+            m_poUnderlyingLayer = m_poUnderlyingDS->GetLayer(0);
+            if (m_poUnderlyingLayer)
+            {
+                FinalizeFeatureDefnWithLayer(m_poUnderlyingLayer);
+                break;
+            }
+        }
+
+        if (!m_bFeatureDefnEstablished)
+        {
+            // Try to sample at different locations in the extent
+            for (int j = 0; !m_bFeatureDefnEstablished && j < 3; ++j)
+            {
+                m_nCurY = m_nMinY + (2 * j + 1) * (m_nMaxY - m_nMinY) / 6;
+                for (int i = 0; i < 3; ++i)
+                {
+                    m_nCurX = m_nMinX + (2 * i + 1) * (m_nMaxX - m_nMinX) / 6;
+                    bool bEmptyContent = false;
+                    m_poUnderlyingDS.reset(
+                        OpenTile(m_nCurX, m_nCurY, bEmptyContent));
+                    if (bEmptyContent || !m_poUnderlyingDS)
+                    {
+                        continue;
+                    }
+                    m_poUnderlyingLayer = m_poUnderlyingDS->GetLayer(0);
+                    if (m_poUnderlyingLayer)
+                    {
+                        FinalizeFeatureDefnWithLayer(m_poUnderlyingLayer);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!m_bFeatureDefnEstablished)
+        {
+            CPLDebug("OGCAPI", "Could not establish feature definition. No "
+                               "valid tile found in sampling done");
+        }
+
         ResetReading();
     }
 }
@@ -2638,7 +2791,7 @@ void GDALRegister_OGCAPI()
         "       <Value>COVERAGE</Value>"
         "       <Value>ITEMS</Value>"
         "  </Option>"
-        "  <Option name='IMAGE_FORMAT' type='string-select' "
+        "  <Option name='IMAGE_FORMAT' scope='raster' type='string-select' "
         "description='Which format to use for pixel acquisition' "
         "default='AUTO'>"
         "       <Value>AUTO</Value>"
@@ -2647,7 +2800,7 @@ void GDALRegister_OGCAPI()
         "       <Value>JPEG</Value>"
         "       <Value>JPEG_PREFERRED</Value>"
         "  </Option>"
-        "  <Option name='VECTOR_FORMAT' type='string-select' "
+        "  <Option name='VECTOR_FORMAT' scope='vector' type='string-select' "
         "description='Which format to use for vector data acquisition' "
         "default='AUTO'>"
         "       <Value>AUTO</Value>"
@@ -2661,11 +2814,11 @@ void GDALRegister_OGCAPI()
         "  <Option name='PREFERRED_TILEMATRIXSET' type='string' "
         "description='dentifier of the preferred tile matrix set' "
         "default='WorldCRS84Quad'/>"
-        "  <Option name='TILEMATRIX' type='string' description='Tile matrix "
-        "identifier.'/>"
-        "  <Option name='CACHE' type='boolean' "
+        "  <Option name='TILEMATRIX' scope='raster' type='string' "
+        "description='Tile matrix identifier.'/>"
+        "  <Option name='CACHE' scope='raster' type='boolean' "
         "description='Whether to enable block/tile caching' default='YES'/>"
-        "  <Option name='MAX_CONNECTIONS' type='int' "
+        "  <Option name='MAX_CONNECTIONS' scope='raster' type='int' "
         "description='Maximum number of connections' default='5'/>"
         "  <Option name='MINX' type='float' "
         "description='Minimum value (in SRS of TileMatrixSet) of X'/>"

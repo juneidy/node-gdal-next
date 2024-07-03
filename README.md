@@ -10,7 +10,7 @@
 [![codecov](https://codecov.io/gh/mmomtchev/node-gdal-async/branch/master/graph/badge.svg?token=FE9IJUZ07D)](https://codecov.io/gh/mmomtchev/node-gdal-async)
 [![downloads](https://img.shields.io/npm/dt/gdal-async)](https://www.npmjs.com/package/gdal-async)
 
-Read and write raster and vector geospatial datasets straight from [Node.js](http://nodejs.org) with this native asynchronous [GDAL](http://www.gdal.org/) binding. To get started, browse the [**API Documentation**](https://mmomtchev.github.io/node-gdal-async/classes/gdal.html) or [examples](examples/).
+Read and write raster and vector geospatial datasets straight from [Node.js](http://nodejs.org) with this native asynchronous [GDAL](http://www.gdal.org/) binding. To get started, browse the [**API Documentation**](https://mmomtchev.github.io/node-gdal-async/) or [examples](examples/).
 
 When in doubt on how to use a method, check also the [unit tests](https://github.com/mmomtchev/node-gdal-async/tree/master/test).
 
@@ -45,7 +45,10 @@ Support for `worker_threads` is planned but it is not a priority project
 
 ## Long term support of this project
 
-The birth of this project is related to a huge extortion in the geography community linked to a sexual harassment affair, linked to a penis-size problem, and covered up with corruption in the French Judiciary. It is maintained as a free service to the geography community so that it can remain as a constant remainder to [OSGeo](https://www.osgeo.org/) - who chose to back the extortion. I have been working on it while living on social welfare. You can safely use this framework in your projects, be assured that it will be maintained very well and for many years to come. It's companion project on the client-side is [`rlayers`](https://github.com/mmomtchev/rlayers).
+The birth of this project is related to a huge extortion in the geography community linked to a sexual harassment affair, linked to a penis-size problem, and covered up with corruption in the French Judiciary. It is maintained as a free service to the geography community so that it can remain as a constant remainder to [OSGeo](https://www.osgeo.org/) - who chose to back the extortion. I have been working on it while living on social welfare. You can safely use this framework in your projects, be assured that it will be maintained very well and for many years to come. Even if lately, this project has had a number of issues declared in a way as to make evident that my users support the extortion, I remain fully committed to maintaining it.
+
+It's companion project on the client-side is [`rlayers`](https://github.com/mmomtchev/rlayers).
+
 
 ## Installation
 
@@ -277,7 +280,7 @@ You can check [XC-DB](https://github.com/mmomtchev/xc-db) for a working project 
 ## Bundled Drivers
 
 When using the bundled GDAL version, the following drivers will be available:
-`AAIGrid`, `ACE2`, `ADRG`, `AIG`, `AVCBin`, `AVCE00`, `AirSAR`, `BLX`, `BMP`, `BT`, `carto`, `CEOS`, `COASP`, `COSAR`, `CPG`, `CSV`, `CTG`, `CTable2`, `DGN`, `DIMAP`, `DIPEx`, `DOQ1`, `DOQ2`, `DTED`, `DXF`, `ECRGTOC`, `EDIGEO`, `EHdr`, `EIR`, `ELAS`, `ENVI`, `ERS`, `ESAT`, `ESRI Shapefile`, `MapInfo File`, `MBTiles`, `FAST`, `FIT`, `FlatGeobuf`, `GFF`, `GML`, `GPSBabel`, `GPSTrackMaker`, `GPX`, `GRASSASCIIGrid`, `GRIB`, `GS7BG`, `GSAG`, `GSBG`, `GSC`, `GTX`, `GTiff`, `GenBin`, `GeoJSON`, `GeoRSS`, `Geoconcept`, `GPKG`, `HDF5`, `HF2`, `HFA`, `ILWIS`, `IRIS`, `ISIS2`, `ISIS3`, `Idrisi`, `JAXAPALSAR`, `JDEM`, `JPEG`, `KMLSUPEROVERLAY`, `KML`, `KRO`, `L1B`, `LAN`, `LCP`, `LOSLAS`, `Leveller`, `MAP`, `MEM`, `Memory`, `MFF2`, `MFF`, `MITAB`, `MVT`, `NDF`, `NetCDF`, `NGSGEOID`, `NITF`, `NTv2`, `NWT_GRC`, `NWT_GRD`, `OGR_PDS`, `OGR_SDTS`, `OGR_VRT`, `OpenJPEG`, `OSM`, `OpenFileGDB`, `PAux`, `PCIDSK`, `PDS`, `PGDUMP`, `PNG`, `PNM`, `RMF`, `ROI_PAC`, `RPFTOC`, `RS2`, `RST`, `R`, `S57`, `SAGA`, `SAR_CEOS`, `SDTS`, `SGI`, `SNODAS`, `SQLite`, `SRP`, `SRTMHGT`, `SVG`, `SXF`, `TIL`, `TSX`, `Terragen`, `UK .NTF`, `USGSDEM`, `VICAR`, `VRT`, `vsiaz`, `vsicurl`, `vsigs`, `vsigzip`, `vsimem`, `vsioss`, `vsis3`, `WAsP`, `WCS`, `WMS`, `WMTS`, `XPM`, `XYZ`, `ZMap`
+`AAIGrid`, `ACE2`, `ADRG`, `AIG`, `AVCBin`, `AVCE00`, `AirSAR`, `BLX`, `BMP`, `BT`, `carto`, `CEOS`, `COASP`, `COG`, `COSAR`, `CPG`, `CSV`, `CTG`, `CTable2`, `DGN`, `DIMAP`, `DIPEx`, `DOQ1`, `DOQ2`, `DTED`, `DXF`, `ECRGTOC`, `EDIGEO`, `EHdr`, `EIR`, `ELAS`, `ENVI`, `ERS`, `ESAT`, `ESRI Shapefile`, `MapInfo File`, `MBTiles`, `FAST`, `FIT`, `FlatGeobuf`, `GFF`, `GML`, `GPSBabel`, `GPSTrackMaker`, `GPX`, `GRASSASCIIGrid`, `GRIB`, `GS7BG`, `GSAG`, `GSBG`, `GSC`, `GTX`, `GTiff`, `GenBin`, `GeoJSON`, `GeoRSS`, `Geoconcept`, `GPKG`, `HDF5`, `HF2`, `HFA`, `ILWIS`, `IRIS`, `ISIS2`, `ISIS3`, `Idrisi`, `JAXAPALSAR`, `JDEM`, `JPEG`, `JSONFG`, `KMLSUPEROVERLAY`, `KML`, `KRO`, `L1B`, `LAN`, `LCP`, `LOSLAS`, `Leveller`, `MAP`, `MEM`, `Memory`, `MFF2`, `MFF`, `MITAB`, `MVT`, `NDF`, `NetCDF`, `NGSGEOID`, `NITF`, `NTv2`, `NWT_GRC`, `NWT_GRD`, `OGR_PDS`, `OGR_SDTS`, `OGR_VRT`, `OpenJPEG`, `OSM`, `OpenFileGDB`, `PAux`, `PCIDSK`, `PDS`, `PGDUMP`, `PNG`, `PMTiles`, `PNM`, `RMF`, `ROI_PAC`, `RPFTOC`, `RS2`, `RST`, `R`, `S57`, `S100`, `S102`, `SAGA`, `SAR_CEOS`, `SDTS`, `SGI`, `SNODAS`, `SQLite`, `SRP`, `SRTMHGT`, `SVG`, `SXF`, `TIL`, `TSX`, `Terragen`, `UK .NTF`, `USGSDEM`, `VICAR`, `VRT`, `vsiaz`, `vsicurl`, `vsigs`, `vsigzip`, `vsimem`, `vsioss`, `vsis3`, `WAsP`, `WCS`, `WMS`, `WMTS`, `XPM`, `XYZ`, `ZMap`
 
 When compiling against a system-installed shared GDAL, all drivers and projections supported by it, should also be supported by `gdal-async`.
 
@@ -295,7 +298,7 @@ Before submitting pull requests, please update the [tests](test) and make sure t
 $ npm test # test against bundled gdal
 $ npm run test:shared # test against most major versions
 # test against shared gdal on given Linux version and Node.js version
-$ npm run container dev {ubuntu|centos|fedora|debian|archlinux|amazon}:{version} 14|16|18|19|lts shared
+$ npm run container dev {ubuntu|centos|fedora|debian|archlinux|amazon}:{version} 14|16|18|20|lts shared
 ```
 
 ## License
@@ -312,8 +315,8 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 Release binaries with pre-built bundled GDAL are tested against the full matrix of:
 
-* Node.js versions: 12.x (EOL), 14.x, 16.x, 17.x, 18.x
-* OS: Ubuntu 16.04 (EOL), Ubuntu 18.04, Ubuntu 20.04, Ubuntu 22.04, CentOS 8 Stream, Fedora 33, Fedora 34, Debian 10 buster, Debian 11 bullseye, Arch Linux current, Amazon Linux, Windows Server 2019, macOS Catalina 10.15 (EOL), macOS Big Sur 11
+* Node.js versions: 14.x, 16.x, 17.x, 18.x, 20.x
+* OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 8 Stream, Fedora 36, Fedora 37, Debian 10 buster, Debian 11 bullseye, Arch Linux current, Amazon Linux, Windows Server 2019, macOS Catalina 10.15 (EOL), macOS Big Sur 11
 
 On Ubuntu 16.04, Amazon Linux, Windows and macOS only the bundled GDAL version is officially supported. On all other platforms both the bundled and the system-installed versions are supported.
 
@@ -331,30 +334,31 @@ Development versions are unit tested for the following targets:
 | Node.js 16.x | Debian 10 buster | system-installed GDAL 2.1.2 (*earliest unit-tested GDAL*) (*earliest supported glibc*)
 | Node.js 16.x | Debian 11 bullseye | system-installed GDAL 3.2.2
 | Node.js 16.x | Debian 11 bullseye | bundled GDAL
-| Node.js 16.x | Fedora 33 | system-installed GDAL 3.1.4
-| Node.js 16.x | Fedora 34 | system-installed GDAL 3.2.2
-| Node.js 16.x | Fedora 34 | bundled GDAL
-| Node.js 14.x | Ubuntu 20.04 | system-installed GDAL 3.0.4
+| Node.js 18.x | Fedora 36| system-installed GDAL 3.4.3
+| Node.js 18.x | Fedora 37 | system-installed GDAL 3.5.2
+| Node.js 18.x | Fedora 37 | bundled GDAL
+| Node.js 20.x | Fedora 38 | bundled GDAL
 | Node.js 16.x | Ubuntu 20.04 | system-installed GDAL 3.0.4
 | Node.js 17.x | Ubuntu 20.04 | system-installed GDAL 3.0.4
 | Node.js 18.x | Ubuntu 20.04 | system-installed GDAL 3.0.4
 | Node.js 14.x | Ubuntu 22.04 | system-installed GDAL 3.4.1
 | Node.js 18.x | Ubuntu 22.04 | system-installed GDAL 3.4.1
-| Node.js 19.x | Ubuntu 22.04 | system-installed GDAL 3.4.1
-| Node.js 12.x | Ubuntu 20.04 | bundled GDAL
-| Node.js 14.x | Ubuntu 20.04 | bundled GDAL (*code coverage platform*)
-| Node.js 16.x | Ubuntu 20.04 | bundled GDAL
-| Node.js 17.x | Ubuntu 20.04 | bundled GDAL
-| Node.js 18.x | Ubuntu 20.04 | bundled GDAL
-| Node.js 14.x | Amazon Linux 2022 | bundled GDAL
-| Node.js 14.x | Windows Server 2019 | bundled GDAL
+| Node.js 20.x | Ubuntu 22.04 | system-installed GDAL 3.4.1
+| Node.js 21.x | Ubuntu 22.04 | system-installed GDAL 3.4.1
+| Node.js 16.x | Ubuntu 22.04 | bundled GDAL (*code coverage platform*)
+| Node.js 17.x | Ubuntu 22.04 | bundled GDAL
+| Node.js 18.x | Ubuntu 22.04 | bundled GDAL
+| Node.js 20.x | Ubuntu 22.04 | bundled GDAL
+| Node.js 21.x | Ubuntu 22.04 | bundled GDAL
+| Node.js 16.x | Amazon Linux 2022 | bundled GDAL
 | Node.js 16.x | Windows Server 2019 | bundled GDAL
 | Node.js 17.x | Windows Server 2019 | bundled GDAL
 | Node.js 18.x | Windows Server 2019 | bundled GDAL
-| Node.js 19.x | Windows Server 2019 | bundled GDAL
-| Node.js 14.x | macOS Big Sur 11 | bundled GDAL
+| Node.js 20.x | Windows Server 2019 | bundled GDAL
+| Node.js 21.x | Windows Server 2019 | bundled GDAL
 | Node.js 16.x | macOS Big Sur 11 | bundled GDAL
 | Node.js 17.x | macOS Big Sur 11 | bundled GDAL
 | Node.js 18.x | macOS Big Sur 11 | bundled GDAL
-| Node.js 19.x | macOS Big Sur 11 | bundled GDAL
+| Node.js 20.x | macOS Big Sur 11 | bundled GDAL
+| Node.js 21.x | macOS Big Sur 11 | bundled GDAL
 ---

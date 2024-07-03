@@ -5,7 +5,96 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.6.2] WIP
+## [3.8.5] 2024-04-09
+
+### Added
+ - GDAL 3.8.5
+
+
+## [3.8.4] 2024-02-19
+
+### Added
+ - GDAL 3.8.4
+
+
+## [3.8.3] 2024-01-09
+
+### Added
+ - GDAL 3.8.3
+
+
+## [3.8.2] 2024-01-08
+
+### Added
+ - GDAL 3.8.2
+
+## [3.8.1] 2023-12-12
+
+### Added
+ - GDAL 3.8.1
+
+### Changed
+ - Fix [mmomtchev/node-gdal-async#123](https://github.com/mmomtchev/node-gdal-async/issues/123), `H5version.h` is ignored by `.gitignore` and missing from the NPM tarball
+
+# [3.8.0] 2023-12-11
+
+### Added
+ - GDAL 3.8.0 with new `JSONFG`, `PMTiles` and `S102` drivers
+ - PROJ 9.3.0
+ - GEOS 3.12.1
+ - HDF5 1.14.3
+ - NetCDF 4.9.2
+ - Node.js 21 support
+
+### Changed
+ - Upgrade the main test platform from Ubuntu 20.04 to Ubuntu 22.04
+
+### Removed
+ - Drop Node.js 14 support
+
+## [3.7.3] 2023-11-28
+
+### Added
+ - GDAL 3.7.3
+
+## [3.7.2] 2023-09-21
+
+### Added
+ - GDAL 3.7.2
+
+## [3.7.1] 2023-07-30
+
+### Added
+ - GDAL 3.7.1
+
+### Changed
+ - Fix [#84](https://github.com/mmomtchev/node-gdal-async/issues/84), cannot create an `OpenFileGDB` with default options
+ - Fix [#90](https://github.com/mmomtchev/node-gdal-async/issues/90), remove the old 2GB/4GB limit and allocate `TypedArray`s up to the limit allowed by Node.js and fail gracefully on overflow instead of segfaulting
+ - Fix [#92](https://github.com/mmomtchev/node-gdal-async/issues/92), align `gdal.ReadOptions` with the documentation and all other structures by calling the type `data_type` while still accepting the old `type`
+ - Merge [#94](https://github.com/mmomtchev/node-gdal-async/pull/94), handle `null` as a field value in OGR
+ - Fix [#96](https://github.com/mmomtchev/node-gdal-async/issues/96), support PNG compression in GRIB files
+
+# [3.7.0] 2023-05-26
+
+### Added
+ - GDAL 3.7.0
+
+## [3.6.4] 2023-05-01
+
+### Added
+ - GDAL 3.6.4
+ - Node.js 20.x support and precompiled binaries
+
+## [3.6.3] 2023-03-20
+
+### Added
+ - GDAL 3.6.3
+
+### Changed
+ - Fix [#66](https://github.com/mmomtchev/node-gdal-async/issues/66), include `yatag` as a production dependency
+ - Fix [#36](https://github.com/mmomtchev/node-gdal-async/issues/36), find a way around `jest` *resetting* modules between tests
+
+## [3.6.2] 2023-01-09
 
 ### Added
  - GDAL 3.6.2
@@ -20,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - GDAL 3.6.1
  - Fix [#53](https://github.com/mmomtchev/node-gdal-async/issues/53), rebuilding from source fails
 
-## [3.6.0] 201-12-21
+# [3.6.0] 2022-12-21
 ### Added
  - GDAL 3.6.0
  - Node.js 19.x

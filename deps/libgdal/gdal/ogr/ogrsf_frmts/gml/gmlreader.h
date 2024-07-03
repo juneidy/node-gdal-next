@@ -89,6 +89,7 @@ class CPL_DLL GMLPropertyDefn
     char *m_pszCondition;
     bool m_bNullable;
     bool m_bUnique = false;
+    std::string m_osDocumentation{};
 
   public:
     explicit GMLPropertyDefn(const char *pszName,
@@ -156,6 +157,15 @@ class CPL_DLL GMLPropertyDefn
     bool IsUnique() const
     {
         return m_bUnique;
+    }
+
+    void SetDocumentation(const std::string &osDocumentation)
+    {
+        m_osDocumentation = osDocumentation;
+    }
+    const std::string &GetDocumentation() const
+    {
+        return m_osDocumentation;
     }
 
     void AnalysePropertyValue(const GMLProperty *psGMLProperty,
@@ -259,6 +269,9 @@ class CPL_DLL GMLFeatureClass
     char *m_pszSRSName;
     bool m_bSRSNameConsistent;
 
+    bool m_bIsConsistentSingleGeomElemPath = true;
+    std::string m_osSingleGeomElemPath{};
+
   public:
     explicit GMLFeatureClass(const char *pszName = "");
     ~GMLFeatureClass();
@@ -298,6 +311,23 @@ class CPL_DLL GMLFeatureClass
     int AddProperty(GMLPropertyDefn *, int iPos = -1);
     int AddGeometryProperty(GMLGeometryPropertyDefn *);
     void ClearGeometryProperties();
+
+    void SetConsistentSingleGeomElemPath(bool b)
+    {
+        m_bIsConsistentSingleGeomElemPath = b;
+    }
+    bool IsConsistentSingleGeomElemPath() const
+    {
+        return m_bIsConsistentSingleGeomElemPath;
+    }
+    void SetSingleGeomElemPath(const std::string &s)
+    {
+        m_osSingleGeomElemPath = s;
+    }
+    const std::string &GetSingleGeomElemPath() const
+    {
+        return m_osSingleGeomElemPath;
+    }
 
     bool IsSchemaLocked() const
     {
@@ -350,8 +380,7 @@ class CPL_DLL GMLFeature
                                      m_nGeometryCount <= 1 */
     CPLXMLNode *m_apsGeometry[2]; /* NULL-terminated */
 
-    // string list of named non-schema properties - used by NAS driver.
-    char **m_papszOBProperties;
+    CPLXMLNode *m_psBoundedByGeometry = nullptr;
 
   public:
     explicit GMLFeature(GMLFeatureClass *);
@@ -375,6 +404,12 @@ class CPL_DLL GMLFeature
     }
     const CPLXMLNode *GetGeometryRef(int nIdx) const;
 
+    void SetBoundedByGeometry(CPLXMLNode *psGeom);
+    const CPLXMLNode *GetBoundedByGeometry() const
+    {
+        return m_psBoundedByGeometry;
+    }
+
     void SetPropertyDirectly(int i, char *pszValue);
 
     const GMLProperty *GetProperty(int i) const
@@ -389,11 +424,6 @@ class CPL_DLL GMLFeature
     void SetFID(const char *pszFID);
 
     void Dump(FILE *fp);
-
-    // Out of Band property handling - special stuff like relations for NAS.
-    void AddOBProperty(const char *pszName, const char *pszValue);
-    const char *GetOBProperty(const char *pszName);
-    char **GetOBProperties();
 };
 
 /************************************************************************/

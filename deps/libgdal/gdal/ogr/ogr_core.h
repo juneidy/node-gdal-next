@@ -671,13 +671,25 @@ typedef enum
  */
 #define ALTER_DOMAIN_FLAG 0x40
 
+/** Alter field alternative name.
+ * Used by OGR_L_AlterFieldDefn().
+ * @since GDAL 3.7
+ */
+#define ALTER_ALTERNATIVE_NAME_FLAG 0x80
+
+/** Alter field comment.
+ * Used by OGR_L_AlterFieldDefn().
+ * @since GDAL 3.7
+ */
+#define ALTER_COMMENT_FLAG 0x100
+
 /** Alter all parameters of field definition.
  * Used by OGR_L_AlterFieldDefn().
  */
 #define ALTER_ALL_FLAG                                                         \
     (ALTER_NAME_FLAG | ALTER_TYPE_FLAG | ALTER_WIDTH_PRECISION_FLAG |          \
      ALTER_NULLABLE_FLAG | ALTER_DEFAULT_FLAG | ALTER_UNIQUE_FLAG |            \
-     ALTER_DOMAIN_FLAG)
+     ALTER_DOMAIN_FLAG | ALTER_ALTERNATIVE_NAME_FLAG | ALTER_COMMENT_FLAG)
 
 /** Alter geometry field name.
  * Used by OGR_L_AlterGeomFieldDefn().
@@ -854,6 +866,29 @@ typedef enum
  */
 #define OGRNullMarker -21122
 
+/** Time zone flag indicating unknown timezone. For the
+ *  OGRFieldDefn::GetTZFlag() property, this may also indicate a mix of
+ *  unknown, localtime or known time zones in the same field.
+ */
+#define OGR_TZFLAG_UNKNOWN 0
+
+/** Time zone flag indicating local time */
+#define OGR_TZFLAG_LOCALTIME 1
+
+/** Time zone flag only returned by OGRFieldDefn::GetTZFlag() to indicate
+ * that all values in the field have a known time zone (ie different from
+ * OGR_TZFLAG_UNKNOWN and OGR_TZFLAG_LOCALTIME), but it may be different among
+ * features. */
+#define OGR_TZFLAG_MIXED_TZ 2
+
+/** Time zone flag indicating UTC.
+ * Used to derived other time zone flags with the following logic:
+ * - values above 100 indicate a 15 minute increment per unit.
+ * - values under 100 indicate a 15 minute decrement per unit.
+ * For example: a value of 101 indicates UTC+00:15, a value of 102 UTC+00:30,
+ * a value of 99 UTC-00:15 ,etc. */
+#define OGR_TZFLAG_UTC 100
+
 /************************************************************************/
 /*                               OGRField                               */
 /************************************************************************/
@@ -938,6 +973,9 @@ inline int OGR_GET_MS(float fSec)
 }
 #endif  // __cplusplus
 
+/** Option for OGRParseDate() to ask for lax checks on the input format */
+#define OGRPARSEDATE_OPTION_LAX 1
+
 int CPL_DLL OGRParseDate(const char *pszInput, OGRField *psOutput,
                          int nOptions);
 
@@ -975,6 +1013,9 @@ int CPL_DLL OGRParseDate(const char *pszInput, OGRField *psOutput,
     "DeleteFeature" /**< Layer capability for feature deletion */
 #define OLCUpsertFeature                                                       \
     "UpsertFeature" /**< Layer capability for feature upsert */
+#define OLCUpdateFeature                                                       \
+    "UpdateFeature" /**< Layer capability for specialized \
+                                              UpdateFeature() implementation */
 #define OLCFastSetNextByIndex                                                  \
     "FastSetNextByIndex" /**< Layer capability for setting next feature index  \
                           */
@@ -997,6 +1038,9 @@ int CPL_DLL OGRParseDate(const char *pszInput, OGRField *psOutput,
     "Rename" /**< Layer capability for a layer that supports Rename() */
 #define OLCFastGetArrowStream                                                  \
     "FastGetArrowStream" /**< Layer capability for fast GetArrowStream()       \
+                            implementation */
+#define OLCFastWriteArrowBatch                                                 \
+    "FastWriteArrowBatch" /**< Layer capability for fast WriteArrowBatch()     \
                             implementation */
 
 #define ODsCCreateLayer                                                        \

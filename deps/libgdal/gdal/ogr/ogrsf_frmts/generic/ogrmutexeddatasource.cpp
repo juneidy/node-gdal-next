@@ -127,10 +127,9 @@ int OGRMutexedDataSource::TestCapability(const char *pszCap)
     return m_poBaseDataSource->TestCapability(pszCap);
 }
 
-OGRLayer *OGRMutexedDataSource::ICreateLayer(const char *pszName,
-                                             OGRSpatialReference *poSpatialRef,
-                                             OGRwkbGeometryType eGType,
-                                             char **papszOptions)
+OGRLayer *OGRMutexedDataSource::ICreateLayer(
+    const char *pszName, const OGRSpatialReference *poSpatialRef,
+    OGRwkbGeometryType eGType, char **papszOptions)
 {
     CPLMutexHolderOptionalLockD(m_hGlobalMutex);
     return WrapLayerIfNecessary(m_poBaseDataSource->CreateLayer(
@@ -191,7 +190,7 @@ void OGRMutexedDataSource::ReleaseResultSet(OGRLayer *poResultsSet)
     m_poBaseDataSource->ReleaseResultSet(poResultsSet);
 }
 
-void OGRMutexedDataSource::FlushCache(bool bAtClosing)
+CPLErr OGRMutexedDataSource::FlushCache(bool bAtClosing)
 {
     CPLMutexHolderOptionalLockD(m_hGlobalMutex);
     return m_poBaseDataSource->FlushCache(bAtClosing);

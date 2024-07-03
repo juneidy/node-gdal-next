@@ -97,7 +97,7 @@ DBFHandle OGRShapeDataSource::DS_DBFOpen(const char *pszDBFFile,
 /************************************************************************/
 
 OGRShapeDataSource::OGRShapeDataSource()
-    : papoLayers(nullptr), nLayers(0), pszName(nullptr), bDSUpdate(false),
+    : papoLayers(nullptr), nLayers(0), pszName(nullptr),
       bSingleFileDataSource(false), poPool(new OGRLayerPool()),
       b2GBLimit(CPLTestBool(CPLGetConfigOption("SHAPE_2GB_LIMIT", "FALSE")))
 {
@@ -204,7 +204,7 @@ bool OGRShapeDataSource::CreateZip(const char *pszOriFilename)
         return false;
     if (CPLCloseZip(hZIP) != CE_None)
         return false;
-    bDSUpdate = true;
+    eAccess = GA_Update;
     m_bIsZip = true;
     m_bSingleLayerZip = EQUAL(CPLGetExtension(pszOriFilename), "shz");
     return true;
@@ -227,7 +227,7 @@ bool OGRShapeDataSource::Open(GDALOpenInfo *poOpenInfo, bool bTestOpen,
 
     pszName = CPLStrdup(pszNewName);
 
-    bDSUpdate = bUpdate;
+    eAccess = poOpenInfo->eAccess;
 
     bSingleFileDataSource = CPL_TO_BOOL(bForceSingleFileDataSource);
 
@@ -509,7 +509,10 @@ bool OGRShapeDataSource::OpenFile(const char *pszNewName, bool bUpdate)
     /*      Create the layer object.                                        */
     /* -------------------------------------------------------------------- */
     OGRShapeLayer *poLayer = new OGRShapeLayer(
-        this, pszNewName, hSHP, hDBF, nullptr, false, bUpdate, wkbNone);
+        this, pszNewName, hSHP, hDBF,
+        /* poSRS = */ nullptr,
+        /* bSRSSet = */ false,
+        /* osPrjFilename = */ std::string(), bUpdate, wkbNone);
     poLayer->SetModificationDate(
         CSLFetchNameValue(papszOpenOptions, "DBF_DATE_LAST_UPDATE"));
     poLayer->SetAutoRepack(CPLFetchBool(papszOpenOptions, "AUTO_REPACK", true));
@@ -568,7 +571,7 @@ static CPLString LaunderLayerName(const char *pszLayerName)
 /************************************************************************/
 
 OGRLayer *OGRShapeDataSource::ICreateLayer(const char *pszLayerName,
-                                           OGRSpatialReference *poSRS,
+                                           const OGRSpatialReference *poSRS,
                                            OGRwkbGeometryType eType,
                                            char **papszOptions)
 
@@ -589,7 +592,7 @@ OGRLayer *OGRShapeDataSource::ICreateLayer(const char *pszLayerName,
     /* -------------------------------------------------------------------- */
     /*      Verify we are in update mode.                                   */
     /* -------------------------------------------------------------------- */
-    if (!bDSUpdate)
+    if (eAccess == GA_ReadOnly)
     {
         CPLError(CE_Failure, CPLE_NoWriteAccess,
                  "Data source %s opened read-only.  "
@@ -872,7 +875,7 @@ OGRLayer *OGRShapeDataSource::ICreateLayer(const char *pszLayerName,
     if (hDBF == nullptr)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
-                 "Failed to open Shape DBF file `%s'.", pszFilename);
+                 "Failed to create Shape DBF file `%s'.", pszFilename);
         CPLFree(pszFilename);
         CPLFree(pszFilenameWithoutExt);
         SHPClose(hSHP);
@@ -884,26 +887,24 @@ OGRLayer *OGRShapeDataSource::ICreateLayer(const char *pszLayerName,
     /* -------------------------------------------------------------------- */
     /*      Create the .prj file, if required.                              */
     /* -------------------------------------------------------------------- */
+    std::string osPrjFilename;
+    OGRSpatialReference *poSRSClone = nullptr;
     if (poSRS != nullptr)
     {
-        CPLString osPrjFile =
-            CPLFormFilename(nullptr, pszFilenameWithoutExt, "prj");
-
-        poSRS = poSRS->Clone();
-        poSRS->morphToESRI();
+        osPrjFilename = CPLFormFilename(nullptr, pszFilenameWithoutExt, "prj");
+        poSRSClone = poSRS->Clone();
 
         char *pszWKT = nullptr;
         VSILFILE *fp = nullptr;
-        if (poSRS->exportToWkt(&pszWKT) == OGRERR_NONE &&
-            (fp = VSIFOpenL(osPrjFile, "wt")) != nullptr)
+        const char *const apszOptions[] = {"FORMAT=WKT1_ESRI", nullptr};
+        if (poSRSClone->exportToWkt(&pszWKT, apszOptions) == OGRERR_NONE &&
+            (fp = VSIFOpenL(osPrjFilename.c_str(), "wt")) != nullptr)
         {
             VSIFWriteL(pszWKT, strlen(pszWKT), 1, fp);
             VSIFCloseL(fp);
         }
 
         CPLFree(pszWKT);
-
-        poSRS->morphFromESRI();
     }
 
     /* -------------------------------------------------------------------- */
@@ -915,11 +916,13 @@ OGRLayer *OGRShapeDataSource::ICreateLayer(const char *pszLayerName,
     pszFilename =
         CPLStrdup(CPLFormFilename(nullptr, pszFilenameWithoutExt, "shp"));
 
-    OGRShapeLayer *poLayer = new OGRShapeLayer(this, pszFilename, hSHP, hDBF,
-                                               poSRS, true, true, eType);
-    if (poSRS != nullptr)
+    OGRShapeLayer *poLayer =
+        new OGRShapeLayer(this, pszFilename, hSHP, hDBF, poSRSClone,
+                          /* bSRSSet = */ true, osPrjFilename,
+                          /* bUpdate = */ true, eType);
+    if (poSRSClone != nullptr)
     {
-        poSRS->Release();
+        poSRSClone->Release();
     }
 
     CPLFree(pszFilenameWithoutExt);
@@ -950,15 +953,16 @@ int OGRShapeDataSource::TestCapability(const char *pszCap)
 
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
-        return bDSUpdate && !(m_bIsZip && m_bSingleLayerZip && nLayers == 1);
+        return eAccess == GA_Update &&
+               !(m_bIsZip && m_bSingleLayerZip && nLayers == 1);
     else if (EQUAL(pszCap, ODsCDeleteLayer))
-        return bDSUpdate && !(m_bIsZip && m_bSingleLayerZip);
+        return eAccess == GA_Update && !(m_bIsZip && m_bSingleLayerZip);
     else if (EQUAL(pszCap, ODsCMeasuredGeometries))
         return true;
     else if (EQUAL(pszCap, ODsCZGeometries))
         return true;
     else if (EQUAL(pszCap, ODsCRandomLayerWrite))
-        return bDSUpdate;
+        return eAccess == GA_Update;
 
     return false;
 }
@@ -987,7 +991,7 @@ int OGRShapeDataSource::GetLayerCount()
             if (j < nLayers)
                 continue;
 
-            if (!OpenFile(pszFilename, bDSUpdate))
+            if (!OpenFile(pszFilename, eAccess == GA_Update))
             {
                 CPLError(CE_Failure, CPLE_OpenFailed,
                          "Failed to open file %s."
@@ -1054,7 +1058,7 @@ OGRLayer *OGRShapeDataSource::GetLayerByName(const char *pszLayerNameIn)
                         continue;
                 }
 
-                if (!OpenFile(pszFilename, bDSUpdate))
+                if (!OpenFile(pszFilename, eAccess == GA_Update))
                 {
                     CPLError(CE_Failure, CPLE_OpenFailed,
                              "Failed to open file %s.  "
@@ -1279,7 +1283,7 @@ OGRErr OGRShapeDataSource::DeleteLayer(int iLayer)
     /* -------------------------------------------------------------------- */
     /*      Verify we are in update mode.                                   */
     /* -------------------------------------------------------------------- */
-    if (!bDSUpdate)
+    if (eAccess != GA_Update)
     {
         CPLError(CE_Failure, CPLE_NoWriteAccess,
                  "Data source %s opened read-only.  "
@@ -1448,7 +1452,7 @@ void OGRShapeDataSource::RemoveLockFile()
 
 bool OGRShapeDataSource::UncompressIfNeeded()
 {
-    if (!bDSUpdate || !m_bIsZip || !m_osTemporaryUnzipDir.empty())
+    if (eAccess != GA_Update || !m_bIsZip || !m_osTemporaryUnzipDir.empty())
         return true;
 
     GetLayerCount();
@@ -1583,7 +1587,7 @@ bool OGRShapeDataSource::UncompressIfNeeded()
 bool OGRShapeDataSource::RecompressIfNeeded(
     const std::vector<CPLString> &layerNames)
 {
-    if (!bDSUpdate || !m_bIsZip || m_osTemporaryUnzipDir.empty())
+    if (eAccess != GA_Update || !m_bIsZip || m_osTemporaryUnzipDir.empty())
         return true;
 
     auto returnError = [this]()

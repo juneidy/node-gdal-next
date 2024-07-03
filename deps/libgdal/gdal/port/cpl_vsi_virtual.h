@@ -40,6 +40,7 @@
 #include "cpl_multiproc.h"
 
 #include <map>
+#include <memory>
 #include <vector>
 #include <string>
 
@@ -48,12 +49,17 @@
 #undef GetDiskFreeSpace
 #endif
 
+// To avoid aliasing to CopyFile to CopyFileA on Windows
+#ifdef CopyFile
+#undef CopyFile
+#endif
+
 /************************************************************************/
 /*                           VSIVirtualHandle                           */
 /************************************************************************/
 
 /** Virtual file handle */
-class CPL_DLL VSIVirtualHandle
+struct CPL_DLL VSIVirtualHandle
 {
   public:
     virtual int Seek(vsi_l_offset nOffset, int nWhence) = 0;
@@ -62,6 +68,25 @@ class CPL_DLL VSIVirtualHandle
     virtual int ReadMultiRange(int nRanges, void **ppData,
                                const vsi_l_offset *panOffsets,
                                const size_t *panSizes);
+
+    /** This method is called when code plans to access soon one or several
+     * ranges in a file. Some file systems may be able to use this hint to
+     * for example asynchronously start such requests.
+     *
+     * Offsets may be given in a non-increasing order, and may potentially
+     * overlap.
+     *
+     * @param nRanges Size of the panOffsets and panSizes arrays.
+     * @param panOffsets Array containing the start offset of each range.
+     * @param panSizes Array containing the size (in bytes) of each range.
+     * @since GDAL 3.7
+     */
+    virtual void AdviseRead(CPL_UNUSED int nRanges,
+                            CPL_UNUSED const vsi_l_offset *panOffsets,
+                            CPL_UNUSED const size_t *panSizes)
+    {
+    }
+
     virtual size_t Write(const void *pBuffer, size_t nSize, size_t nCount) = 0;
     virtual int Eof() = 0;
     virtual int Flush()
@@ -91,6 +116,29 @@ class CPL_DLL VSIVirtualHandle
     {
     }
 };
+
+/************************************************************************/
+/*                        VSIVirtualHandleCloser                        */
+/************************************************************************/
+
+/** Helper close to use with a std:unique_ptr<VSIVirtualHandle>,
+ *  such as VSIVirtualHandleUniquePtr. */
+struct VSIVirtualHandleCloser
+{
+    /** Operator () that closes and deletes the file handle. */
+    void operator()(VSIVirtualHandle *poHandle)
+    {
+        if (poHandle)
+        {
+            poHandle->Close();
+            delete poHandle;
+        }
+    }
+};
+
+/** Unique pointer of VSIVirtualHandle that calls the Close() method */
+typedef std::unique_ptr<VSIVirtualHandle, VSIVirtualHandleCloser>
+    VSIVirtualHandleUniquePtr;
 
 /************************************************************************/
 /*                         VSIFilesystemHandler                         */
@@ -133,14 +181,13 @@ class CPL_DLL VSIFilesystemHandler
         return -1;
     }
     virtual int RmdirRecursive(const char *pszDirname);
-    virtual char **ReadDir(const char *pszDirname)
+    char **ReadDir(const char *pszDirname)
     {
-        (void)pszDirname;
-        return nullptr;
+        return ReadDirEx(pszDirname, 0);
     }
-    virtual char **ReadDirEx(const char *pszDirname, int /* nMaxFiles */)
+    virtual char **ReadDirEx(const char * /*pszDirname*/, int /* nMaxFiles */)
     {
-        return ReadDir(pszDirname);
+        return nullptr;
     }
     virtual char **SiblingFiles(const char * /*pszFilename*/)
     {
@@ -188,6 +235,11 @@ class CPL_DLL VSIFilesystemHandler
                       GDALProgressFunc pProgressFunc, void *pProgressData,
                       char ***ppapszOutputs);
 
+    virtual int CopyFile(const char *pszSource, const char *pszTarget,
+                         VSILFILE *fpSource, vsi_l_offset nSourceSize,
+                         const char *const *papszOptions,
+                         GDALProgressFunc pProgressFunc, void *pProgressData);
+
     virtual VSIDIR *OpenDir(const char *pszPath, int nRecurseDepth,
                             const char *const *papszOptions);
 
@@ -211,6 +263,19 @@ class CPL_DLL VSIFilesystemHandler
         return osFilename;
     }
 
+    /** Return the canonical filename.
+     *
+     * May be implemented by case-insensitive filesystems
+     * (currently Win32 and MacOSX)
+     * to return the filename with its actual case (i.e. the one that would
+     * be used when listing the content of the directory).
+     */
+    virtual std::string
+    GetCanonicalFilename(const std::string &osFilename) const
+    {
+        return osFilename;
+    }
+
     virtual bool IsLocal(const char * /* pszPath */)
     {
         return true;
@@ -228,6 +293,13 @@ class CPL_DLL VSIFilesystemHandler
     virtual bool SupportsRead(const char * /* pszPath */)
     {
         return true;
+    }
+
+    virtual VSIFilesystemHandler *Duplicate(const char * /* pszPrefix */)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "Duplicate() not supported on this file system");
+        return nullptr;
     }
 };
 #endif /* #ifndef DOXYGEN_SKIP */
@@ -389,9 +461,11 @@ VSIVirtualHandle *
 VSICreateBufferedReaderHandle(VSIVirtualHandle *poBaseHandle,
                               const GByte *pabyBeginningContent,
                               vsi_l_offset nCheatFileSize);
-VSIVirtualHandle CPL_DLL *VSICreateCachedFile(VSIVirtualHandle *poBaseHandle,
-                                              size_t nChunkSize = 32768,
-                                              size_t nCacheSize = 0);
+constexpr int VSI_CACHED_DEFAULT_CHUNK_SIZE = 32768;
+VSIVirtualHandle CPL_DLL *
+VSICreateCachedFile(VSIVirtualHandle *poBaseHandle,
+                    size_t nChunkSize = VSI_CACHED_DEFAULT_CHUNK_SIZE,
+                    size_t nCacheSize = 0);
 
 const int CPL_DEFLATE_TYPE_GZIP = 0;
 const int CPL_DEFLATE_TYPE_ZLIB = 1;
@@ -400,6 +474,16 @@ VSIVirtualHandle CPL_DLL *VSICreateGZipWritable(VSIVirtualHandle *poBaseHandle,
                                                 int nDeflateType,
                                                 int bAutoCloseBaseHandle);
 
-VSIVirtualHandle *VSICreateUploadOnCloseFile(VSIVirtualHandle *poBaseHandle);
+VSIVirtualHandle *VSICreateGZipWritable(VSIVirtualHandle *poBaseHandle,
+                                        int nDeflateType,
+                                        bool bAutoCloseBaseHandle, int nThreads,
+                                        size_t nChunkSize,
+                                        size_t nSOZIPIndexEltSize,
+                                        std::vector<uint8_t> *panSOZIPIndex);
+
+VSIVirtualHandle *
+VSICreateUploadOnCloseFile(VSIVirtualHandleUniquePtr &&poWritableHandle,
+                           VSIVirtualHandleUniquePtr &&poTmpFile,
+                           const std::string &osTmpFilename);
 
 #endif /* ndef CPL_VSI_VIRTUAL_H_INCLUDED */

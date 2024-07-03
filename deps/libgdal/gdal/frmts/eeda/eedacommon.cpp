@@ -66,7 +66,6 @@ BuildBandDescArray(json_object *poBands,
         if (pszPrecision == nullptr)
             continue;
         GDALDataType eDT = GDT_Byte;
-        bool bSignedByte = false;
         if (EQUAL(pszPrecision, "INT"))
         {
             json_object *poRange =
@@ -88,7 +87,7 @@ BuildBandDescArray(json_object *poBands,
 
                 if (nMin == -128 && nMax == 127)
                 {
-                    bSignedByte = true;
+                    eDT = GDT_Int8;
                 }
                 else if (nMin < std::numeric_limits<GInt16>::min())
                 {
@@ -132,8 +131,12 @@ BuildBandDescArray(json_object *poBands,
         }
 
         CPLString osWKT;
+        // Cf https://developers.google.com/earth-engine/reference/rest/v1alpha/PixelGrid
         json_object *poCrs = CPL_json_object_object_get(poGrid, "crsCode");
         if (poCrs == nullptr)
+            poCrs = CPL_json_object_object_get(poGrid, "crsWkt");
+        if (poCrs ==
+            nullptr)  // "wkt" must come from a preliminary version of the API
             poCrs = CPL_json_object_object_get(poGrid, "wkt");
         OGRSpatialReference oSRS;
         if (poCrs)
@@ -235,8 +238,7 @@ BuildBandDescArray(json_object *poBands,
         oDesc.osName = pszBandId;
         oDesc.osWKT = osWKT;
         oDesc.eDT = eDT;
-        oDesc.bSignedByte = bSignedByte;
-        oDesc.adfGeoTransform = adfGeoTransform;
+        oDesc.adfGeoTransform = std::move(adfGeoTransform);
         oDesc.nWidth = nWidth;
         oDesc.nHeight = nHeight;
         aoBandDesc.push_back(oDesc);

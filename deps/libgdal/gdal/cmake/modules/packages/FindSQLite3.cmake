@@ -26,7 +26,7 @@ This module will set the following variables if found:
   Copyright (c) 2018,2021 Hiroshi Miura
   Copyright (c) 2019 Chuck Atkins
 #]=======================================================================]
-
+include (CMakePushCheckState)
 # Accept upper case variant for SQLite3_INCLUDE_DIR
 if(SQLITE3_INCLUDE_DIR)
   if(SQLite3_INCLUDE_DIR AND NOT "${SQLite3_INCLUDE_DIR}" STREQUAL "${SQLITE3_INCLUDE_DIR}")
@@ -99,6 +99,12 @@ if(SQLite3_INCLUDE_DIR AND SQLite3_LIBRARY)
              unset(SQLite3_HAS_OPEN)
              unset(SQLite3_HAS_OPEN CACHE)
              set(CMAKE_REQUIRED_LIBRARIES ${SQLite3_LIBRARY} -lz -lm)
+             check_symbol_exists(sqlite3_open sqlite3.h SQLite3_HAS_OPEN)
+         endif()
+         if(NOT SQLite3_HAS_OPEN)
+             unset(SQLite3_HAS_OPEN)
+             unset(SQLite3_HAS_OPEN CACHE)
+             set(CMAKE_REQUIRED_LIBRARIES ${SQLite3_LIBRARY} -lz -lm -lpthread -ldl)
              check_symbol_exists(sqlite3_open sqlite3.h SQLite3_HAS_OPEN)
          endif()
        endif()

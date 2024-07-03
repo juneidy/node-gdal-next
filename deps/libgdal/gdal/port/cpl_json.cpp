@@ -40,6 +40,33 @@ static const char *JSON_PATH_DELIMITER = "/";
 
 static const char *INVALID_OBJ_KEY = "__INVALID_OBJ_KEY__";
 
+#define JSON_C_VER_014 (14 << 8)
+
+// json_object_new_uint64() was added in libjson-c 0.14
+#if (!defined(JSON_C_VERSION_NUM)) || (JSON_C_VERSION_NUM < JSON_C_VER_014)
+
+static int CPLJSON_json_object_new_uint64_formatter(struct json_object *jso,
+                                                    struct printbuf *pb,
+                                                    int /* level */,
+                                                    int /* flags */)
+{
+    const char *pszStr = json_object_get_string(jso);
+    return printbuf_memappend(pb, pszStr, static_cast<int>(strlen(pszStr)));
+}
+
+static json_object *CPLJSON_json_object_new_uint64(uint64_t nVal)
+{
+    json_object *jso = json_object_new_string(
+        CPLSPrintf(CPL_FRMT_GUIB, static_cast<GUIntBig>(nVal)));
+    json_object_set_serializer(jso, CPLJSON_json_object_new_uint64_formatter,
+                               nullptr, nullptr);
+    return jso;
+}
+
+#define json_object_new_uint64 CPLJSON_json_object_new_uint64
+
+#endif
+
 //------------------------------------------------------------------------------
 // JSONDocument
 //------------------------------------------------------------------------------
@@ -456,6 +483,45 @@ CPLJSONObject::CPLJSONObject() : m_poJsonObject(json_object_new_object())
 {
 }
 
+CPLJSONObject::CPLJSONObject(std::nullptr_t) : m_poJsonObject(nullptr)
+{
+}
+
+CPLJSONObject::CPLJSONObject(const std::string &osVal)
+    : m_poJsonObject(json_object_new_string(osVal.c_str()))
+{
+}
+
+CPLJSONObject::CPLJSONObject(const char *pszValue)
+    : m_poJsonObject(json_object_new_string(pszValue))
+{
+}
+
+CPLJSONObject::CPLJSONObject(bool bVal)
+    : m_poJsonObject(json_object_new_boolean(bVal))
+{
+}
+
+CPLJSONObject::CPLJSONObject(int nVal)
+    : m_poJsonObject(json_object_new_int(nVal))
+{
+}
+
+CPLJSONObject::CPLJSONObject(int64_t nVal)
+    : m_poJsonObject(json_object_new_int64(nVal))
+{
+}
+
+CPLJSONObject::CPLJSONObject(uint64_t nVal)
+    : m_poJsonObject(json_object_new_uint64(nVal))
+{
+}
+
+CPLJSONObject::CPLJSONObject(double dfVal)
+    : m_poJsonObject(json_object_new_double(dfVal))
+{
+}
+
 CPLJSONObject::CPLJSONObject(const std::string &osName,
                              const CPLJSONObject &oParent)
     : m_poJsonObject(json_object_get(json_object_new_object())), m_osKey(osName)
@@ -468,6 +534,20 @@ CPLJSONObject::CPLJSONObject(const std::string &osName,
                              JSONObjectH poJsonObject)
     : m_poJsonObject(json_object_get(TO_JSONOBJ(poJsonObject))), m_osKey(osName)
 {
+}
+
+CPLJSONObject CPLJSONObject::Clone() const
+{
+    CPLJSONObject oRet;
+    if (IsValid())
+    {
+        CPLJSONDocument oTmpDoc;
+        oTmpDoc.SetRoot(*this);
+        std::string osStr = oTmpDoc.SaveAsString();
+        CPL_IGNORE_RET_VAL(oTmpDoc.LoadMemory(osStr));
+        oRet = oTmpDoc.GetRoot();
+    }
+    return oRet;
 }
 
 CPLJSONObject::~CPLJSONObject()
@@ -645,6 +725,28 @@ void CPLJSONObject::Add(const std::string &osName, GInt64 nValue)
 /**
  * Add new key - value pair to json object.
  * @param osName  Key name.
+ * @param nValue uint64_t value.
+ *
+ * @since GDAL 3.8
+ */
+void CPLJSONObject::Add(const std::string &osName, uint64_t nValue)
+{
+    std::string objectName;
+    if (m_osKey == INVALID_OBJ_KEY)
+        m_osKey.clear();
+    CPLJSONObject object = GetObjectByPath(osName, objectName);
+    if (object.IsValid() && json_object_get_type(TO_JSONOBJ(
+                                object.m_poJsonObject)) == json_type_object)
+    {
+        json_object *poVal = json_object_new_uint64(nValue);
+        json_object_object_add(TO_JSONOBJ(object.GetInternalHandle()),
+                               objectName.c_str(), poVal);
+    }
+}
+
+/**
+ * Add new key - value pair to json object.
+ * @param osName  Key name.
  * @param oValue   Array value.
  *
  * @since GDAL 2.3
@@ -676,6 +778,13 @@ void CPLJSONObject::Add(const std::string &osName, const CPLJSONObject &oValue)
     std::string objectName;
     if (m_osKey == INVALID_OBJ_KEY)
         m_osKey.clear();
+    if (osName.empty())
+    {
+        json_object_object_add(
+            TO_JSONOBJ(GetInternalHandle()), "",
+            json_object_get(TO_JSONOBJ(oValue.GetInternalHandle())));
+        return;
+    }
     CPLJSONObject object = GetObjectByPath(osName, objectName);
     if (object.IsValid() && json_object_get_type(TO_JSONOBJ(
                                 object.m_poJsonObject)) == json_type_object)
@@ -811,6 +920,19 @@ void CPLJSONObject::Set(const std::string &osName, int nValue)
  * @since GDAL 2.3
  */
 void CPLJSONObject::Set(const std::string &osName, GInt64 nValue)
+{
+    Delete(osName);
+    Add(osName, nValue);
+}
+
+/**
+ * Change value by key.
+ * @param osName  Key name.
+ * @param nValue   uint64_t value.
+ *
+ * @since GDAL 3.8
+ */
+void CPLJSONObject::Set(const std::string &osName, uint64_t nValue)
 {
     Delete(osName);
     Add(osName, nValue);
@@ -1336,6 +1458,17 @@ int CPLJSONArray::Size() const
 }
 
 /**
+ * Add null object to array.
+ *
+ * @since GDAL 3.8
+ */
+void CPLJSONArray::AddNull()
+{
+    if (m_poJsonObject)
+        json_object_array_add(TO_JSONOBJ(m_poJsonObject), nullptr);
+}
+
+/**
  * Add json object to array.
  * @param oValue Json array.
  *
@@ -1418,6 +1551,21 @@ void CPLJSONArray::Add(GInt64 nValue)
 
 /**
  * Add value to array
+ * @param nValue Value to add.
+ *
+ * @since GDAL 3.8
+ */
+void CPLJSONArray::Add(uint64_t nValue)
+{
+    if (m_poJsonObject)
+    {
+        json_object_array_add(TO_JSONOBJ(m_poJsonObject),
+                              json_object_new_uint64(nValue));
+    }
+}
+
+/**
+ * Add value to array
  * @param bValue Value to add.
  *
  * @since GDAL 2.3
@@ -1455,4 +1603,46 @@ const CPLJSONObject CPLJSONArray::operator[](int nIndex) const
     return CPLJSONObject(
         CPLSPrintf("id:%d", nIndex),
         json_object_array_get_idx(TO_JSONOBJ(m_poJsonObject), nIndex));
+}
+
+/************************************************************************/
+/*                      CPLParseKeyValueJson()                          */
+/************************************************************************/
+
+/** Return a string list of key/value pairs extracted from a JSON doc.
+
+    We are expecting simple documents with key:value pairs, like the
+    following with no hierarchy or complex structure.
+    \verbatim
+    {
+      "Code" : "Success",
+      "LastUpdated" : "2017-07-03T16:20:17Z",
+      "Type" : "AWS-HMAC",
+      "AccessKeyId" : "bla",
+      "SecretAccessKey" : "bla",
+      "Token" : "bla",
+      "Expiration" : "2017-07-03T22:42:58Z"
+    }
+    \endverbatim
+    @since GDAL 3.7
+ */
+CPLStringList CPLParseKeyValueJson(const char *pszJson)
+{
+    CPLJSONDocument oDoc;
+    CPLStringList oNameValue;
+    if (pszJson != nullptr && oDoc.LoadMemory(pszJson))
+    {
+        for (const auto &obj : oDoc.GetRoot().GetChildren())
+        {
+            const auto eType = obj.GetType();
+            if (eType == CPLJSONObject::Type::String ||
+                eType == CPLJSONObject::Type::Integer ||
+                eType == CPLJSONObject::Type::Double)
+            {
+                oNameValue.SetNameValue(obj.GetName().c_str(),
+                                        obj.ToString().c_str());
+            }
+        }
+    }
+    return oNameValue;
 }

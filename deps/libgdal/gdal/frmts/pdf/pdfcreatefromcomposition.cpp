@@ -596,9 +596,12 @@ bool GDALPDFComposerWriter::SerializeOutlineKids(
             oDict.Add("Count", poItem->m_bOpen ? poItem->m_nKidsRecCount
                                                : -poItem->m_nKidsRecCount);
         }
-        VSIFPrintfL(m_fp, "%s\n", oDict.Serialize().c_str());
+        int ret = VSIFPrintfL(m_fp, "%s\n", oDict.Serialize().c_str());
         EndObj();
-        SerializeOutlineKids(poItem.get());
+        if (ret == 0)
+            return false;
+        if (!SerializeOutlineKids(poItem.get()))
+            return false;
     }
     return true;
 }
@@ -2208,7 +2211,8 @@ bool GDALPDFComposerWriter::SerializeAndRenumberIgnoreRef(
                              "Cannot get stream content");
                     return false;
                 }
-                osStr.append(pRawBytes, poStream->GetRawLength());
+                osStr.append(pRawBytes,
+                             static_cast<size_t>(poStream->GetRawLength()));
                 VSIFree(pRawBytes);
                 osStr.append("\nendstream\n");
             }
@@ -2338,7 +2342,7 @@ bool GDALPDFComposerWriter::WritePDF(const CPLXMLNode *psNode,
 
     StartObjWithStream(nFormId, oDictGroup,
                        oPageContext.m_eStreamCompressMethod != COMPRESS_NONE);
-    VSIFWriteL(pabyContents, 1, nContentsLength, m_fp);
+    VSIFWriteL(pabyContents, 1, static_cast<size_t>(nContentsLength), m_fp);
     VSIFree(pabyContents);
     EndObjWithStream();
 

@@ -83,7 +83,7 @@ bool OGRGetGEOSVersion(int *pnMajor, int *pnMinor, int *pnPatch)
 
 static inline OGRGeometry *ToPointer(OGRGeometryH hGeom)
 {
-    return reinterpret_cast<OGRGeometry *>(hGeom);
+    return OGRGeometry::FromHandle(hGeom);
 }
 
 /************************************************************************/
@@ -92,7 +92,7 @@ static inline OGRGeometry *ToPointer(OGRGeometryH hGeom)
 
 static inline OGRGeometryH ToHandle(OGRGeometry *poGeom)
 {
-    return reinterpret_cast<OGRGeometryH>(poGeom);
+    return OGRGeometry::ToHandle(poGeom);
 }
 
 /************************************************************************/
@@ -1693,6 +1693,37 @@ double OGR_G_GetArea(OGRGeometryH hGeom)
 
 {
     return OGR_G_Area(hGeom);
+}
+
+/************************************************************************/
+/*                         OGR_G_IsClockwise()                          */
+/************************************************************************/
+/**
+ * \brief Returns true if the ring has clockwise winding (or less than 2 points)
+ *
+ * Assumes that the ring is closed.
+ *
+ * @param hGeom handle to a curve geometry
+ * @since GDAL 3.8
+ */
+
+bool OGR_G_IsClockwise(OGRGeometryH hGeom)
+
+{
+    VALIDATE_POINTER1(hGeom, "OGR_G_IsClockwise", false);
+
+    auto poGeom = OGRGeometry::FromHandle(hGeom);
+    const OGRwkbGeometryType eGType = wkbFlatten(poGeom->getGeometryType());
+    if (OGR_GT_IsCurve(eGType))
+    {
+        return poGeom->toCurve()->isClockwise();
+    }
+    else
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "Incompatible geometry for operation");
+        return false;
+    }
 }
 
 /************************************************************************/

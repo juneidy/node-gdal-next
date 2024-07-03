@@ -338,7 +338,6 @@ char **CSLLoad2(const char *pszFname, int nMaxLines, int nMaxCols,
     int nLines = 0;
     int nAllocatedLines = 0;
 
-    CPLErrorReset();
     while (!VSIFEofL(fp) && (nMaxLines == -1 || nLines < nMaxLines))
     {
         const char *pszLine = CPLReadLine2L(fp, nMaxCols, papszOptions);
@@ -1167,6 +1166,29 @@ int CPLvsnprintf(char *str, size_t size, CPL_FORMAT_STRING(const char *fmt),
     {
         if (ch == '%')
         {
+            if (strncmp(fmt, "%.*f", 4) == 0)
+            {
+                const int precision = va_arg(wrk_args, int);
+                const double val = va_arg(wrk_args, double);
+                const int local_ret =
+                    snprintf(str + offset_out, size - offset_out, "%.*f",
+                             precision, val);
+                // MSVC vsnprintf() returns -1.
+                if (local_ret < 0 || offset_out + local_ret >= size)
+                    break;
+                for (int j = 0; j < local_ret; ++j)
+                {
+                    if (str[offset_out + j] == ',')
+                    {
+                        str[offset_out + j] = '.';
+                        break;
+                    }
+                }
+                offset_out += local_ret;
+                fmt += strlen("%.*f") - 1;
+                continue;
+            }
+
             const char *ptrend = CPLvsnprintf_get_end_of_formatting(fmt + 1);
             if (ptrend == nullptr || ptrend - fmt >= 20)
             {

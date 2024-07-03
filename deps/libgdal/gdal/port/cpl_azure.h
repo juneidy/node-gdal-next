@@ -39,6 +39,7 @@
 
 class VSIAzureBlobHandleHelper final : public IVSIS3LikeHandleHelper
 {
+    std::string m_osPathForOption;
     CPLString m_osURL;
     CPLString m_osEndpoint;
     CPLString m_osBucket;
@@ -48,6 +49,7 @@ class VSIAzureBlobHandleHelper final : public IVSIS3LikeHandleHelper
     CPLString m_osSAS;
     CPLString m_osAccessToken;
     bool m_bFromManagedIdentities;
+    bool m_bIncludeMSVersion = true;
 
     enum class Service
     {
@@ -72,15 +74,21 @@ class VSIAzureBlobHandleHelper final : public IVSIS3LikeHandleHelper
 
   public:
     VSIAzureBlobHandleHelper(
-        const CPLString &osEndpoint, const CPLString &osBucket,
-        const CPLString &osObjectKey, const CPLString &osStorageAccount,
-        const CPLString &osStorageKey, const CPLString &osSAS,
-        const CPLString &osAccessToken, bool bFromManagedIdentities);
+        const std::string &osPathForOption, const CPLString &osEndpoint,
+        const CPLString &osBucket, const CPLString &osObjectKey,
+        const CPLString &osStorageAccount, const CPLString &osStorageKey,
+        const CPLString &osSAS, const CPLString &osAccessToken,
+        bool bFromManagedIdentities);
     ~VSIAzureBlobHandleHelper();
 
     static VSIAzureBlobHandleHelper *
     BuildFromURI(const char *pszURI, const char *pszFSPrefix,
                  CSLConstList papszOptions = nullptr);
+
+    void SetIncludeMSVersion(bool bInclude)
+    {
+        m_bIncludeMSVersion = bInclude;
+    }
 
     struct curl_slist *
     GetCurlHeaders(const CPLString &osVerbosVerb,
@@ -98,6 +106,16 @@ class VSIAzureBlobHandleHelper final : public IVSIS3LikeHandleHelper
     static void ClearCache();
 
     std::string GetSASQueryString() const;
+
+    const CPLString &GetStorageAccount() const
+    {
+        return m_osStorageAccount;
+    }
+
+    const CPLString &GetBucket() const
+    {
+        return m_osBucket;
+    }
 };
 
 namespace cpl

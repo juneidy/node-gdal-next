@@ -173,7 +173,7 @@ inline double Clamp(double v, double minV, double maxV)
 /*! @cond Doxygen_Suppress */
 
 template <class Accessors>
-bool GDALGeoLoc<Accessors>::LoadGeolocFinish(
+void GDALGeoLoc<Accessors>::LoadGeolocFinish(
     GDALGeoLocTransformInfo *psTransform)
 {
     auto pAccessors = static_cast<Accessors *>(psTransform->pAccessors);
@@ -377,8 +377,6 @@ bool GDALGeoLoc<Accessors>::LoadGeolocFinish(
             UpdateMinMax(psTransform, dfGeoLocX, dfGeoLocY);
         }
     }
-
-    return true;
 }
 
 /************************************************************************/
@@ -974,9 +972,11 @@ void GDALInverseBilinearInterpolation(const double x, const double y,
     const double C = (x1 - x) * (y1 - y3) - (y1 - y) * (x1 - x3);
     const double denom = A - 2 * B + C;
     double s;
-    if (fabs(denom) <= 1e-12)
+    const double magnitudeOfValues = fabs(A) + fabs(B) + fabs(C);
+    if (fabs(denom) <= 1e-12 * magnitudeOfValues)
     {
         // Happens typically when the x_i,y_i points form a rectangle
+        // Can also happen when they form a triangle.
         s = A / (A - C);
     }
     else
@@ -991,14 +991,14 @@ void GDALInverseBilinearInterpolation(const double x, const double y,
     }
 
     const double t_denom_x = (1 - s) * (x0 - x2) + s * (x1 - x3);
-    if (fabs(t_denom_x) > 1e-12)
+    if (fabs(t_denom_x) > 1e-12 * magnitudeOfValues)
     {
         i += ((1 - s) * (x0 - x) + s * (x1 - x)) / t_denom_x;
     }
     else
     {
         const double t_denom_y = (1 - s) * (y0 - y2) + s * (y1 - y3);
-        if (fabs(t_denom_y) > 1e-12)
+        if (fabs(t_denom_y) > 1e-12 * magnitudeOfValues)
         {
             i += ((1 - s) * (y0 - y) + s * (y1 - y)) / t_denom_y;
         }
@@ -1970,6 +1970,22 @@ void *GDALCreateGeoLocTransformerEx(GDALDatasetH hBaseDS,
 
     psTransform->nGeoLocXSize = nXSize;
     psTransform->nGeoLocYSize = nYSize;
+
+    if (hBaseDS && psTransform->dfPIXEL_OFFSET == 0 &&
+        psTransform->dfLINE_OFFSET == 0 && psTransform->dfPIXEL_STEP == 1 &&
+        psTransform->dfLINE_STEP == 1)
+    {
+        if (GDALGetRasterXSize(hBaseDS) > nXSize ||
+            GDALGetRasterYSize(hBaseDS) > nYSize)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "Geolocation array is %d x %d large, "
+                     "whereas dataset is %d x %d large. Result might be "
+                     "incorrect due to lack of values in geolocation array.",
+                     nXSize, nYSize, GDALGetRasterXSize(hBaseDS),
+                     GDALGetRasterYSize(hBaseDS));
+        }
+    }
 
     /* -------------------------------------------------------------------- */
     /*      Load the geolocation array.                                     */

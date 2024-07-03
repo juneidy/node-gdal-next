@@ -94,7 +94,7 @@ class PCIDSK2Dataset final : public GDALPamDataset
     CPLErr SetMetadataItem(const char *, const char *, const char *) override;
     const char *GetMetadataItem(const char *, const char *) override;
 
-    virtual void FlushCache(bool bAtClosing) override;
+    virtual CPLErr FlushCache(bool bAtClosing) override;
 
     virtual CPLErr IBuildOverviews(const char *, int, const int *, int,
                                    const int *, GDALProgressFunc, void *,
@@ -108,7 +108,7 @@ class PCIDSK2Dataset final : public GDALPamDataset
 
     virtual int TestCapability(const char *) override;
 
-    virtual OGRLayer *ICreateLayer(const char *, OGRSpatialReference *,
+    virtual OGRLayer *ICreateLayer(const char *, const OGRSpatialReference *,
                                    OGRwkbGeometryType, char **) override;
 };
 

@@ -48,6 +48,8 @@ typedef enum
     GPX_TRACK_POINT,
 } GPXGeometryType;
 
+constexpr int PARSER_BUF_SIZE = 8192;
+
 /************************************************************************/
 /*                             OGRGPXLayer                              */
 /************************************************************************/
@@ -198,10 +200,18 @@ class OGRGPXDataSource final : public OGRDataSource
 
 #ifdef HAVE_EXPAT
     OGRGPXValidity validity;
-    int nElementsRead;
     char *pszVersion;
     XML_Parser oCurrentParser;
     int nDataHandlerCounter;
+    bool m_bInMetadata = false;
+    bool m_bInMetadataAuthor = false;
+    bool m_bInMetadataAuthorLink = false;
+    bool m_bInMetadataCopyright = false;
+    bool m_bInMetadataLink = false;
+    int m_nMetadataLinkCounter = 0;
+    int m_nDepth = 0;
+    std::string m_osMetadataKey{};
+    std::string m_osMetadataValue{};
 #endif
 
   public:
@@ -227,7 +237,8 @@ class OGRGPXDataSource final : public OGRDataSource
     }
     OGRLayer *GetLayer(int) override;
 
-    OGRLayer *ICreateLayer(const char *pszLayerName, OGRSpatialReference *poSRS,
+    OGRLayer *ICreateLayer(const char *pszLayerName,
+                           const OGRSpatialReference *poSRS,
                            OGRwkbGeometryType eType,
                            char **papszOptions) override;
 
@@ -257,6 +268,7 @@ class OGRGPXDataSource final : public OGRDataSource
 
 #ifdef HAVE_EXPAT
     void startElementValidateCbk(const char *pszName, const char **ppszAttr);
+    void endElementValidateCbk(const char *pszName);
     void dataHandlerValidateCbk(const char *data, int nLen);
     const char *GetVersion()
     {

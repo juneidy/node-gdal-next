@@ -1119,7 +1119,7 @@ class GMLASSchemaAnalyzer
         std::vector<XSElementDeclaration *> &oVectorEltsForTopClass,
         std::set<CPLString> &aoSetXPathEltsForTopClass, XSModel *poModel,
         bool &bSimpleEnoughOut, int &nCountSubEltsOut);
-    void BuildMapCountOccurrencesOfSameName(
+    static void BuildMapCountOccurrencesOfSameName(
         XSModelGroup *poModelGroup,
         std::map<CPLString, int> &oMapCountOccurrencesOfSameName);
     bool ExploreModelGroup(
@@ -1152,8 +1152,9 @@ class GMLASSchemaAnalyzer
 
     bool IsIgnoredXPath(const CPLString &osXPath);
 
-    void CollectClassesReferences(GMLASFeatureClass &oClass,
-                                  std::vector<GMLASFeatureClass *> &aoClasses);
+    static void
+    CollectClassesReferences(GMLASFeatureClass &oClass,
+                             std::vector<GMLASFeatureClass *> &aoClasses);
 
     CPL_DISALLOW_COPY_ASSIGN(GMLASSchemaAnalyzer)
 
@@ -1272,6 +1273,9 @@ class OGRGMLASDataSource final : public GDALDataset
     std::map<CPLString, CPLString> m_oMapElementIdToPKID;
 
     std::vector<PairURIFilename> m_aoXSDsManuallyPassed;
+
+    /** Default value for srsDimension attribute. */
+    int m_nDefaultSrsDimension = 0;
 
     GMLASConfiguration m_oConf;
 
@@ -1632,6 +1636,12 @@ class GMLASReader final : public DefaultHandler
     /** Current XML nesting level */
     int m_nLevel;
 
+    /** Whether we are in a gml:boundedBy element at level 1 */
+    bool m_bInGMLBoundedByLevel1 = false;
+
+    /** Default value for srsDimension attribute. */
+    int m_nDefaultSrsDimension = 0;
+
     /** Map layer to global FID */
     std::map<OGRLayer *, int> m_oMapGlobalCounter;
 
@@ -1892,6 +1902,15 @@ class GMLASReader final : public DefaultHandler
     void SetMapElementIdToPKID(const std::map<CPLString, CPLString> &oMap)
     {
         m_oMapElementIdToPKID = oMap;
+    }
+
+    int GetDefaultSrsDimension() const
+    {
+        return m_nDefaultSrsDimension;
+    }
+    void SetDefaultSrsDimension(int nDim)
+    {
+        m_nDefaultSrsDimension = nDim;
     }
 
     void SetHash(const CPLString &osHash)

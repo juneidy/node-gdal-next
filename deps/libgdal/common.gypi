@@ -45,8 +45,10 @@
 			"CPU_<(endianness)_ENDIAN=1",
 			"BIGTIFF_SUPPORT=1",
 			"ZIP_SUPPORT=1",
+      "HAVE_LIBZ=1",
 			"JPEG_SUPPORT=1",
-      "ZLIB_INTERNAL"
+      "RENAME_INTERNAL_SHAPELIB_SYMBOLS=1",
+      "flatbuffers=gdal_flatbuffers"
 		],
 		"dependencies": [
 			"<(deps_dir)/libexpat/libexpat.gyp:libexpat",
@@ -68,7 +70,10 @@
 				},
 			}],
 			["OS == 'linux'", {
-				"defines": ["ENABLE_UFFD=1"]
+				"defines": [
+          "ENABLE_UFFD=1",
+          "HAVE_5ARGS_MREMAP=1"
+        ]
 			}],
 			["OS == 'freebsd'", {
 				"include_dirs": ["./arch/bsd"]

@@ -36,6 +36,7 @@
 #include "gh5_convenience.h"
 #include "hdf5dataset.h"
 #include "ogr_spatialref.h"
+#include "../mem/memdataset.h"
 
 #include <algorithm>
 
@@ -78,6 +79,9 @@ class HDF5ImageDataset final : public HDF5Dataset
     HDF5CSKProductEnum iCSKProductType;
     double adfGeoTransform[6];
     bool bHasGeoTransform;
+    int m_nXIndex = -1;
+    int m_nYIndex = -1;
+    int m_nOtherDimIndex = -1;
 
     CPLErr CreateODIMH5Projection();
 
@@ -95,6 +99,13 @@ class HDF5ImageDataset final : public HDF5Dataset
     virtual const GDAL_GCP *GetGCPs() override;
     virtual CPLErr GetGeoTransform(double *padfTransform) override;
 
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, int nBandCount, int *panBandMap,
+                     GSpacing nPixelSpace, GSpacing nLineSpace,
+                     GSpacing nBandSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
+
     Hdf5ProductType GetSubdatasetType() const
     {
         return iSubdatasetType;
@@ -111,11 +122,11 @@ class HDF5ImageDataset final : public HDF5Dataset
     }
     int GetYIndex() const
     {
-        return IsComplexCSKL1A() ? 0 : ndims - 2;
+        return m_nYIndex;
     }
     int GetXIndex() const
     {
-        return IsComplexCSKL1A() ? 1 : ndims - 1;
+        return m_nXIndex;
     }
 
     /**
@@ -181,6 +192,8 @@ HDF5ImageDataset::HDF5ImageDataset()
 /************************************************************************/
 HDF5ImageDataset::~HDF5ImageDataset()
 {
+    HDF5_GLOBAL_LOCK();
+
     FlushCache(true);
 
     if (dataset_id > 0)
@@ -225,6 +238,12 @@ class HDF5ImageRasterBand final : public GDALPamRasterBand
     virtual CPLErr IReadBlock(int, int, void *) override;
     virtual double GetNoDataValue(int *) override;
     // virtual CPLErr IWriteBlock( int, int, void * );
+
+    CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
+                     int nYSize, void *pData, int nBufXSize, int nBufYSize,
+                     GDALDataType eBufType, GSpacing nPixelSpace,
+                     GSpacing nLineSpace,
+                     GDALRasterIOExtraArg *psExtraArg) override;
 };
 
 /************************************************************************/
@@ -247,25 +266,6 @@ HDF5ImageRasterBand::HDF5ImageRasterBand(HDF5ImageDataset *poDSIn, int nBandIn,
     eDataType = eType;
     nBlockXSize = poDS->GetRasterXSize();
     nBlockYSize = 1;
-
-    // Take a copy of Global Metadata since  I can't pass Raster
-    // variable to Iterate function.
-    char **papszMetaGlobal = CSLDuplicate(poDSIn->papszMetadata);
-    CSLDestroy(poDSIn->papszMetadata);
-    poDSIn->papszMetadata = nullptr;
-
-    if (poDSIn->poH5Objects->nType == H5G_DATASET)
-    {
-        poDSIn->CreateMetadata(poDSIn->poH5Objects, H5G_DATASET);
-    }
-
-    // Recover Global Metadata and set Band Metadata.
-
-    SetMetadata(poDSIn->papszMetadata);
-
-    CSLDestroy(poDSIn->papszMetadata);
-    poDSIn->papszMetadata = CSLDuplicate(papszMetaGlobal);
-    CSLDestroy(papszMetaGlobal);
 
     // Check for chunksize and set it as the blocksize (optimizes read).
     const hid_t listid = H5Dget_create_plist(poDSIn->dataset_id);
@@ -316,6 +316,8 @@ double HDF5ImageRasterBand::GetNoDataValue(int *pbSuccess)
 CPLErr HDF5ImageRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
                                        void *pImage)
 {
+    HDF5_GLOBAL_LOCK();
+
     HDF5ImageDataset *poGDS = static_cast<HDF5ImageDataset *>(poDS);
 
     memset(pImage, 0,
@@ -332,19 +334,12 @@ CPLErr HDF5ImageRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
     hsize_t col_dims[3] = {0, 0, 0};
     hsize_t rank = std::min(poGDS->ndims, 2);
 
-    if (poGDS->IsComplexCSKL1A())
+    if (poGDS->ndims == 3)
     {
         rank = 3;
-        offset[2] = nBand - 1;
-        count[2] = 1;
-        col_dims[2] = 1;
-    }
-    else if (poGDS->ndims == 3)
-    {
-        rank = 3;
-        offset[0] = nBand - 1;
-        count[0] = 1;
-        col_dims[0] = 1;
+        offset[poGDS->m_nOtherDimIndex] = nBand - 1;
+        count[poGDS->m_nOtherDimIndex] = 1;
+        col_dims[poGDS->m_nOtherDimIndex] = 1;
     }
 
     const int nYIndex = poGDS->GetYIndex();
@@ -402,6 +397,282 @@ CPLErr HDF5ImageRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
 }
 
 /************************************************************************/
+/*                             IRasterIO()                              */
+/************************************************************************/
+
+CPLErr HDF5ImageRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
+                                      int nXSize, int nYSize, void *pData,
+                                      int nBufXSize, int nBufYSize,
+                                      GDALDataType eBufType,
+                                      GSpacing nPixelSpace, GSpacing nLineSpace,
+                                      GDALRasterIOExtraArg *psExtraArg)
+
+{
+    HDF5ImageDataset *poGDS = static_cast<HDF5ImageDataset *>(poDS);
+
+    const bool bIsExpectedLayout =
+        ((poGDS->ndims == 3 && poGDS->m_nOtherDimIndex == 0 &&
+          poGDS->GetYIndex() == 1 && poGDS->GetXIndex() == 2) ||
+         (poGDS->ndims == 2 && poGDS->GetYIndex() == 0 &&
+          poGDS->GetXIndex() == 1));
+
+    const int nDTSize = GDALGetDataTypeSizeBytes(eDataType);
+
+    if (eRWFlag == GF_Read && bIsExpectedLayout && nXSize == nBufXSize &&
+        nYSize == nBufYSize && eBufType == eDataType &&
+        nPixelSpace == nDTSize && nLineSpace == nXSize * nPixelSpace)
+    {
+        HDF5_GLOBAL_LOCK();
+
+        hsize_t count[3] = {1, static_cast<hsize_t>(nYSize),
+                            static_cast<hsize_t>(nXSize)};
+        H5OFFSET_TYPE offset[3] = {static_cast<H5OFFSET_TYPE>(nBand - 1),
+                                   static_cast<H5OFFSET_TYPE>(nYOff),
+                                   static_cast<H5OFFSET_TYPE>(nXOff)};
+        if (poGDS->ndims == 2)
+        {
+            count[0] = count[1];
+            count[1] = count[2];
+
+            offset[0] = offset[1];
+            offset[1] = offset[2];
+        }
+        herr_t status = H5Sselect_hyperslab(poGDS->dataspace_id, H5S_SELECT_SET,
+                                            offset, nullptr, count, nullptr);
+        if (status < 0)
+            return CE_Failure;
+
+        const hid_t memspace = H5Screate_simple(poGDS->ndims, count, nullptr);
+        H5OFFSET_TYPE mem_offset[3] = {0, 0, 0};
+        status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, mem_offset,
+                                     nullptr, count, nullptr);
+        if (status < 0)
+        {
+            H5Sclose(memspace);
+            return CE_Failure;
+        }
+
+        status = H5Dread(poGDS->dataset_id, poGDS->native, memspace,
+                         poGDS->dataspace_id, H5P_DEFAULT, pData);
+
+        H5Sclose(memspace);
+
+        if (status < 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "HDF5ImageRasterBand::IRasterIO(): H5Dread() failed");
+            return CE_Failure;
+        }
+
+        return CE_None;
+    }
+
+    // If the request is still small enough, try to read from libhdf5 with
+    // the natural interleaving into a temporary MEMDataset, and then read
+    // from it with the requested interleaving and data type.
+    if (eRWFlag == GF_Read && bIsExpectedLayout && nXSize == nBufXSize &&
+        nYSize == nBufYSize &&
+        static_cast<GIntBig>(nXSize) * nYSize < CPLGetUsablePhysicalRAM() / 10)
+    {
+        auto poMemDS = std::unique_ptr<GDALDataset>(
+            MEMDataset::Create("", nXSize, nYSize, 1, eDataType, nullptr));
+        if (poMemDS)
+        {
+            void *pMemData = poMemDS->GetInternalHandle("MEMORY1");
+            CPLAssert(pMemData);
+            // Read from HDF5 into the temporary MEMDataset using the
+            // natural interleaving of the HDF5 dataset
+            if (IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize, pMemData,
+                          nXSize, nYSize, eDataType, nDTSize,
+                          static_cast<GSpacing>(nXSize) * nDTSize,
+                          psExtraArg) != CE_None)
+            {
+                return CE_Failure;
+            }
+            // Copy to the final buffer using requested data type and spacings.
+            return poMemDS->GetRasterBand(1)->RasterIO(
+                GF_Read, 0, 0, nXSize, nYSize, pData, nXSize, nYSize, eBufType,
+                nPixelSpace, nLineSpace, nullptr);
+        }
+    }
+
+    return GDALPamRasterBand::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize,
+                                        pData, nBufXSize, nBufYSize, eBufType,
+                                        nPixelSpace, nLineSpace, psExtraArg);
+}
+
+/************************************************************************/
+/*                             IRasterIO()                              */
+/************************************************************************/
+
+CPLErr HDF5ImageDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
+                                   int nXSize, int nYSize, void *pData,
+                                   int nBufXSize, int nBufYSize,
+                                   GDALDataType eBufType, int nBandCount,
+                                   int *panBandMap, GSpacing nPixelSpace,
+                                   GSpacing nLineSpace, GSpacing nBandSpace,
+                                   GDALRasterIOExtraArg *psExtraArg)
+
+{
+    const auto IsConsecutiveBands = [](const int *panVals, int nCount)
+    {
+        for (int i = 1; i < nCount; ++i)
+        {
+            if (panVals[i] != panVals[i - 1] + 1)
+                return false;
+        }
+        return true;
+    };
+
+    const auto eDT = GetRasterBand(1)->GetRasterDataType();
+    const int nDTSize = GDALGetDataTypeSizeBytes(eDT);
+
+    // Band-interleaved data and request
+    const bool bIsBandInterleavedData = ndims == 3 && m_nOtherDimIndex == 0 &&
+                                        GetYIndex() == 1 && GetXIndex() == 2;
+    if (eRWFlag == GF_Read && bIsBandInterleavedData && nXSize == nBufXSize &&
+        nYSize == nBufYSize && IsConsecutiveBands(panBandMap, nBandCount) &&
+        eBufType == eDT && nPixelSpace == nDTSize &&
+        nLineSpace == nXSize * nPixelSpace && nBandSpace == nYSize * nLineSpace)
+    {
+        HDF5_GLOBAL_LOCK();
+
+        hsize_t count[3] = {static_cast<hsize_t>(nBandCount),
+                            static_cast<hsize_t>(nYSize),
+                            static_cast<hsize_t>(nXSize)};
+        H5OFFSET_TYPE offset[3] = {
+            static_cast<H5OFFSET_TYPE>(panBandMap[0] - 1),
+            static_cast<H5OFFSET_TYPE>(nYOff),
+            static_cast<H5OFFSET_TYPE>(nXOff)};
+        herr_t status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
+                                            offset, nullptr, count, nullptr);
+        if (status < 0)
+            return CE_Failure;
+
+        const hid_t memspace = H5Screate_simple(ndims, count, nullptr);
+        H5OFFSET_TYPE mem_offset[3] = {0, 0, 0};
+        status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, mem_offset,
+                                     nullptr, count, nullptr);
+        if (status < 0)
+        {
+            H5Sclose(memspace);
+            return CE_Failure;
+        }
+
+        status = H5Dread(dataset_id, native, memspace, dataspace_id,
+                         H5P_DEFAULT, pData);
+
+        H5Sclose(memspace);
+
+        if (status < 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "HDF5ImageDataset::IRasterIO(): H5Dread() failed");
+            return CE_Failure;
+        }
+
+        return CE_None;
+    }
+
+    // Pixel-interleaved data and request
+
+    const bool bIsPixelInterleaveData = ndims == 3 && m_nOtherDimIndex == 2 &&
+                                        GetYIndex() == 0 && GetXIndex() == 1;
+    if (eRWFlag == GF_Read && bIsPixelInterleaveData && nXSize == nBufXSize &&
+        nYSize == nBufYSize && IsConsecutiveBands(panBandMap, nBandCount) &&
+        eBufType == eDT && nBandSpace == nDTSize &&
+        nPixelSpace == nBandCount * nBandSpace &&
+        nLineSpace == nXSize * nPixelSpace)
+    {
+        HDF5_GLOBAL_LOCK();
+
+        hsize_t count[3] = {static_cast<hsize_t>(nYSize),
+                            static_cast<hsize_t>(nXSize),
+                            static_cast<hsize_t>(nBandCount)};
+        H5OFFSET_TYPE offset[3] = {
+            static_cast<H5OFFSET_TYPE>(nYOff),
+            static_cast<H5OFFSET_TYPE>(nXOff),
+            static_cast<H5OFFSET_TYPE>(panBandMap[0] - 1)};
+        herr_t status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
+                                            offset, nullptr, count, nullptr);
+        if (status < 0)
+            return CE_Failure;
+
+        const hid_t memspace = H5Screate_simple(ndims, count, nullptr);
+        H5OFFSET_TYPE mem_offset[3] = {0, 0, 0};
+        status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, mem_offset,
+                                     nullptr, count, nullptr);
+        if (status < 0)
+        {
+            H5Sclose(memspace);
+            return CE_Failure;
+        }
+
+        status = H5Dread(dataset_id, native, memspace, dataspace_id,
+                         H5P_DEFAULT, pData);
+
+        H5Sclose(memspace);
+
+        if (status < 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "HDF5ImageDataset::IRasterIO(): H5Dread() failed");
+            return CE_Failure;
+        }
+
+        return CE_None;
+    }
+
+    // If the request is still small enough, try to read from libhdf5 with
+    // the natural interleaving into a temporary MEMDataset, and then read
+    // from it with the requested interleaving and data type.
+    if (eRWFlag == GF_Read &&
+        (bIsBandInterleavedData || bIsPixelInterleaveData) &&
+        nXSize == nBufXSize && nYSize == nBufYSize &&
+        IsConsecutiveBands(panBandMap, nBandCount) &&
+        static_cast<GIntBig>(nXSize) * nYSize <
+            CPLGetUsablePhysicalRAM() / 10 / nBandCount)
+    {
+        const char *const apszOptions[] = {
+            bIsPixelInterleaveData ? "INTERLEAVE=PIXEL" : nullptr, nullptr};
+        auto poMemDS = std::unique_ptr<GDALDataset>(
+            MEMDataset::Create("", nXSize, nYSize, nBandCount, eDT,
+                               const_cast<char **>(apszOptions)));
+        if (poMemDS)
+        {
+            void *pMemData = poMemDS->GetInternalHandle("MEMORY1");
+            CPLAssert(pMemData);
+            // Read from HDF5 into the temporary MEMDataset using the
+            // natural interleaving of the HDF5 dataset
+            if (IRasterIO(
+                    eRWFlag, nXOff, nYOff, nXSize, nYSize, pMemData, nXSize,
+                    nYSize, eDT, nBandCount, panBandMap,
+                    bIsBandInterleavedData ? nDTSize : nDTSize * nBandCount,
+                    bIsBandInterleavedData
+                        ? static_cast<GSpacing>(nXSize) * nDTSize
+                        : static_cast<GSpacing>(nXSize) * nDTSize * nBandCount,
+                    bIsBandInterleavedData
+                        ? static_cast<GSpacing>(nYSize) * nXSize * nDTSize
+                        : nDTSize,
+                    psExtraArg) != CE_None)
+            {
+                return CE_Failure;
+            }
+            // Copy to the final buffer using requested data type and spacings.
+            return poMemDS->RasterIO(GF_Read, 0, 0, nXSize, nYSize, pData,
+                                     nXSize, nYSize, eBufType, nBandCount,
+                                     nullptr, nPixelSpace, nLineSpace,
+                                     nBandSpace, nullptr);
+        }
+    }
+
+    return HDF5Dataset::IRasterIO(eRWFlag, nXOff, nYOff, nXSize, nYSize, pData,
+                                  nBufXSize, nBufYSize, eBufType, nBandCount,
+                                  panBandMap, nPixelSpace, nLineSpace,
+                                  nBandSpace, psExtraArg);
+}
+
+/************************************************************************/
 /*                              Identify()                              */
 /************************************************************************/
 
@@ -421,6 +692,8 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
 {
     if (!STARTS_WITH_CI(poOpenInfo->pszFilename, "HDF5:"))
         return nullptr;
+
+    HDF5_GLOBAL_LOCK();
 
     // Confirm the requested access is supported.
     if (poOpenInfo->eAccess == GA_Update)
@@ -472,23 +745,21 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
     poDS->SetPhysicalFilename(osFilename);
 
     // Try opening the dataset.
-    poDS->hHDF5 = GDAL_HDF5Open(osFilename);
-    if (poDS->hHDF5 < 0)
+    poDS->m_hHDF5 = GDAL_HDF5Open(osFilename);
+    if (poDS->m_hHDF5 < 0)
     {
         delete poDS;
         return nullptr;
     }
 
-    poDS->hGroupID = H5Gopen(poDS->hHDF5, "/");
+    poDS->hGroupID = H5Gopen(poDS->m_hHDF5, "/");
     if (poDS->hGroupID < 0)
     {
-        poDS->bIsHDFEOS = false;
         delete poDS;
         return nullptr;
     }
 
     // This is an HDF5 file.
-    poDS->bIsHDFEOS = TRUE;
     poDS->ReadGlobalAttributes(FALSE);
 
     // Create HDF5 Data Hierarchy in a link list.
@@ -502,7 +773,7 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
     }
 
     // Retrieve HDF5 data information.
-    poDS->dataset_id = H5Dopen(poDS->hHDF5, poDS->poH5Objects->pszPath);
+    poDS->dataset_id = H5Dopen(poDS->m_hHDF5, poDS->poH5Objects->pszPath);
     poDS->dataspace_id = H5Dget_space(poDS->dataset_id);
     poDS->ndims = H5Sget_simple_extent_ndims(poDS->dataspace_id);
     if (poDS->ndims <= 0)
@@ -522,10 +793,113 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
 
     // CSK code in IdentifyProductType() and CreateProjections()
     // uses dataset metadata.
-    poDS->SetMetadata(poDS->papszMetadata);
+    poDS->SetMetadata(poDS->m_aosMetadata.List());
 
     // Check if the hdf5 is a well known product type
     poDS->IdentifyProductType();
+
+    poDS->m_nYIndex = poDS->IsComplexCSKL1A() ? 0 : poDS->ndims - 2;
+    poDS->m_nXIndex = poDS->IsComplexCSKL1A() ? 1 : poDS->ndims - 1;
+
+    if (poDS->IsComplexCSKL1A())
+    {
+        poDS->m_nOtherDimIndex = 2;
+    }
+    else if (poDS->ndims == 3)
+    {
+        poDS->m_nOtherDimIndex = 0;
+    }
+
+    if (HDF5EOSParser::HasHDFEOS(poDS->hGroupID))
+    {
+        HDF5EOSParser oHDFEOSParser;
+        if (oHDFEOSParser.Parse(poDS->hGroupID))
+        {
+            CPLDebug("HDF5", "Successfully parsed HDFEOS metadata");
+            HDF5EOSParser::GridDataFieldMetadata oGridDataFieldMetadata;
+            HDF5EOSParser::SwathDataFieldMetadata oSwathDataFieldMetadata;
+            if (oHDFEOSParser.GetDataModel() ==
+                    HDF5EOSParser::DataModel::GRID &&
+                oHDFEOSParser.GetGridDataFieldMetadata(
+                    osSubdatasetName.c_str(), oGridDataFieldMetadata) &&
+                static_cast<int>(oGridDataFieldMetadata.aoDimensions.size()) ==
+                    poDS->ndims)
+            {
+                int iDim = 0;
+                for (auto &oDim : oGridDataFieldMetadata.aoDimensions)
+                {
+                    if (oDim.osName == "XDim")
+                        poDS->m_nXIndex = iDim;
+                    else if (oDim.osName == "YDim")
+                        poDS->m_nYIndex = iDim;
+                    else
+                        poDS->m_nOtherDimIndex = iDim;
+                    ++iDim;
+                }
+
+                if (oGridDataFieldMetadata.poGridMetadata->GetGeoTransform(
+                        poDS->adfGeoTransform))
+                    poDS->bHasGeoTransform = true;
+
+                auto poSRS = oGridDataFieldMetadata.poGridMetadata->GetSRS();
+                if (poSRS)
+                    poDS->m_oSRS = *(poSRS.get());
+            }
+            else if (oHDFEOSParser.GetDataModel() ==
+                         HDF5EOSParser::DataModel::SWATH &&
+                     oHDFEOSParser.GetSwathDataFieldMetadata(
+                         osSubdatasetName.c_str(), oSwathDataFieldMetadata) &&
+                     static_cast<int>(
+                         oSwathDataFieldMetadata.aoDimensions.size()) ==
+                         poDS->ndims &&
+                     oSwathDataFieldMetadata.iXDim >= 0 &&
+                     oSwathDataFieldMetadata.iYDim >= 0)
+            {
+                poDS->m_nXIndex = oSwathDataFieldMetadata.iXDim;
+                poDS->m_nYIndex = oSwathDataFieldMetadata.iYDim;
+                poDS->m_nOtherDimIndex = oSwathDataFieldMetadata.iOtherDim;
+                if (!oSwathDataFieldMetadata.osLongitudeSubdataset.empty())
+                {
+                    // Arbitrary
+                    poDS->SetMetadataItem("SRS", SRS_WKT_WGS84_LAT_LONG,
+                                          "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "X_DATASET",
+                        ("HDF5:\"" + osFilename +
+                         "\":" + oSwathDataFieldMetadata.osLongitudeSubdataset)
+                            .c_str(),
+                        "GEOLOCATION");
+                    poDS->SetMetadataItem("X_BAND", "1", "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "Y_DATASET",
+                        ("HDF5:\"" + osFilename +
+                         "\":" + oSwathDataFieldMetadata.osLatitudeSubdataset)
+                            .c_str(),
+                        "GEOLOCATION");
+                    poDS->SetMetadataItem("Y_BAND", "1", "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "PIXEL_OFFSET",
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelOffset),
+                        "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "PIXEL_STEP",
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nPixelStep),
+                        "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "LINE_OFFSET",
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineOffset),
+                        "GEOLOCATION");
+                    poDS->SetMetadataItem(
+                        "LINE_STEP",
+                        CPLSPrintf("%d", oSwathDataFieldMetadata.nLineStep),
+                        "GEOLOCATION");
+                    // Not totally sure about that
+                    poDS->SetMetadataItem("GEOREFERENCING_CONVENTION",
+                                          "PIXEL_CENTER", "GEOLOCATION");
+                }
+            }
+        }
+    }
 
     poDS->nRasterYSize =
         poDS->GetYIndex() < 0
@@ -533,28 +907,68 @@ GDALDataset *HDF5ImageDataset::Open(GDALOpenInfo *poOpenInfo)
             : static_cast<int>(poDS->dims[poDS->GetYIndex()]);  // nRows
     poDS->nRasterXSize =
         static_cast<int>(poDS->dims[poDS->GetXIndex()]);  // nCols
-    if (poDS->IsComplexCSKL1A())
+    int nBands = 1;
+    if (poDS->m_nOtherDimIndex >= 0)
     {
-        poDS->nBands = static_cast<int>(poDS->dims[2]);
-    }
-    else if (poDS->ndims == 3)
-    {
-        poDS->nBands = static_cast<int>(poDS->dims[0]);
-    }
-    else
-    {
-        poDS->nBands = 1;
+        nBands = static_cast<int>(poDS->dims[poDS->m_nOtherDimIndex]);
     }
 
-    for (int i = 1; i <= poDS->nBands; i++)
+    CPLStringList aosMetadata;
+    std::map<std::string, CPLStringList> oMapBandSpecificMetadata;
+    if (poDS->poH5Objects->nType == H5G_DATASET)
     {
-        HDF5ImageRasterBand *const poBand =
-            new HDF5ImageRasterBand(poDS, i, poDS->GetDataType(poDS->native));
-
-        poDS->SetBand(i, poBand);
+        HDF5Dataset::CreateMetadata(poDS->m_hHDF5, poDS->poH5Objects,
+                                    H5G_DATASET, false, aosMetadata);
+        if (nBands > 1)
+        {
+            // Logic specific of Planet data cubes with per-band metadata items
+            static const struct
+            {
+                const char *pszSrcName;
+                const char *pszDstName;
+            } asItems[] = {
+                {"calibration_coefficients", "calibration_coefficient"},
+                {"center_wavelengths", "center_wavelength"},
+                {"fwhm", "fwhm"},
+                {"bad_band_list", "bad_band"},
+            };
+            for (const auto &sItem : asItems)
+            {
+                const char *pszVal =
+                    aosMetadata.FetchNameValue(sItem.pszSrcName);
+                if (pszVal)
+                {
+                    CPLStringList aosTokens(CSLTokenizeString2(pszVal, " ", 0));
+                    if (aosTokens.size() == nBands)
+                    {
+                        oMapBandSpecificMetadata[sItem.pszDstName] =
+                            std::move(aosTokens);
+                        aosMetadata.SetNameValue(sItem.pszSrcName, nullptr);
+                    }
+                }
+            }
+        }
     }
 
-    poDS->CreateProjections();
+    for (int i = 0; i < nBands; i++)
+    {
+        HDF5ImageRasterBand *const poBand = new HDF5ImageRasterBand(
+            poDS, i + 1, poDS->GetDataType(poDS->native));
+
+        poDS->SetBand(i + 1, poBand);
+
+        if (poDS->poH5Objects->nType == H5G_DATASET)
+        {
+            poBand->SetMetadata(aosMetadata.List());
+            for (const auto &oIter : oMapBandSpecificMetadata)
+            {
+                poBand->SetMetadataItem(oIter.first.c_str(), oIter.second[i]);
+            }
+        }
+    }
+
+    if (!poDS->GetMetadata("GEOLOCATION"))
+        poDS->CreateProjections();
 
     // Setup/check for pam .aux.xml.
     poDS->TryLoadXML();
@@ -736,7 +1150,7 @@ CPLErr HDF5ImageDataset::CreateProjections()
 
             // Retrieve HDF5 data information.
             const hid_t LatitudeDatasetID =
-                H5Dopen(hHDF5, poH5Objects->pszPath);
+                H5Dopen(m_hHDF5, poH5Objects->pszPath);
             // LatitudeDataspaceID = H5Dget_space(dataset_id);
 
             poH5Objects = HDF5FindDatasetObjects(poH5RootGroup, "Longitude");
@@ -751,7 +1165,7 @@ CPLErr HDF5ImageDataset::CreateProjections()
             }
 
             const hid_t LongitudeDatasetID =
-                H5Dopen(hHDF5, poH5Objects->pszPath);
+                H5Dopen(m_hHDF5, poH5Objects->pszPath);
             // LongitudeDataspaceID = H5Dget_space(dataset_id);
 
             if (LatitudeDatasetID > 0 && LongitudeDatasetID > 0)

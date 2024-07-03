@@ -128,7 +128,7 @@ class VSISparseFileFilesystemHandler : public VSIFilesystemHandler
     int Unlink(const char *pszFilename) override;
     int Mkdir(const char *pszDirname, long nMode) override;
     int Rmdir(const char *pszDirname) override;
-    char **ReadDir(const char *pszDirname) override;
+    char **ReadDirEx(const char *pszDirname, int nMaxFiles) override;
 
     int GetRecCounter()
     {
@@ -485,7 +485,7 @@ int VSISparseFileFilesystemHandler::Stat(const char *pszFilename,
         return -1;
 
     poFile->Seek(0, SEEK_END);
-    const size_t nLength = static_cast<size_t>(poFile->Tell());
+    const vsi_l_offset nLength = poFile->Tell();
     delete poFile;
 
     const int nResult =
@@ -528,10 +528,11 @@ int VSISparseFileFilesystemHandler::Rmdir(const char * /* pszPathname */)
 }
 
 /************************************************************************/
-/*                              ReadDir()                               */
+/*                              ReadDirEx()                             */
 /************************************************************************/
 
-char **VSISparseFileFilesystemHandler::ReadDir(const char * /* pszPath */)
+char **VSISparseFileFilesystemHandler::ReadDirEx(const char * /* pszPath */,
+                                                 int /* nMaxFiles */)
 {
     errno = EACCES;
     return nullptr;

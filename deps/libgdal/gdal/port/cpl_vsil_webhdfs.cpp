@@ -70,8 +70,9 @@ namespace cpl
 /*                         VSIWebHDFSFSHandler                          */
 /************************************************************************/
 
-class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBase
+class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBaseWritable
 {
+    const std::string m_osPrefix;
     CPL_DISALLOW_COPY_ASSIGN(VSIWebHDFSFSHandler)
 
   protected:
@@ -87,12 +88,16 @@ class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBase
 
     CPLString GetURLFromFilename(const CPLString &osFilename) override;
 
+    VSIVirtualHandleUniquePtr
+    CreateWriteHandle(const char *pszFilename,
+                      CSLConstList papszOptions) override;
+
   public:
-    VSIWebHDFSFSHandler() = default;
+    explicit VSIWebHDFSFSHandler(const char *pszPrefix) : m_osPrefix(pszPrefix)
+    {
+    }
     ~VSIWebHDFSFSHandler() override = default;
 
-    VSIVirtualHandle *Open(const char *pszFilename, const char *pszAccess,
-                           bool bSetError, CSLConstList papszOptions) override;
     int Unlink(const char *pszFilename) override;
     int Rmdir(const char *pszFilename) override;
     int Mkdir(const char *pszDirname, long nMode) override;
@@ -104,7 +109,7 @@ class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBase
 
     CPLString GetFSPrefix() const override
     {
-        return "/vsiwebhdfs/";
+        return m_osPrefix;
     }
 
     const char *GetOptions() override;
@@ -115,13 +120,10 @@ class VSIWebHDFSFSHandler final : public VSICurlFilesystemHandlerBase
         return osFilename;
     }
 
-    bool SupportsSequentialWrite(const char * /* pszPath */,
-                                 bool /* bAllowLocalTempFile */) override
+    VSIFilesystemHandler *Duplicate(const char *pszPrefix) override
     {
-        return true;
+        return new VSIWebHDFSFSHandler(pszPrefix);
     }
-    bool SupportsRandomWrite(const char * /* pszPath */,
-                             bool /* bAllowLocalTempFile */) override;
 };
 
 /************************************************************************/
@@ -201,6 +203,7 @@ class VSIWebHDFSWriteHandle final : public VSIAppendWriteHandle
     CPLString m_osDataNodeHost{};
     CPLString m_osUsernameParam{};
     CPLString m_osDelegationParam{};
+    CPLStringList m_aosHTTPOptions{};
 
     bool Send(bool bIsLastBlock) override;
     bool CreateFile();
@@ -245,7 +248,8 @@ VSIWebHDFSWriteHandle::VSIWebHDFSWriteHandle(VSIWebHDFSFSHandler *poFS,
     : VSIAppendWriteHandle(poFS, poFS->GetFSPrefix(), pszFilename,
                            GetWebHDFSBufferSize()),
       m_osURL(pszFilename + poFS->GetFSPrefix().size()),
-      m_osDataNodeHost(GetWebHDFSDataNodeHost(pszFilename))
+      m_osDataNodeHost(GetWebHDFSDataNodeHost(pszFilename)),
+      m_aosHTTPOptions(CPLHTTPGetOptionsFromEnv(pszFilename))
 {
     // cppcheck-suppress useInitializationList
     m_osUsernameParam =
@@ -335,7 +339,7 @@ retry:
     CURL *hCurlHandle = curl_easy_init();
 
     struct curl_slist *headers = static_cast<struct curl_slist *>(
-        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), nullptr));
+        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), m_aosHTTPOptions.List()));
 
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_CUSTOMREQUEST, "PUT");
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_INFILESIZE, 0);
@@ -418,7 +422,7 @@ bool VSIWebHDFSWriteHandle::Append()
     CURL *hCurlHandle = curl_easy_init();
 
     struct curl_slist *headers = static_cast<struct curl_slist *>(
-        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), nullptr));
+        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), m_aosHTTPOptions.List()));
 
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_CUSTOMREQUEST, "POST");
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_FOLLOWLOCATION, 0);
@@ -474,7 +478,7 @@ bool VSIWebHDFSWriteHandle::Append()
     hCurlHandle = curl_easy_init();
 
     headers = static_cast<struct curl_slist *>(
-        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), nullptr));
+        CPLHTTPSetOptions(hCurlHandle, osURL.c_str(), m_aosHTTPOptions.List()));
     headers =
         curl_slist_append(headers, "Content-Type: application/octet-stream");
 
@@ -513,57 +517,19 @@ bool VSIWebHDFSWriteHandle::Append()
 }
 
 /************************************************************************/
-/*                                Open()                                */
+/*                          CreateWriteHandle()                         */
 /************************************************************************/
 
-VSIVirtualHandle *VSIWebHDFSFSHandler::Open(const char *pszFilename,
-                                            const char *pszAccess,
-                                            bool bSetError,
-                                            CSLConstList papszOptions)
+VSIVirtualHandleUniquePtr
+VSIWebHDFSFSHandler::CreateWriteHandle(const char *pszFilename,
+                                       CSLConstList /*papszOptions*/)
 {
-    if (!STARTS_WITH_CI(pszFilename, GetFSPrefix()))
-        return nullptr;
-
-    if (strchr(pszAccess, 'w') != nullptr || strchr(pszAccess, 'a') != nullptr)
+    auto poHandle = cpl::make_unique<VSIWebHDFSWriteHandle>(this, pszFilename);
+    if (!poHandle->IsOK())
     {
-        if (strchr(pszAccess, '+') != nullptr &&
-            !SupportsRandomWrite(pszFilename, true))
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "w+ not supported for /vsiwebhdfs, unless "
-                     "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE is set to YES");
-            errno = EACCES;
-            return nullptr;
-        }
-
-        VSIWebHDFSWriteHandle *poHandle =
-            new VSIWebHDFSWriteHandle(this, pszFilename);
-        if (!poHandle->IsOK())
-        {
-            delete poHandle;
-            return nullptr;
-        }
-        if (strchr(pszAccess, '+') != nullptr)
-        {
-            return VSICreateUploadOnCloseFile(poHandle);
-        }
-        return poHandle;
+        return nullptr;
     }
-
-    return VSICurlFilesystemHandlerBase::Open(pszFilename, pszAccess, bSetError,
-                                              papszOptions);
-}
-
-/************************************************************************/
-/*                        SupportsRandomWrite()                         */
-/************************************************************************/
-
-bool VSIWebHDFSFSHandler::SupportsRandomWrite(const char * /* pszPath */,
-                                              bool bAllowLocalTempFile)
-{
-    return bAllowLocalTempFile &&
-           CPLTestBool(CPLGetConfigOption(
-               "CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE", "NO"));
+    return VSIVirtualHandleUniquePtr(poHandle.release());
 }
 
 /************************************************************************/
@@ -624,9 +590,8 @@ char **VSIWebHDFSFSHandler::GetFileList(const char *pszDirname,
     NetworkStatisticsAction oContextAction("ListBucket");
 
     CPLAssert(strlen(pszDirname) >= GetFSPrefix().size());
-    CPLString osDirnameWithoutPrefix = pszDirname + GetFSPrefix().size();
 
-    CPLString osBaseURL = osDirnameWithoutPrefix;
+    CPLString osBaseURL = pszDirname + GetFSPrefix().size();
     if (!osBaseURL.empty() && osBaseURL.back() != '/')
         osBaseURL += '/';
 
@@ -1090,8 +1055,7 @@ std::string VSIWebHDFSHandle::DownloadRegion(const vsi_l_offset startOffset,
 retry:
     CURL *hCurlHandle = curl_easy_init();
 
-    VSICURLInitWriteFuncStruct(&sWriteFuncData,
-                               reinterpret_cast<VSILFILE *>(this), pfnReadCbk,
+    VSICURLInitWriteFuncStruct(&sWriteFuncData, this, pfnReadCbk,
                                pReadCbkUserData);
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_WRITEDATA, &sWriteFuncData);
     unchecked_curl_easy_setopt(hCurlHandle, CURLOPT_WRITEFUNCTION,
@@ -1243,8 +1207,8 @@ retry:
  */
 void VSIInstallWebHdfsHandler(void)
 {
-    VSIFileManager::InstallHandler("/vsiwebhdfs/",
-                                   new cpl::VSIWebHDFSFSHandler);
+    VSIFileManager::InstallHandler(
+        "/vsiwebhdfs/", new cpl::VSIWebHDFSFSHandler("/vsiwebhdfs/"));
 }
 
 #endif /* HAVE_CURL */

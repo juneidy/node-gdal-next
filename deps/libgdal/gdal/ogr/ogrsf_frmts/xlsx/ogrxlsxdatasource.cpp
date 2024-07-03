@@ -37,6 +37,8 @@
 namespace OGRXLSX
 {
 
+constexpr int PARSER_BUF_SIZE = 8192;
+
 constexpr int NUMBER_OF_DAYS_BETWEEN_1900_AND_1970 = 25569;
 constexpr int NUMBER_OF_SECONDS_PER_DAY = 86400;
 
@@ -50,6 +52,7 @@ OGRXLSXLayer::OGRXLSXLayer(OGRXLSXDataSource *poDSIn, const char *pszFilename,
       poDS(poDSIn), osFilename(pszFilename), bUpdated(CPL_TO_BOOL(bUpdatedIn)),
       bHasHeaderLine(false)
 {
+    SetAdvertizeUTF8(true);
 }
 
 /************************************************************************/
@@ -190,11 +193,13 @@ OGRErr OGRXLSXLayer::DeleteFeature(GIntBig nFID)
 /*                          OGRXLSXDataSource()                         */
 /************************************************************************/
 
-OGRXLSXDataSource::OGRXLSXDataSource()
+OGRXLSXDataSource::OGRXLSXDataSource(CSLConstList papszOpenOptionsIn)
     : pszName(nullptr), bUpdatable(false), bUpdated(false), nLayers(0),
       papoLayers(nullptr), bFirstLineIsHeaders(false),
-      bAutodetectTypes(
-          !EQUAL(CPLGetConfigOption("OGR_XLSX_FIELD_TYPES", ""), "STRING")),
+      bAutodetectTypes(!EQUAL(
+          CSLFetchNameValueDef(papszOpenOptionsIn, "FIELD_TYPES",
+                               CPLGetConfigOption("OGR_XLSX_FIELD_TYPES", "")),
+          "STRING")),
       oParser(nullptr), bStopParsing(false), nWithoutEventCounter(0),
       nDataHandlerCounter(0), nCurLine(0), nCurCol(0), poCurLayer(nullptr),
       nStackDepth(0), nDepth(0), bInCellXFS(false)
@@ -210,13 +215,31 @@ OGRXLSXDataSource::OGRXLSXDataSource()
 OGRXLSXDataSource::~OGRXLSXDataSource()
 
 {
-    OGRXLSXDataSource::FlushCache(true);
+    OGRXLSXDataSource::Close();
+}
 
-    CPLFree(pszName);
+/************************************************************************/
+/*                              Close()                                 */
+/************************************************************************/
 
-    for (int i = 0; i < nLayers; i++)
-        delete papoLayers[i];
-    CPLFree(papoLayers);
+CPLErr OGRXLSXDataSource::Close()
+{
+    CPLErr eErr = CE_None;
+    if (nOpenFlags != OPEN_FLAGS_CLOSED)
+    {
+        if (OGRXLSXDataSource::FlushCache(true) != CE_None)
+            eErr = CE_Failure;
+
+        CPLFree(pszName);
+
+        for (int i = 0; i < nLayers; i++)
+            delete papoLayers[i];
+        CPLFree(papoLayers);
+
+        if (GDALDataset::Close() != CE_None)
+            eErr = CE_Failure;
+    }
+    return eErr;
 }
 
 /************************************************************************/
@@ -290,7 +313,11 @@ int OGRXLSXDataSource::Open(const char *pszFilename,
     /* Remove empty layers at the end, which tend to be there */
     while (nLayers > 1)
     {
-        if (papoLayers[nLayers - 1]->GetFeatureCount() == 0)
+        papoLayers[nLayers - 1]->Init();
+        if ((papoLayers[nLayers - 1]->m_osCols.empty() ||
+             papoLayers[nLayers - 1]->m_osCols.find("max=\"1025\" min=\"1\"") !=
+                 std::string::npos) &&
+            papoLayers[nLayers - 1]->GetFeatureCount(false) == 0)
         {
             delete papoLayers[nLayers - 1];
             nLayers--;
@@ -339,6 +366,9 @@ void OGRXLSXDataSource::startElementCbk(const char *pszNameIn,
         case STATE_DEFAULT:
             startElementDefault(pszNameIn, ppszAttr);
             break;
+        case STATE_COLS:
+            startElementCols(pszNameIn, ppszAttr);
+            break;
         case STATE_SHEETDATA:
             startElementTable(pszNameIn, ppszAttr);
             break;
@@ -380,6 +410,9 @@ void OGRXLSXDataSource::endElementCbk(const char *pszNameIn)
         case STATE_SHEETDATA:
             endElementTable(pszNameIn);
             break;
+        case STATE_COLS:
+            endElementCols(pszNameIn);
+            break;
         case STATE_ROW:
             endElementRow(pszNameIn);
             break;
@@ -411,7 +444,7 @@ void OGRXLSXDataSource::dataHandlerCbk(const char *data, int nLen)
         return;
 
     nDataHandlerCounter++;
-    if (nDataHandlerCounter >= BUFSIZ)
+    if (nDataHandlerCounter >= PARSER_BUF_SIZE)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "File probably corrupted (million laugh pattern)");
@@ -621,7 +654,9 @@ void OGRXLSXDataSource::DetectHeaderLine()
         }
     }
 
-    const char *pszXLSXHeaders = CPLGetConfigOption("OGR_XLSX_HEADERS", "");
+    const char *pszXLSXHeaders =
+        CSLFetchNameValueDef(papszOpenOptions, "HEADERS",
+                             CPLGetConfigOption("OGR_XLSX_HEADERS", ""));
     bFirstLineIsHeaders = false;
     if (EQUAL(pszXLSXHeaders, "FORCE"))
         bFirstLineIsHeaders = true;
@@ -645,13 +680,51 @@ void OGRXLSXDataSource::DetectHeaderLine()
 void OGRXLSXDataSource::startElementDefault(const char *pszNameIn,
                                             CPL_UNUSED const char **ppszAttr)
 {
-    if (strcmp(pszNameIn, "sheetData") == 0)
+    if (strcmp(pszNameIn, "cols") == 0)
+    {
+        PushState(STATE_COLS);
+        m_osCols = "<cols>";
+    }
+    else if (strcmp(pszNameIn, "sheetData") == 0)
     {
         apoFirstLineValues.resize(0);
         apoFirstLineTypes.resize(0);
         nCurLine = 0;
         PushState(STATE_SHEETDATA);
     }
+}
+
+/************************************************************************/
+/*                          startElementCols()                          */
+/************************************************************************/
+
+void OGRXLSXDataSource::startElementCols(const char *pszNameIn,
+                                         const char **ppszAttr)
+{
+    m_osCols.append("<");
+    m_osCols.append(pszNameIn);
+    for (const char **iter = ppszAttr; iter && iter[0] && iter[1]; iter += 2)
+    {
+        m_osCols.append(" ");
+        m_osCols.append(iter[0]);
+        m_osCols.append("=\"");
+        char *pszXML = OGRGetXML_UTF8_EscapedString(iter[1]);
+        m_osCols.append(pszXML);
+        CPLFree(pszXML);
+        m_osCols.append("\"");
+    }
+    m_osCols.append(">");
+}
+
+/************************************************************************/
+/*                            endElementCell()                          */
+/************************************************************************/
+
+void OGRXLSXDataSource::endElementCols(const char *pszNameIn)
+{
+    m_osCols.append("</");
+    m_osCols.append(pszNameIn);
+    m_osCols.append(">");
 }
 
 /************************************************************************/
@@ -716,7 +789,7 @@ void OGRXLSXDataSource::endElementTable(CPL_UNUSED const char *pszNameIn)
 
         if (nCurLine == 0 || (nCurLine == 1 && apoFirstLineValues.empty()))
         {
-            /* We could remove empty sheet, but too late now */
+            // no rows
         }
         else if (nCurLine == 1)
         {
@@ -750,7 +823,6 @@ void OGRXLSXDataSource::endElementTable(CPL_UNUSED const char *pszNameIn)
         if (poCurLayer)
         {
             ((OGRMemLayer *)poCurLayer)->SetUpdatable(CPL_TO_BOOL(bUpdatable));
-            ((OGRMemLayer *)poCurLayer)->SetAdvertizeUTF8(true);
             ((OGRXLSXLayer *)poCurLayer)->SetUpdated(false);
         }
 
@@ -1129,6 +1201,7 @@ void OGRXLSXDataSource::BuildLayer(OGRXLSXLayer *poLayer)
     const bool bUpdatedBackup = bUpdated;
 
     oParser = OGRCreateExpatXMLParser();
+    m_osCols.clear();
     XML_SetElementHandler(oParser, OGRXLSX::startElementCbk,
                           OGRXLSX::endElementCbk);
     XML_SetCharacterDataHandler(oParser, OGRXLSX::dataHandlerCbk);
@@ -1144,14 +1217,15 @@ void OGRXLSXDataSource::BuildLayer(OGRXLSXLayer *poLayer)
     stateStack[0].eVal = STATE_DEFAULT;
     stateStack[0].nBeginDepth = 0;
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     do
     {
         nDataHandlerCounter = 0;
-        unsigned int nLen = (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fp);
+        unsigned int nLen =
+            (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(), fp);
         nDone = VSIFEofL(fp);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of %s file failed : %s at line %d, column %d",
@@ -1177,6 +1251,7 @@ void OGRXLSXDataSource::BuildLayer(OGRXLSXLayer *poLayer)
     VSIFCloseL(fp);
 
     bUpdated = bUpdatedBackup;
+    poLayer->m_osCols = m_osCols;
 }
 
 /************************************************************************/
@@ -1276,7 +1351,7 @@ void OGRXLSXDataSource::dataHandlerSSCbk(const char *data, int nLen)
         return;
 
     nDataHandlerCounter++;
-    if (nDataHandlerCounter >= BUFSIZ)
+    if (nDataHandlerCounter >= PARSER_BUF_SIZE)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "File probably corrupted (million laugh pattern)");
@@ -1326,15 +1401,15 @@ void OGRXLSXDataSource::AnalyseSharedStrings(VSILFILE *fpSharedStrings)
     stateStack[0].eVal = STATE_DEFAULT;
     stateStack[0].nBeginDepth = 0;
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     do
     {
         nDataHandlerCounter = 0;
-        unsigned int nLen =
-            (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fpSharedStrings);
+        unsigned int nLen = (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(),
+                                                    fpSharedStrings);
         nDone = VSIFEofL(fpSharedStrings);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of %s file failed : %s at line %d, column %d",
@@ -1408,15 +1483,15 @@ void OGRXLSXDataSource::AnalyseWorkbookRels(VSILFILE *fpWorkbookRels)
     nWithoutEventCounter = 0;
     nDataHandlerCounter = 0;
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     do
     {
         nDataHandlerCounter = 0;
-        unsigned int nLen =
-            (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fpWorkbookRels);
+        unsigned int nLen = (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(),
+                                                    fpWorkbookRels);
         nDone = VSIFEofL(fpWorkbookRels);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of %s file failed : %s at line %d, column %d",
@@ -1499,8 +1574,8 @@ void OGRXLSXDataSource::startElementWBCbk(const char *pszNameIn,
                 // or relative to the /xl subdirectory
                 osFilename = osPrefixedFilename + CPLString("/xl/") + osTarget;
             }
-            papoLayers = (OGRLayer **)CPLRealloc(
-                papoLayers, (nLayers + 1) * sizeof(OGRLayer *));
+            papoLayers = (OGRXLSXLayer **)CPLRealloc(
+                papoLayers, (nLayers + 1) * sizeof(OGRXLSXLayer *));
             papoLayers[nLayers++] =
                 new OGRXLSXLayer(this, osFilename, pszSheetName);
         }
@@ -1523,15 +1598,15 @@ void OGRXLSXDataSource::AnalyseWorkbook(VSILFILE *fpWorkbook)
     nWithoutEventCounter = 0;
     nDataHandlerCounter = 0;
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     do
     {
         nDataHandlerCounter = 0;
         unsigned int nLen =
-            (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fpWorkbook);
+            (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(), fpWorkbook);
         nDone = VSIFEofL(fpWorkbook);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of %s file failed : %s at line %d, column %d",
@@ -1687,15 +1762,15 @@ void OGRXLSXDataSource::AnalyseStyles(VSILFILE *fpStyles)
     nDataHandlerCounter = 0;
     bInCellXFS = false;
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     do
     {
         nDataHandlerCounter = 0;
         unsigned int nLen =
-            (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fpStyles);
+            (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(), fpStyles);
         nDone = VSIFEofL(fpStyles);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of %s file failed : %s at line %d, column %d",
@@ -1725,7 +1800,7 @@ void OGRXLSXDataSource::AnalyseStyles(VSILFILE *fpStyles)
 /************************************************************************/
 
 OGRLayer *OGRXLSXDataSource::ICreateLayer(const char *pszLayerName,
-                                          OGRSpatialReference * /*poSRS*/,
+                                          const OGRSpatialReference * /*poSRS*/,
                                           OGRwkbGeometryType /*eType*/,
                                           char **papszOptions)
 
@@ -1771,14 +1846,14 @@ OGRLayer *OGRXLSXDataSource::ICreateLayer(const char *pszLayerName,
     /* -------------------------------------------------------------------- */
     /*      Create the layer object.                                        */
     /* -------------------------------------------------------------------- */
-    OGRLayer *poLayer =
+    OGRXLSXLayer *poLayer =
         new OGRXLSXLayer(this,
                          CPLSPrintf("/vsizip/%s/xl/worksheets/sheet%d.xml",
                                     pszName, nLayers + 1),
                          pszLayerName, TRUE);
 
-    papoLayers =
-        (OGRLayer **)CPLRealloc(papoLayers, (nLayers + 1) * sizeof(OGRLayer *));
+    papoLayers = (OGRXLSXLayer **)CPLRealloc(
+        papoLayers, (nLayers + 1) * sizeof(OGRXLSXLayer *));
     papoLayers[nLayers] = poLayer;
     nLayers++;
 
@@ -2051,7 +2126,7 @@ static CPLString BuildColString(int nCol)
 /*                             WriteLayer()                             */
 /************************************************************************/
 
-static bool WriteLayer(const char *pszName, OGRLayer *poLayer, int iLayer,
+static bool WriteLayer(const char *pszName, OGRXLSXLayer *poLayer, int iLayer,
                        std::map<std::string, int> &oStringMap,
                        std::vector<std::string> &oStringList)
 {
@@ -2082,27 +2157,33 @@ static bool WriteLayer(const char *pszName, OGRLayer *poLayer, int iLayer,
     bool bHasHeaders = false;
     int iRow = 1;
 
-    VSIFPrintfL(fp, "<cols>\n");
-    for (int j = 0; j < poFDefn->GetFieldCount(); j++)
+    const int nFields = poFDefn->GetFieldCount();
+    if (nFields > 0)
     {
-        int nWidth = 15;
-        if (poFDefn->GetFieldDefn(j)->GetType() == OFTDateTime)
-            nWidth = 29;
-        VSIFPrintfL(fp, "<col min=\"%d\" max=\"%d\" width=\"%d\"/>\n", j + 1,
-                    1024, nWidth);
+        VSIFPrintfL(fp, "<cols>\n");
+        for (int j = 0; j < nFields; j++)
+        {
+            int nWidth = 15;
+            if (poFDefn->GetFieldDefn(j)->GetType() == OFTDateTime)
+                nWidth = 29;
+            VSIFPrintfL(fp, "<col min=\"%d\" max=\"%d\" width=\"%d\"/>\n",
+                        j + 1, 1024, nWidth);
 
-        if (strcmp(poFDefn->GetFieldDefn(j)->GetNameRef(),
-                   CPLSPrintf("Field%d", j + 1)) != 0)
-            bHasHeaders = true;
+            if (strcmp(poFDefn->GetFieldDefn(j)->GetNameRef(),
+                       CPLSPrintf("Field%d", j + 1)) != 0)
+                bHasHeaders = true;
+        }
+        VSIFPrintfL(fp, "</cols>\n");
     }
-    VSIFPrintfL(fp, "</cols>\n");
+    else if (!poLayer->GetCols().empty())
+        VSIFPrintfL(fp, "%s\n", poLayer->GetCols().c_str());
 
     VSIFPrintfL(fp, "<sheetData>\n");
 
     if (bHasHeaders && poFeature != nullptr)
     {
         VSIFPrintfL(fp, "<row r=\"%d\">\n", iRow);
-        for (int j = 0; j < poFDefn->GetFieldCount(); j++)
+        for (int j = 0; j < nFields; j++)
         {
             const char *pszVal = poFDefn->GetFieldDefn(j)->GetNameRef();
             std::map<std::string, int>::iterator oIter =
@@ -2131,7 +2212,7 @@ static bool WriteLayer(const char *pszName, OGRLayer *poLayer, int iLayer,
     while (poFeature != nullptr)
     {
         VSIFPrintfL(fp, "<row r=\"%d\">\n", iRow);
-        for (int j = 0; j < poFeature->GetFieldCount(); j++)
+        for (int j = 0; j < nFields; j++)
         {
             if (poFeature->IsFieldSetAndNotNull(j))
             {
@@ -2409,10 +2490,10 @@ static bool WriteDotRels(const char *pszName)
 /*                            FlushCache()                              */
 /************************************************************************/
 
-void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
+CPLErr OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
 {
     if (!bUpdated)
-        return;
+        return CE_None;
 
     /* Cause all layers to be loaded */
     for (int i = 0; i < nLayers; i++)
@@ -2426,7 +2507,7 @@ void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
         if (VSIUnlink(pszName) != 0)
         {
             CPLError(CE_Failure, CPLE_FileIO, "Cannot delete %s", pszName);
-            return;
+            return CE_Failure;
         }
     }
 
@@ -2439,7 +2520,7 @@ void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
     {
         CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s: %s", pszName,
                  VSIGetLastErrorMsg());
-        return;
+        return CE_Failure;
     }
 
     bool bOK = WriteContentTypes(pszName, nLayers);
@@ -2457,7 +2538,7 @@ void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
     // VSIMkdir(CPLSPrintf("/vsizip/%s/xl/worksheets", pszName),0755);
     for (int i = 0; i < nLayers; i++)
     {
-        bOK &= WriteLayer(pszName, GetLayer(i), i, oStringMap, oStringList);
+        bOK &= WriteLayer(pszName, papoLayers[i], i, oStringMap, oStringList);
     }
 
     bOK &= WriteSharedStrings(pszName, oStringMap, oStringList);
@@ -2470,7 +2551,8 @@ void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
     bOK &= WriteDotRels(pszName);
 
     /* Now close ZIP file */
-    VSIFCloseL(fpZIP);
+    if (VSIFCloseL(fpZIP) != 0)
+        bOK = false;
 
     /* Reset updated flag at datasource and layer level */
     bUpdated = false;
@@ -2484,7 +2566,7 @@ void OGRXLSXDataSource::FlushCache(bool /* bAtClosing */)
         CPLError(CE_Failure, CPLE_FileIO, "Failure when saving %s", pszName);
     }
 
-    return;
+    return bOK ? CE_None : CE_Failure;
 }
 
 }  // namespace OGRXLSX

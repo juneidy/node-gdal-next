@@ -52,7 +52,6 @@ set(CPL_SOURCES
     cplstring.cpp
     cpl_vsisimple.cpp
     cpl_vsil.cpp
-    cpl_vsi_mem.cpp
     cpl_http.cpp
     cpl_hash_set.cpp
     cplkeywordparser.cpp
@@ -66,6 +65,7 @@ set(CPL_SOURCES
     cpl_vsil_sparsefile.cpp
     cpl_vsil_abstract_archive.cpp
     cpl_vsil_tar.cpp
+    cpl_vsil_libarchive.cpp
     cpl_vsil_stdin.cpp
     cpl_vsil_buffered_reader.cpp
     cpl_vsil_plugin.cpp
@@ -132,10 +132,34 @@ if(CMAKE_INSTALL_FULL_SYSCONFDIR)
     target_compile_definitions(cpl PRIVATE SYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}")
 endif()
 
+# To enable conditional use of std::shared_mutex in cpl_vsi_mem.cpp
+add_library(cpl_vsi_mem OBJECT cpl_vsi_mem.cpp)
+target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:cpl_vsi_mem>)
+target_compile_options(cpl_vsi_mem PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX})
+set_property(TARGET cpl_vsi_mem PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
+target_include_directories(cpl_vsi_mem PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
+if(COMPILER_SUPPORTS_CXX17)
+    target_compile_features(cpl_vsi_mem PRIVATE cxx_std_17)
+endif()
+
 if (WIN32)
   target_sources(cpl PRIVATE cpl_vsil_win32.cpp)
 else ()
   target_sources(cpl PRIVATE cpl_vsil_unix_stdio_64.cpp)
+  if ("${CMAKE_SYSTEM}" MATCHES "Linux")
+      check_include_file("linux/fs.h" HAVE_LINUX_FS_H)
+      if (NOT HAVE_LINUX_FS_H)
+          set(ACCEPT_MISSING_LINUX_FS_HEADER OFF CACHE BOOL "Build despite missing linux/fs.h header.")
+          mark_as_advanced(ACCEPT_MISSING_LINUX_FS_HEADER)
+          if (NOT ACCEPT_MISSING_LINUX_FS_HEADER)
+              message(FATAL_ERROR "linux/fs.h header not found. Impact will be lack of sparse file detection. Define the ACCEPT_MISSING_LINUX_FS_HEADER:BOOL=ON CMake variable if you want to build despite this limitation.")
+          endif()
+          target_compile_definitions(cpl PRIVATE -DMISSING_LINUX_FS_H)
+      endif()
+  endif()
   if(HAVE_PREAD64)
       target_compile_definitions(cpl PRIVATE -DHAVE_PREAD64)
   elseif(HAVE_PREAD_BSD)
@@ -171,6 +195,10 @@ target_sources(cpl PRIVATE cpl_vsil_gzip.cpp cpl_minizip_ioapi.cpp cpl_minizip_u
 if (GDAL_USE_ZLIB_INTERNAL)
   gdal_add_vendored_lib(cpl libz)
 endif ()
+if (ENABLE_DEFLATE64)
+  gdal_add_vendored_lib(cpl infback9)
+  target_compile_definitions(cpl PRIVATE -DENABLE_DEFLATE64)
+endif ()
 
 # Now external libraries
 if (NOT GDAL_USE_JSONC_INTERNAL)
@@ -179,10 +207,15 @@ endif ()
 
 if (NOT GDAL_USE_ZLIB_INTERNAL)
   target_compile_definitions(cpl PRIVATE -DHAVE_ZLIB_H -DHAVE_ZLIB)
-  if (MSVC)
+  if (MSVC AND NOT ZLIB_IS_STATIC)
     target_compile_definitions(cpl PRIVATE -DZLIB_DLL)
-  endif (MSVC)
+  endif ()
   gdal_target_link_libraries(cpl PRIVATE ZLIB::ZLIB)
+endif ()
+
+if (GDAL_USE_ARCHIVE)
+  target_compile_definitions(cpl PRIVATE -DHAVE_LIBARCHIVE)
+  gdal_target_link_libraries(cpl PRIVATE ARCHIVE::ARCHIVE)
 endif ()
 
 if (GDAL_USE_CURL)
@@ -238,11 +271,6 @@ endif ()
 
 if (HAVE_USERFAULTFD_H)
   target_compile_definitions(cpl PRIVATE -DENABLE_UFFD)
-endif ()
-
-option(HDFS_ENABLED "Include HDFS support" OFF)
-if (HDFS_ENABLED)
-  target_compile_definitions(cpl PRIVATE -DHDFS_ENABLED)
 endif ()
 
 # for plugin DLFCN: for win32 https://github.com/dlfcn-win32/dlfcn-win32/archive/v1.1.1.tar.gz if(WIN32)

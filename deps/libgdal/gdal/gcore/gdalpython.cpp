@@ -97,6 +97,8 @@ int (*PyTuple_SetItem)(PyObject *, size_t, PyObject *) = nullptr;
 void (*PyObject_Print)(PyObject *, FILE *, int) = nullptr;
 Py_ssize_t (*PyBytes_Size)(PyObject *) = nullptr;
 const char *(*PyBytes_AsString)(PyObject *) = nullptr;
+int *(*PyBytes_AsStringAndSize)(PyObject *, char **, size_t *) = nullptr;
+PyObject *(*PyBytes_FromObject)(PyObject *) = nullptr;
 PyObject *(*PyBytes_FromStringAndSize)(const void *, size_t) = nullptr;
 PyObject *(*PyUnicode_FromString)(const char *) = nullptr;
 PyObject *(*PyUnicode_AsUTF8String)(PyObject *) = nullptr;
@@ -424,11 +426,12 @@ static bool LoadPythonAPI()
     if (libHandle == nullptr)
     {
         const char *const apszPythonSO[] = {
-            "libpython3.6m." SO_EXT, "libpython3.7m." SO_EXT,
             "libpython3.8." SO_EXT,  "libpython3.9." SO_EXT,
             "libpython3.10." SO_EXT, "libpython3.11." SO_EXT,
-            "libpython3.5m." SO_EXT, "libpython3.4m." SO_EXT,
-            "libpython3.3." SO_EXT,  "libpython3.2." SO_EXT};
+            "libpython3.12." SO_EXT, "libpython3.7m." SO_EXT,
+            "libpython3.6m." SO_EXT, "libpython3.5m." SO_EXT,
+            "libpython3.4m." SO_EXT, "libpython3.3." SO_EXT,
+            "libpython3.2." SO_EXT};
         for (size_t i = 0;
              libHandle == nullptr && i < CPL_ARRAYSIZE(apszPythonSO); ++i)
         {
@@ -626,9 +629,9 @@ static bool LoadPythonAPI()
     if (libHandle == nullptr)
     {
         const char *const apszPythonSO[] = {
-            "python36.dll",  "python37.dll",  "python38.dll", "python39.dll",
-            "python310.dll", "python311.dll", "python35.dll", "python34.dll",
-            "python33.dll",  "python32.dll"};
+            "python38.dll",  "python39.dll", "python310.dll", "python311.dll",
+            "python312.dll", "python37.dll", "python36.dll",  "python35.dll",
+            "python34.dll",  "python33.dll", "python32.dll"};
         UINT uOldErrorMode;
         uOldErrorMode =
             SetErrorMode(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS);
@@ -636,7 +639,7 @@ static bool LoadPythonAPI()
         for (size_t i = 0;
              libHandle == nullptr && i < CPL_ARRAYSIZE(apszPythonSO); ++i)
         {
-            CPLDebug("GAL", "Trying %s", apszPythonSO[i]);
+            CPLDebug("GDAL", "Trying %s", apszPythonSO[i]);
             libHandle = LoadLibrary(apszPythonSO[i]);
             if (libHandle != nullptr)
                 CPLDebug("GDAL", "... success");
@@ -725,6 +728,8 @@ static bool LoadPythonAPI()
     LOAD(libHandle, PyLong_AsLongLong);
     LOAD(libHandle, PyBytes_Size);
     LOAD(libHandle, PyBytes_AsString);
+    LOAD(libHandle, PyBytes_AsStringAndSize);
+    LOAD(libHandle, PyBytes_FromObject);
     LOAD(libHandle, PyBytes_FromStringAndSize);
 
     LOAD(libHandle, PyModule_Create2);

@@ -204,12 +204,10 @@ static bool DBFFlushRecord(DBFHandle psDBF)
                 STATIC_CAST(SAOffset, psDBF->nCurrentRecord) +
             psDBF->nHeaderLength;
 
-        /* --------------------------------------------------------------------
-         */
-        /*      Guard FSeek with check for whether we're already at position; */
-        /*      no-op FSeeks defeat network filesystems' write buffering. */
-        /* --------------------------------------------------------------------
-         */
+        /* -------------------------------------------------------------------- */
+        /*      Guard FSeek with check for whether we're already at position;   */
+        /*      no-op FSeeks defeat network filesystems' write buffering.       */
+        /* -------------------------------------------------------------------- */
         if (psDBF->bRequireNextWriteSeek ||
             psDBF->sHooks.FTell(psDBF->fp) != nRecordOffset)
         {
@@ -235,11 +233,9 @@ static bool DBFFlushRecord(DBFHandle psDBF)
             return false;
         }
 
-        /* --------------------------------------------------------------------
-         */
-        /*      If next op is also a write, allow possible skipping of FSeek. */
-        /* --------------------------------------------------------------------
-         */
+        /* -------------------------------------------------------------------- */
+        /*      If next op is also a write, allow possible skipping of FSeek.   */
+        /* -------------------------------------------------------------------- */
         psDBF->bRequireNextWriteSeek = FALSE;
 
         if (psDBF->nCurrentRecord == psDBF->nRecords - 1)
@@ -291,12 +287,9 @@ static bool DBFLoadRecord(DBFHandle psDBF, int iRecord)
         }
 
         psDBF->nCurrentRecord = iRecord;
-        /* --------------------------------------------------------------------
-         */
-        /*      Require a seek for next write in case of mixed R/W operations.
-         */
-        /* --------------------------------------------------------------------
-         */
+        /* -------------------------------------------------------------------- */
+        /*      Require a seek for next write in case of mixed R/W operations.  */
+        /* -------------------------------------------------------------------- */
         psDBF->bRequireNextWriteSeek = TRUE;
     }
 
@@ -688,18 +681,7 @@ DBFHandle SHPAPI_CALL DBFCreateLL(const char *pszFilename,
     /* -------------------------------------------------------------------- */
     /*      Create the file.                                                */
     /* -------------------------------------------------------------------- */
-    SAFile fp = psHooks->FOpen(pszFullname, "wb");
-    if (fp == SHPLIB_NULLPTR)
-    {
-        free(pszFullname);
-        return SHPLIB_NULLPTR;
-    }
-
-    char chZero = '\0';
-    psHooks->FWrite(&chZero, 1, 1, fp);
-    psHooks->FClose(fp);
-
-    fp = psHooks->FOpen(pszFullname, "rb+");
+    SAFile fp = psHooks->FOpen(pszFullname, "wb+");
     if (fp == SHPLIB_NULLPTR)
     {
         free(pszFullname);
@@ -1184,7 +1166,12 @@ static bool DBFIsValueNULL(char chType, const char *pszValue)
 
         case 'D':
             /* NULL date fields have value "00000000" */
-            return strncmp(pszValue, "00000000", 8) == 0;
+            /* Some DBF files have fields filled with spaces */
+            /* (trimmed by DBFReadStringAttribute) to indicate null */
+            /* values for dates (#4265). */
+            /* And others have '       0': https://lists.osgeo.org/pipermail/gdal-dev/2023-November/058010.html */
+            return strncmp(pszValue, "00000000", 8) == 0 ||
+                   strcmp(pszValue, " ") == 0 || strcmp(pszValue, "0") == 0;
 
         case 'L':
             /* NULL boolean fields have value "?" */
@@ -1463,25 +1450,29 @@ int SHPAPI_CALL DBFWriteAttributeDirectly(DBFHandle psDBF, int hEntity,
     if (!DBFLoadRecord(psDBF, hEntity))
         return FALSE;
 
-    unsigned char *pabyRec =
-        REINTERPRET_CAST(unsigned char *, psDBF->pszCurrentRecord);
-
-    /* -------------------------------------------------------------------- */
-    /*      Assign all the record fields.                                   */
-    /* -------------------------------------------------------------------- */
-    int j;
-    if (STATIC_CAST(int, strlen(STATIC_CAST(char *, pValue))) >
-        psDBF->panFieldSize[iField])
-        j = psDBF->panFieldSize[iField];
-    else
+    if (iField >= 0)
     {
-        memset(pabyRec + psDBF->panFieldOffset[iField], ' ',
-               psDBF->panFieldSize[iField]);
-        j = STATIC_CAST(int, strlen(STATIC_CAST(char *, pValue)));
-    }
+        unsigned char *pabyRec =
+            REINTERPRET_CAST(unsigned char *, psDBF->pszCurrentRecord);
 
-    strncpy(REINTERPRET_CAST(char *, pabyRec + psDBF->panFieldOffset[iField]),
+        /* -------------------------------------------------------------------- */
+        /*      Assign all the record fields.                                   */
+        /* -------------------------------------------------------------------- */
+        int j;
+        if (STATIC_CAST(int, strlen(STATIC_CAST(char *, pValue))) >
+            psDBF->panFieldSize[iField])
+            j = psDBF->panFieldSize[iField];
+        else
+        {
+            memset(pabyRec + psDBF->panFieldOffset[iField], ' ',
+                   psDBF->panFieldSize[iField]);
+            j = STATIC_CAST(int, strlen(STATIC_CAST(char *, pValue)));
+        }
+
+        strncpy(
+            REINTERPRET_CAST(char *, pabyRec + psDBF->panFieldOffset[iField]),
             STATIC_CAST(const char *, pValue), j);
+    }
 
     psDBF->bCurrentRecordModified = TRUE;
     psDBF->bUpdated = TRUE;

@@ -387,6 +387,14 @@ class MRFDataset final : public GDALPamDataset
         return m_oSRS.IsEmpty() ? nullptr : &m_oSRS;
     }
 
+    CPLErr SetSpatialRef(const OGRSpatialReference *poSRS) override
+    {
+        m_oSRS.Clear();
+        if (poSRS)
+            m_oSRS = *poSRS;
+        return CE_None;
+    }
+
     virtual CPLString const &GetPhotometricInterpretation()
     {
         return photometric;
@@ -823,7 +831,6 @@ class JPEG_Codec
     static bool IsJPEG(const buf_mgr &src);
 
 #if defined(JPEG12_SUPPORTED)  // Internal only
-#define LIBJPEG_12_H "../jpeg/libjpeg12/jpeglib.h"
     CPLErr CompressJPEG12(buf_mgr &dst, buf_mgr &src);
     CPLErr DecompressJPEG12(buf_mgr &dst, buf_mgr &src);
 #endif

@@ -15,13 +15,16 @@ jobs:
     strategy:
       matrix:
         platforms: [ ubuntu-20.04, ubuntu-22.04, windows-2019, macos-11 ]
-        node-version: [ 14.x, 16.x, 18.x, 19.x ]
+        node-version: [ 16.x, 18.x, 20.x, 21.x ]
 
     steps:
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
     - name: Set up the unit tests
       run: |
         curl https://codeload.github.com/mmomtchev/node-gdal-async/zip/refs/tags/v${{ github.event.inputs.version }} --output repo.zip
@@ -46,13 +49,16 @@ jobs:
     strategy:
       matrix:
         platforms: [ ubuntu-20.04, ubuntu-22.04, windows-2019, macos-11 ]
-        node-version: [ 14.x, 16.x, 18.x, 19.x ]
+        node-version: [ 16.x, 18.x, 20.x, 21.x ]
 
     steps:
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+    - uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
     - name: Set up the unit tests
       run: |
         curl https://codeload.github.com/mmomtchev/node-gdal-async/zip/refs/tags/v${{ github.event.inputs.version }} --output repo.zip

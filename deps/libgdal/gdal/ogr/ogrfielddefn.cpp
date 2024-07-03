@@ -84,7 +84,9 @@ OGRFieldDefn::OGRFieldDefn(const OGRFieldDefn *poPrototype)
       bIgnore(FALSE),  // TODO(schwehr): Can we use IsIgnored()?
       eSubType(poPrototype->GetSubType()), bNullable(poPrototype->IsNullable()),
       bUnique(poPrototype->IsUnique()),
-      m_osDomainName(poPrototype->m_osDomainName)
+      m_osDomainName(poPrototype->m_osDomainName),
+      m_osComment(poPrototype->GetComment()),
+      m_nTZFlag(poPrototype->GetTZFlag())
 {
     SetDefault(poPrototype->GetDefault());
 }
@@ -1106,6 +1108,92 @@ void OGR_Fld_SetPrecision(OGRFieldDefnH hDefn, int nPrecision)
 }
 
 /************************************************************************/
+/*                            GetTZFlag()                               */
+/************************************************************************/
+
+/**
+ * \fn int OGRFieldDefn::GetTZFlag() const;
+ *
+ * \brief Get the time zone flag.
+ *
+ * Only applies to OFTTime, OFTDate and OFTDateTime fields.
+ *
+ * Cf OGR_TZFLAG_UNKNOWN, OGR_TZFLAG_LOCALTIME, OGR_TZFLAG_MIXED_TZ and
+ * OGR_TZFLAG_UTC
+ *
+ * This method is the same as the C function OGR_Fld_GetTZFlag().
+ *
+ * @return the time zone flag.
+ * @since GDAL 3.8
+ */
+
+/************************************************************************/
+/*                        OGR_Fld_GetTZFlag()                           */
+/************************************************************************/
+/**
+ * \brief Get the time zone flag.
+ *
+ * Only applies to OFTTime, OFTDate and OFTDateTime fields.
+ *
+ * Cf OGR_TZFLAG_UNKNOWN, OGR_TZFLAG_LOCALTIME, OGR_TZFLAG_MIXED_TZ and
+ * OGR_TZFLAG_UTC
+ *
+ * @param hDefn handle to the field definition .
+ * @return the time zone flag.
+ * @since GDAL 3.8
+ */
+
+int OGR_Fld_GetTZFlag(OGRFieldDefnH hDefn)
+
+{
+    return OGRFieldDefn::FromHandle(hDefn)->GetTZFlag();
+}
+
+/************************************************************************/
+/*                             SetTZFlag()                              */
+/************************************************************************/
+
+/**
+ * \fn void OGRFieldDefn::SetTZFlag( int nTZFlag );
+ *
+ * \brief Set the time zone flag.
+ *
+ * Only applies to OFTTime, OFTDate and OFTDateTime fields.
+ *
+ * Cf OGR_TZFLAG_UNKNOWN, OGR_TZFLAG_LOCALTIME, OGR_TZFLAG_MIXED_TZ and
+ * OGR_TZFLAG_UTC
+ *
+ * This method is the same as the C function OGR_Fld_SetTZFlag().
+ *
+ * @param nTZFlag the new time zone flag.
+ * @since GDAL 3.8
+ */
+
+/************************************************************************/
+/*                         OGR_Fld_SetTZFlag()                          */
+/************************************************************************/
+/**
+ * \brief Set the formatting precision for this field in characters.
+ *
+ * Set the time zone flag.
+ *
+ * Only applies to OFTTime, OFTDate and OFTDateTime fields.
+ *
+ * Cf OGR_TZFLAG_UNKNOWN, OGR_TZFLAG_LOCALTIME, OGR_TZFLAG_MIXED_TZ and
+ * OGR_TZFLAG_UTC
+ *
+ * @param hDefn handle to the field definition to set precision to.
+ * @param nTZFlag the new time zone flag.
+ * @since GDAL 3.8
+ */
+
+void OGR_Fld_SetTZFlag(OGRFieldDefnH hDefn, int nTZFlag)
+
+{
+    OGRFieldDefn::FromHandle(hDefn)->SetTZFlag(nTZFlag);
+}
+
+/************************************************************************/
 /*                                Set()                                 */
 /************************************************************************/
 
@@ -1247,7 +1335,9 @@ int OGRFieldDefn::IsSame(const OGRFieldDefn *poOtherFieldDefn) const
            eSubType == poOtherFieldDefn->eSubType &&
            nWidth == poOtherFieldDefn->nWidth &&
            nPrecision == poOtherFieldDefn->nPrecision &&
-           bNullable == poOtherFieldDefn->bNullable;
+           bNullable == poOtherFieldDefn->bNullable &&
+           m_osComment == poOtherFieldDefn->m_osComment &&
+           m_nTZFlag == poOtherFieldDefn->m_nTZFlag;
 }
 
 /************************************************************************/
@@ -1510,6 +1600,78 @@ void OGR_Fld_SetDomainName(OGRFieldDefnH hDefn, const char *pszFieldName)
 {
     OGRFieldDefn::FromHandle(hDefn)->SetDomainName(pszFieldName ? pszFieldName
                                                                 : "");
+}
+
+/************************************************************************/
+/*                           GetComment()                               */
+/************************************************************************/
+
+/**
+ * \fn const std::string& OGRFieldDefn::GetComment() const
+ *
+ * \brief Return the (optional) comment for this field.
+ *
+ * By default, none (empty string) is returned.
+ *
+ * This method is the same as the C function OGR_Fld_GetComment().
+ *
+ * @return the field comment, or an empty string if there is none.
+ * @since GDAL 3.7
+ */
+
+/************************************************************************/
+/*                      OGR_Fld_GetComment()                            */
+/************************************************************************/
+
+/**
+ * \brief Return the (optional) comment for this field.
+ *
+ * By default, none (empty string) is returned.
+ *
+ * This method is the same as the C++ method OGRFieldDefn::GetComment().
+ *
+ * @param hDefn handle to the field definition
+ * @return the comment, or an empty string if there is none.
+ * @since GDAL 3.7
+ */
+
+const char *OGR_Fld_GetComment(OGRFieldDefnH hDefn)
+{
+    return OGRFieldDefn::FromHandle(hDefn)->GetComment().c_str();
+}
+
+/************************************************************************/
+/*                           SetComment()                               */
+/************************************************************************/
+
+/**
+ * \fn void OGRFieldDefn::SetComment( const std:string& osComment );
+ *
+ * \brief Set the comment for this field.
+ *
+ * This method is the same as the C function OGR_Fld_SetComment().
+ *
+ * @param osComment Field comment.
+ * @since GDAL 3.7
+ */
+
+/************************************************************************/
+/*                      OGR_Fld_SetComment()                            */
+/************************************************************************/
+
+/**
+ * \brief Set the comment for this field.
+ *
+ * This method is the same as the C++ method OGRFieldDefn::SetComment().
+ *
+ * @param hDefn handle to the field definition
+ * @param pszComment Field comment.
+ * @since GDAL 3.7
+ */
+
+void OGR_Fld_SetComment(OGRFieldDefnH hDefn, const char *pszComment)
+{
+    OGRFieldDefn::FromHandle(hDefn)->SetComment(pszComment ? pszComment : "");
 }
 
 /************************************************************************/

@@ -29,7 +29,9 @@
 #define CPL_JSON_H_INCLUDED
 
 #include "cpl_progress.h"
+#include "cpl_string.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -87,11 +89,22 @@ class CPL_DLL CPLJSONObject
     CPLJSONObject();
     explicit CPLJSONObject(const std::string &osName,
                            const CPLJSONObject &oParent);
+    explicit CPLJSONObject(std::nullptr_t);
+    explicit CPLJSONObject(const std::string &osVal);
+    explicit CPLJSONObject(const char *pszValue);
+    explicit CPLJSONObject(bool bVal);
+    explicit CPLJSONObject(int nVal);
+    explicit CPLJSONObject(int64_t nVal);
+    explicit CPLJSONObject(uint64_t nVal);
+    explicit CPLJSONObject(double dfVal);
     ~CPLJSONObject();
     CPLJSONObject(const CPLJSONObject &other);
     CPLJSONObject(CPLJSONObject &&other);
     CPLJSONObject &operator=(const CPLJSONObject &other);
     CPLJSONObject &operator=(CPLJSONObject &&other);
+
+    // This method is not thread-safe
+    CPLJSONObject Clone() const;
 
   private:
     explicit CPLJSONObject(const std::string &osName, JSONObjectH poJsonObject);
@@ -104,6 +117,7 @@ class CPL_DLL CPLJSONObject
     void Add(const std::string &osName, double dfValue);
     void Add(const std::string &osName, int nValue);
     void Add(const std::string &osName, GInt64 nValue);
+    void Add(const std::string &osName, uint64_t nValue);
     void Add(const std::string &osName, const CPLJSONArray &oValue);
     void Add(const std::string &osName, const CPLJSONObject &oValue);
     void AddNoSplitName(const std::string &osName, const CPLJSONObject &oValue);
@@ -115,6 +129,7 @@ class CPL_DLL CPLJSONObject
     void Set(const std::string &osName, double dfValue);
     void Set(const std::string &osName, int nValue);
     void Set(const std::string &osName, GInt64 nValue);
+    void Set(const std::string &osName, uint64_t nValue);
     void Set(const std::string &osName, bool bValue);
     void SetNull(const std::string &osName);
 
@@ -221,12 +236,14 @@ class CPL_DLL CPLJSONArray : public CPLJSONObject
     /*! @endcond */
   public:
     int Size() const;
+    void AddNull();
     void Add(const CPLJSONObject &oValue);
     void Add(const std::string &osValue);
     void Add(const char *pszValue);
     void Add(double dfValue);
     void Add(int nValue);
     void Add(GInt64 nValue);
+    void Add(uint64_t nValue);
     void Add(bool bValue);
     CPLJSONObject operator[](int nIndex);
     const CPLJSONObject operator[](int nIndex) const;
@@ -279,5 +296,12 @@ class CPL_DLL CPLJSONDocument
 };
 
 CPL_C_END
+
+#if defined(__cplusplus) && !defined(CPL_SUPRESS_CPLUSPLUS)
+extern "C++"
+{
+    CPLStringList CPLParseKeyValueJson(const char *pszJson);
+}
+#endif
 
 #endif  // CPL_JSON_H_INCLUDED

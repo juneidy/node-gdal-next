@@ -106,6 +106,9 @@ static bool gbIgnoreEnvVariables =
             // configuration file or
             // CPLSetConfigOption()/CPLSetThreadLocalConfigOption()
 
+static std::vector<std::pair<CPLSetConfigOptionSubscriber, void *>>
+    gSetConfigOptionSubscribers{};
+
 // Used by CPLOpenShared() and friends.
 static CPLMutex *hSharedFileMutex = nullptr;
 static int nSharedFileCount = 0;
@@ -1589,9 +1592,9 @@ void CPLVerifyConfiguration()
 
 #ifdef DEBUG_CONFIG_OPTIONS
 
-static void *hRegisterConfigurationOptionMutex = 0;
-static std::set<CPLString> *paoGetKeys = NULL;
-static std::set<CPLString> *paoSetKeys = NULL;
+static CPLMutex *hRegisterConfigurationOptionMutex = nullptr;
+static std::set<CPLString> *paoGetKeys = nullptr;
+static std::set<CPLString> *paoSetKeys = nullptr;
 
 /************************************************************************/
 /*                      CPLShowAccessedOptions()                        */
@@ -1621,8 +1624,8 @@ static void CPLShowAccessedOptions()
 
     delete paoGetKeys;
     delete paoSetKeys;
-    paoGetKeys = NULL;
-    paoSetKeys = NULL;
+    paoGetKeys = nullptr;
+    paoSetKeys = nullptr;
 }
 
 /************************************************************************/
@@ -1632,7 +1635,7 @@ static void CPLShowAccessedOptions()
 static void CPLAccessConfigOption(const char *pszKey, bool bGet)
 {
     CPLMutexHolderD(&hRegisterConfigurationOptionMutex);
-    if (paoGetKeys == NULL)
+    if (paoGetKeys == nullptr)
     {
         paoGetKeys = new std::set<CPLString>;
         paoSetKeys = new std::set<CPLString>;
@@ -1686,24 +1689,11 @@ const char *CPL_STDCALL CPLGetConfigOption(const char *pszKey,
                                            const char *pszDefault)
 
 {
-#ifdef DEBUG_CONFIG_OPTIONS
-    CPLAccessConfigOption(pszKey, TRUE);
-#endif
-
-    const char *pszResult = nullptr;
-
-    int bMemoryError = FALSE;
-    char **papszTLConfigOptions = reinterpret_cast<char **>(
-        CPLGetTLSEx(CTLS_CONFIGOPTIONS, &bMemoryError));
-    if (papszTLConfigOptions != nullptr)
-        pszResult = CSLFetchNameValue(papszTLConfigOptions, pszKey);
+    const char *pszResult = CPLGetThreadLocalConfigOption(pszKey, nullptr);
 
     if (pszResult == nullptr)
     {
-        CPLMutexHolderD(&hConfigMutex);
-
-        pszResult = CSLFetchNameValue(const_cast<char **>(g_papszConfigOptions),
-                                      pszKey);
+        pszResult = CPLGetGlobalConfigOption(pszKey, nullptr);
     }
 
     if (gbIgnoreEnvVariables)
@@ -1806,15 +1796,113 @@ const char *CPL_STDCALL CPLGetThreadLocalConfigOption(const char *pszKey,
 }
 
 /************************************************************************/
+/*                   CPLGetGlobalConfigOption()                         */
+/************************************************************************/
+
+/** Same as CPLGetConfigOption() but excludes environment variables and
+ *  options set with CPLSetThreadLocalConfigOption().
+ *  This function should generally not be used by applications, which should
+ *  use CPLGetConfigOption() instead.
+ *  @since 3.8 */
+const char *CPL_STDCALL CPLGetGlobalConfigOption(const char *pszKey,
+                                                 const char *pszDefault)
+{
+#ifdef DEBUG_CONFIG_OPTIONS
+    CPLAccessConfigOption(pszKey, TRUE);
+#endif
+
+    CPLMutexHolderD(&hConfigMutex);
+
+    const char *pszResult =
+        CSLFetchNameValue(const_cast<char **>(g_papszConfigOptions), pszKey);
+
+    if (pszResult == nullptr)
+        return pszDefault;
+
+    return pszResult;
+}
+
+/************************************************************************/
+/*                    CPLSubscribeToSetConfigOption()                   */
+/************************************************************************/
+
+/**
+ * Install a callback that will be notified of calls to CPLSetConfigOption()/
+ * CPLSetThreadLocalConfigOption()
+ *
+ * @param pfnCallback Callback. Must not be NULL
+ * @param pUserData Callback user data. May be NULL.
+ * @return subscriber ID that can be used with CPLUnsubscribeToSetConfigOption()
+ * @since GDAL 3.7
+ */
+
+int CPLSubscribeToSetConfigOption(CPLSetConfigOptionSubscriber pfnCallback,
+                                  void *pUserData)
+{
+    CPLMutexHolderD(&hConfigMutex);
+    for (int nId = 0;
+         nId < static_cast<int>(gSetConfigOptionSubscribers.size()); ++nId)
+    {
+        if (!gSetConfigOptionSubscribers[nId].first)
+        {
+            gSetConfigOptionSubscribers[nId].first = pfnCallback;
+            gSetConfigOptionSubscribers[nId].second = pUserData;
+            return nId;
+        }
+    }
+    int nId = static_cast<int>(gSetConfigOptionSubscribers.size());
+    gSetConfigOptionSubscribers.push_back(
+        std::pair<CPLSetConfigOptionSubscriber, void *>(pfnCallback,
+                                                        pUserData));
+    return nId;
+}
+
+/************************************************************************/
+/*                  CPLUnsubscribeToSetConfigOption()                   */
+/************************************************************************/
+
+/**
+ * Remove a subscriber installed with CPLSubscribeToSetConfigOption()
+ *
+ * @param nId Subscriber id returned by CPLSubscribeToSetConfigOption()
+ * @since GDAL 3.7
+ */
+
+void CPLUnsubscribeToSetConfigOption(int nId)
+{
+    CPLMutexHolderD(&hConfigMutex);
+    if (nId == static_cast<int>(gSetConfigOptionSubscribers.size()) - 1)
+    {
+        gSetConfigOptionSubscribers.resize(gSetConfigOptionSubscribers.size() -
+                                           1);
+    }
+    else if (nId >= 0 &&
+             nId < static_cast<int>(gSetConfigOptionSubscribers.size()))
+    {
+        gSetConfigOptionSubscribers[nId].first = nullptr;
+    }
+}
+
+/************************************************************************/
 /*                  NotifyOtherComponentsConfigOptionChanged()          */
 /************************************************************************/
 
 static void NotifyOtherComponentsConfigOptionChanged(const char *pszKey,
-                                                     const char * /*pszValue*/)
+                                                     const char *pszValue,
+                                                     bool bThreadLocal)
 {
     // Hack
     if (STARTS_WITH_CI(pszKey, "AWS_"))
         VSICurlAuthParametersChanged();
+
+    if (!gSetConfigOptionSubscribers.empty())
+    {
+        for (const auto &iter : gSetConfigOptionSubscribers)
+        {
+            if (iter.first)
+                iter.first(pszKey, pszValue, bThreadLocal, iter.second);
+        }
+    }
 }
 
 /************************************************************************/
@@ -1850,8 +1938,6 @@ static void NotifyOtherComponentsConfigOptionChanged(const char *pszKey,
 void CPL_STDCALL CPLSetConfigOption(const char *pszKey, const char *pszValue)
 
 {
-    NotifyOtherComponentsConfigOptionChanged(pszKey, pszValue);
-
 #ifdef DEBUG_CONFIG_OPTIONS
     CPLAccessConfigOption(pszKey, FALSE);
 #endif
@@ -1863,6 +1949,9 @@ void CPL_STDCALL CPLSetConfigOption(const char *pszKey, const char *pszValue)
 
     g_papszConfigOptions = const_cast<volatile char **>(CSLSetNameValue(
         const_cast<char **>(g_papszConfigOptions), pszKey, pszValue));
+
+    NotifyOtherComponentsConfigOptionChanged(pszKey, pszValue,
+                                             /*bTheadLocal=*/false);
 }
 
 /************************************************************************/
@@ -1904,8 +1993,6 @@ void CPL_STDCALL CPLSetThreadLocalConfigOption(const char *pszKey,
                                                const char *pszValue)
 
 {
-    NotifyOtherComponentsConfigOptionChanged(pszKey, pszValue);
-
 #ifdef DEBUG_CONFIG_OPTIONS
     CPLAccessConfigOption(pszKey, FALSE);
 #endif
@@ -1925,6 +2012,9 @@ void CPL_STDCALL CPLSetThreadLocalConfigOption(const char *pszKey,
 
     CPLSetTLSWithFreeFunc(CTLS_CONFIGOPTIONS, papszTLConfigOptions,
                           CPLSetThreadLocalTLSFreeFunc);
+
+    NotifyOtherComponentsConfigOptionChanged(pszKey, pszValue,
+                                             /*bTheadLocal=*/true);
 }
 
 /************************************************************************/
@@ -2932,58 +3022,9 @@ int CPLUnlinkTree(const char *pszPath)
 int CPLCopyFile(const char *pszNewPath, const char *pszOldPath)
 
 {
-    /* -------------------------------------------------------------------- */
-    /*      Open old and new file.                                          */
-    /* -------------------------------------------------------------------- */
-    VSILFILE *fpOld = VSIFOpenL(pszOldPath, "rb");
-    if (fpOld == nullptr)
-        return -1;
-
-    VSILFILE *fpNew = VSIFOpenL(pszNewPath, "wb");
-    if (fpNew == nullptr)
-    {
-        CPL_IGNORE_RET_VAL(VSIFCloseL(fpOld));
-        return -1;
-    }
-
-    /* -------------------------------------------------------------------- */
-    /*      Prepare buffer.                                                 */
-    /* -------------------------------------------------------------------- */
-    const size_t nBufferSize = 1024 * 1024;
-    GByte *pabyBuffer = static_cast<GByte *>(VSI_MALLOC_VERBOSE(nBufferSize));
-    if (pabyBuffer == nullptr)
-    {
-        CPL_IGNORE_RET_VAL(VSIFCloseL(fpNew));
-        CPL_IGNORE_RET_VAL(VSIFCloseL(fpOld));
-        return -1;
-    }
-
-    /* -------------------------------------------------------------------- */
-    /*      Copy file over till we run out of stuff.                        */
-    /* -------------------------------------------------------------------- */
-    size_t nBytesRead = 0;
-    int nRet = 0;
-    do
-    {
-        nBytesRead = VSIFReadL(pabyBuffer, 1, nBufferSize, fpOld);
-        if (long(nBytesRead) < 0)
-            nRet = -1;
-
-        if (nRet == 0 &&
-            VSIFWriteL(pabyBuffer, 1, nBytesRead, fpNew) < nBytesRead)
-            nRet = -1;
-    } while (nRet == 0 && nBytesRead == nBufferSize);
-
-    /* -------------------------------------------------------------------- */
-    /*      Cleanup                                                         */
-    /* -------------------------------------------------------------------- */
-    if (VSIFCloseL(fpNew) != 0)
-        nRet = -1;
-    CPL_IGNORE_RET_VAL(VSIFCloseL(fpOld));
-
-    CPLFree(pabyBuffer);
-
-    return nRet;
+    return VSICopyFile(pszOldPath, pszNewPath, nullptr,
+                       static_cast<vsi_l_offset>(-1), nullptr, nullptr,
+                       nullptr);
 }
 
 /************************************************************************/

@@ -1729,8 +1729,11 @@ HFARasterBand::HFARasterBand(HFADataset *poDSIn, int nBandIn, int iOverview)
         case EPT_u2:
         case EPT_u4:
         case EPT_u8:
-        case EPT_s8:
             eDataType = GDT_Byte;
+            break;
+
+        case EPT_s8:
+            eDataType = GDT_Int8;
             break;
 
         case EPT_u16:
@@ -1779,12 +1782,6 @@ HFARasterBand::HFARasterBand(HFADataset *poDSIn, int nBandIn, int iOverview)
         GDALMajorObject::SetMetadataItem(
             "NBITS", CPLString().Printf("%d", HFAGetDataTypeBits(eHFADataType)),
             "IMAGE_STRUCTURE");
-    }
-
-    if (eHFADataType == EPT_s8)
-    {
-        GDALMajorObject::SetMetadataItem("PIXELTYPE", "SIGNEDBYTE",
-                                         "IMAGE_STRUCTURE");
     }
 
     // Collect color table if present.
@@ -3064,8 +3061,6 @@ CPLErr HFARasterBand::WriteNamedRAT(const char * /*pszName*/,
 /************************************************************************/
 
 HFADataset::HFADataset()
-    : hHFA(nullptr), bMetadataDirty(false), bGeoDirty(false), bIgnoreUTM(false),
-      bForceToPEString(false), nGCPCount(0)
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
 
@@ -3112,13 +3107,13 @@ HFADataset::~HFADataset()
 /*                             FlushCache()                             */
 /************************************************************************/
 
-void HFADataset::FlushCache(bool bAtClosing)
+CPLErr HFADataset::FlushCache(bool bAtClosing)
 
 {
-    GDALPamDataset::FlushCache(bAtClosing);
+    CPLErr eErr = GDALPamDataset::FlushCache(bAtClosing);
 
     if (eAccess != GA_Update)
-        return;
+        return eErr;
 
     if (bGeoDirty)
         WriteProjection();
@@ -3140,10 +3135,7 @@ void HFADataset::FlushCache(bool bAtClosing)
         }
     }
 
-    if (nGCPCount > 0)
-    {
-        GDALDeinitGCPs(nGCPCount, asGCPList);
-    }
+    return eErr;
 }
 
 /************************************************************************/
@@ -3225,7 +3217,8 @@ CPLErr HFADataset::WriteProjection()
         }
 
         // Verify if we need to write a ESRI PE string.
-        bPEStringStored = CPL_TO_BOOL(WritePeStringIfNeeded(&oSRS, hHFA));
+        if (!bDisablePEString)
+            bPEStringStored = CPL_TO_BOOL(WritePeStringIfNeeded(&oSRS, hHFA));
 
         sPro.proSpheroid.sphereName =
             (char *)poGeogSRS->GetAttrValue("GEOGCS|DATUM|SPHEROID");
@@ -3294,6 +3287,28 @@ CPLErr HFADataset::WriteProjection()
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
     }
+    else if (EQUAL(pszProjName, SRS_PT_LAMBERT_CONFORMAL_CONIC_1SP))
+    {
+        // Not sure if Imagine has a mapping of LCC_1SP. In the mean time
+        // convert it to LCC_2SP
+        auto poTmpSRS = std::unique_ptr<OGRSpatialReference>(
+            oSRS.convertToOtherProjection(SRS_PT_LAMBERT_CONFORMAL_CONIC_2SP));
+        if (poTmpSRS)
+        {
+            sPro.proNumber = EPRJ_LAMBERT_CONFORMAL_CONIC;
+            sPro.proName = const_cast<char *>("Lambert Conformal Conic");
+            sPro.proParams[2] =
+                poTmpSRS->GetProjParm(SRS_PP_STANDARD_PARALLEL_1) * D2R;
+            sPro.proParams[3] =
+                poTmpSRS->GetProjParm(SRS_PP_STANDARD_PARALLEL_2) * D2R;
+            sPro.proParams[4] =
+                poTmpSRS->GetProjParm(SRS_PP_CENTRAL_MERIDIAN) * D2R;
+            sPro.proParams[5] =
+                poTmpSRS->GetProjParm(SRS_PP_LATITUDE_OF_ORIGIN) * D2R;
+            sPro.proParams[6] = poTmpSRS->GetProjParm(SRS_PP_FALSE_EASTING);
+            sPro.proParams[7] = poTmpSRS->GetProjParm(SRS_PP_FALSE_NORTHING);
+        }
+    }
     else if (EQUAL(pszProjName, SRS_PT_LAMBERT_CONFORMAL_CONIC_2SP))
     {
         sPro.proNumber = EPRJ_LAMBERT_CONFORMAL_CONIC;
@@ -3324,6 +3339,25 @@ CPLErr HFADataset::WriteProjection()
         sPro.proParams[2] = oSRS.GetProjParm(SRS_PP_SCALE_FACTOR);
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
+    }
+    else if (EQUAL(pszProjName, SRS_PT_MERCATOR_2SP))
+    {
+        // Not sure if Imagine has a mapping of Mercator_2SP. In the mean time
+        // convert it to Mercator_1SP
+        auto poTmpSRS = std::unique_ptr<OGRSpatialReference>(
+            oSRS.convertToOtherProjection(SRS_PT_MERCATOR_1SP));
+        if (poTmpSRS)
+        {
+            sPro.proNumber = EPRJ_MERCATOR_VARIANT_A;
+            sPro.proName = const_cast<char *>("Mercator (Variant A)");
+            sPro.proParams[4] =
+                poTmpSRS->GetProjParm(SRS_PP_CENTRAL_MERIDIAN) * D2R;
+            sPro.proParams[5] =
+                poTmpSRS->GetProjParm(SRS_PP_LATITUDE_OF_ORIGIN) * D2R;
+            sPro.proParams[2] = poTmpSRS->GetProjParm(SRS_PP_SCALE_FACTOR);
+            sPro.proParams[6] = poTmpSRS->GetProjParm(SRS_PP_FALSE_EASTING);
+            sPro.proParams[7] = poTmpSRS->GetProjParm(SRS_PP_FALSE_NORTHING);
+        }
     }
     else if (EQUAL(pszProjName, SRS_PT_KROVAK))
     {
@@ -3441,7 +3475,7 @@ CPLErr HFADataset::WriteProjection()
         sPro.proNumber = EPRJ_EQUIRECTANGULAR;
         sPro.proName = const_cast<char *>("Equirectangular");
         sPro.proParams[4] = oSRS.GetProjParm(SRS_PP_CENTRAL_MERIDIAN) * D2R;
-        sPro.proParams[5] = oSRS.GetProjParm(SRS_PP_LATITUDE_OF_ORIGIN) * D2R;
+        sPro.proParams[5] = oSRS.GetProjParm(SRS_PP_STANDARD_PARALLEL_1) * D2R;
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
     }
@@ -3618,7 +3652,7 @@ CPLErr HFADataset::WriteProjection()
         sPro.proNumber = EPRJ_LOXIMUTHAL;
         sPro.proName = const_cast<char *>("Loximuthal");
         sPro.proParams[4] = oSRS.GetProjParm(SRS_PP_CENTRAL_MERIDIAN) * D2R;
-        sPro.proParams[5] = oSRS.GetProjParm("central_parallel") * D2R;
+        sPro.proParams[5] = oSRS.GetProjParm("latitude_of_origin") * D2R;
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
     }
@@ -3650,6 +3684,7 @@ CPLErr HFADataset::WriteProjection()
     }
     else if (EQUAL(pszProjName, "Behrmann"))
     {
+        // Mapped to Lambert Cylindrical Equal Area in recent PROJ versions
         sPro.proNumber = EPRJ_BEHRMANN;
         sPro.proName = const_cast<char *>("Behrmann");
         sPro.proParams[4] = oSRS.GetProjParm(SRS_PP_CENTRAL_MERIDIAN) * D2R;
@@ -3658,6 +3693,7 @@ CPLErr HFADataset::WriteProjection()
     }
     else if (EQUAL(pszProjName, "Equidistant_Cylindrical"))
     {
+        // Dead code path. Mapped to Equirectangular
         sPro.proNumber = EPRJ_EQUIDISTANT_CYLINDRICAL;
         sPro.proName = const_cast<char *>("Equidistant_Cylindrical");
         sPro.proParams[2] = oSRS.GetProjParm(SRS_PP_STANDARD_PARALLEL_1) * D2R;
@@ -3748,7 +3784,9 @@ CPLErr HFADataset::WriteProjection()
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
     }
-    else if (EQUAL(pszProjName, "Vertical_Near_Side_Perspective"))
+    else if (
+        EQUAL(pszProjName,
+              "Vertical_Near_Side_Perspective"))  // ESRI WKT, before PROJ 6.3.0
     {
         sPro.proNumber = EPRJ_VERTICAL_NEAR_SIDE_PERSPECTIVE;
         sPro.proName = const_cast<char *>("Vertical_Near_Side_Perspective");
@@ -3757,6 +3795,19 @@ CPLErr HFADataset::WriteProjection()
             oSRS.GetProjParm(SRS_PP_LONGITUDE_OF_CENTER, 75.0) * D2R;
         sPro.proParams[5] =
             oSRS.GetProjParm(SRS_PP_LATITUDE_OF_CENTER, 40.0) * D2R;
+        sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
+        sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
+    }
+    else if (EQUAL(pszProjName,
+                   "Vertical Perspective"))  // WKT2, starting with PROJ 6.3.0
+    {
+        sPro.proNumber = EPRJ_VERTICAL_NEAR_SIDE_PERSPECTIVE;
+        sPro.proName = const_cast<char *>("Vertical_Near_Side_Perspective");
+        sPro.proParams[2] = oSRS.GetProjParm("Viewpoint height");
+        sPro.proParams[4] =
+            oSRS.GetProjParm("Longitude of topocentric origin", 75.0) * D2R;
+        sPro.proParams[5] =
+            oSRS.GetProjParm("Latitude of topocentric origin", 40.0) * D2R;
         sPro.proParams[6] = oSRS.GetProjParm(SRS_PP_FALSE_EASTING);
         sPro.proParams[7] = oSRS.GetProjParm(SRS_PP_FALSE_NORTHING);
     }
@@ -4125,16 +4176,52 @@ CPLErr HFADataset::ReadProjection()
 
     m_oSRS.Clear();
 
-    if ((psMapInfo == nullptr && poMapInformation == nullptr) ||
-        ((!psDatum || strlen(psDatum->datumname) == 0 ||
-          EQUAL(psDatum->datumname, "Unknown")) &&
-         (!psPro || strlen(psPro->proName) == 0 ||
-          EQUAL(psPro->proName, "Unknown")) &&
-         (psMapInfo && (strlen(psMapInfo->proName) == 0 ||
-                        EQUAL(psMapInfo->proName, "Unknown"))) &&
-         (!psPro || psPro->proZone == 0)))
+    if (psMapInfo == nullptr && poMapInformation == nullptr)
     {
         return CE_None;
+    }
+    else if (((!psDatum || strlen(psDatum->datumname) == 0 ||
+               EQUAL(psDatum->datumname, "Unknown")) &&
+              (!psPro || strlen(psPro->proName) == 0 ||
+               EQUAL(psPro->proName, "Unknown")) &&
+              (psMapInfo && (strlen(psMapInfo->proName) == 0 ||
+                             EQUAL(psMapInfo->proName, "Unknown"))) &&
+              (!psPro || psPro->proZone == 0)))
+    {
+        // It is not clear if Erdas Imagine would recognize a ESRI_PE string
+        // alone, but versions of GDAL between 3.0 and 3.6.3 have written CRS
+        // using for example the Vertical Projection with a ESRI_PE string only.
+        char *pszPE_COORDSYS = HFAGetPEString(hHFA);
+        OGRSpatialReference oSRSFromPE;
+        oSRSFromPE.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        if (pszPE_COORDSYS != nullptr && strlen(pszPE_COORDSYS) > 0 &&
+            // Config option for testing purposes only/mostly
+            CPLTestBool(CPLGetConfigOption("HFA_USE_ESRI_PE_STRING", "YES")) &&
+            oSRSFromPE.importFromWkt(pszPE_COORDSYS) == OGRERR_NONE)
+        {
+            const char *pszProjName =
+                oSRSFromPE.GetAttrValue("PROJCS|PROJECTION");
+            if (pszProjName &&
+                (EQUAL(pszProjName, "Vertical Perspective") ||
+                 EQUAL(pszProjName, "Vertical_Near_Side_Perspective")) &&
+                CPLTestBool(CPLGetConfigOption(
+                    "HFA_SHOW_ESRI_PE_STRING_ONLY_WARNING", "YES")))
+            {
+                CPLError(CE_Warning, CPLE_AppDefined,
+                         "A ESRI_PE string encoding a CRS has been found for "
+                         "projection method %s, but no corresponding "
+                         "Eprj_ProParameters are present. This file has likely "
+                         "been generated by GDAL >= 3.0 and <= 3.6.2. It is "
+                         "recommended to recreate it, e.g with gdal_translate, "
+                         "with GDAL >= 3.6.3. This warning can be suppressed "
+                         "by setting the HFA_SHOW_ESRI_PE_STRING_ONLY_WARNING "
+                         "configuration option to NO.",
+                         pszProjName);
+            }
+            m_oSRS = oSRSFromPE;
+        }
+        CPLFree(pszPE_COORDSYS);
+        return m_oSRS.IsEmpty() ? CE_Failure : CE_None;
     }
 
     auto poSRS = HFAPCSStructToOSR(psDatum, psPro, psMapInfo, poMapInformation);
@@ -4154,6 +4241,8 @@ CPLErr HFADataset::ReadProjection()
     OGRSpatialReference oSRSFromPE;
     oSRSFromPE.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     if (pszPE_COORDSYS != nullptr && strlen(pszPE_COORDSYS) > 0 &&
+        // Config option for testing purposes only/mostly
+        CPLTestBool(CPLGetConfigOption("HFA_USE_ESRI_PE_STRING", "YES")) &&
         oSRSFromPE.importFromWkt(pszPE_COORDSYS) == OGRERR_NONE)
     {
         m_oSRS = oSRSFromPE;
@@ -4722,6 +4811,10 @@ GDALDataset *HFADataset::Create(const char *pszFilenameIn, int nXSize,
                 eHfaDataType = EPT_u8;
             break;
 
+        case GDT_Int8:
+            eHfaDataType = EPT_s8;
+            break;
+
         case GDT_UInt16:
             eHfaDataType = EPT_u16;
             break;
@@ -4762,6 +4855,17 @@ GDALDataset *HFADataset::Create(const char *pszFilenameIn, int nXSize,
             return nullptr;
     }
 
+    const bool bForceToPEString =
+        CPLFetchBool(papszParamList, "FORCETOPESTRING", false);
+    const bool bDisablePEString =
+        CPLFetchBool(papszParamList, "DISABLEPESTRING", false);
+    if (bForceToPEString && bDisablePEString)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "FORCETOPESTRING and DISABLEPESTRING are mutually exclusive");
+        return nullptr;
+    }
+
     // Create the new file.
     HFAHandle hHFA = HFACreate(pszFilenameIn, nXSize, nYSize, nBandsIn,
                                eHfaDataType, papszParamList);
@@ -4790,8 +4894,8 @@ GDALDataset *HFADataset::Create(const char *pszFilenameIn, int nXSize,
     // coordinate system descriptions.
     if (poDS != nullptr)
     {
-        poDS->bForceToPEString =
-            CPLFetchBool(papszParamList, "FORCETOPESTRING", false);
+        poDS->bForceToPEString = bForceToPEString;
+        poDS->bDisablePEString = bDisablePEString;
     }
 
     return poDS;
@@ -4902,25 +5006,32 @@ GDALDataset *HFADataset::CreateCopy(const char *pszFilename,
     }
 
     const int nBandCount = poSrcDS->GetRasterCount();
-    GDALDataType eType = GDT_Byte;
+    GDALDataType eType = GDT_Unknown;
 
     for (int iBand = 0; iBand < nBandCount; iBand++)
     {
         GDALRasterBand *poBand = poSrcDS->GetRasterBand(iBand + 1);
-        eType = GDALDataTypeUnion(eType, poBand->GetRasterDataType());
+        if (iBand == 0)
+            eType = poBand->GetRasterDataType();
+        else
+            eType = GDALDataTypeUnion(eType, poBand->GetRasterDataType());
     }
 
     // If we have PIXELTYPE metadata in the source, pass it
     // through as a creation option.
     if (CSLFetchNameValue(papszOptions, "PIXELTYPE") == nullptr &&
-        nBandCount > 0 && eType == GDT_Byte &&
-        poSrcDS->GetRasterBand(1)->GetMetadataItem("PIXELTYPE",
-                                                   "IMAGE_STRUCTURE"))
+        nBandCount > 0 && eType == GDT_Byte)
     {
-        papszModOptions =
-            CSLSetNameValue(papszModOptions, "PIXELTYPE",
-                            poSrcDS->GetRasterBand(1)->GetMetadataItem(
-                                "PIXELTYPE", "IMAGE_STRUCTURE"));
+        auto poSrcBand = poSrcDS->GetRasterBand(1);
+        poSrcBand->EnablePixelTypeSignedByteWarning(false);
+        const char *pszPixelType =
+            poSrcBand->GetMetadataItem("PIXELTYPE", "IMAGE_STRUCTURE");
+        poSrcBand->EnablePixelTypeSignedByteWarning(true);
+        if (pszPixelType)
+        {
+            papszModOptions =
+                CSLSetNameValue(papszModOptions, "PIXELTYPE", pszPixelType);
+        }
     }
 
     HFADataset *poDS = (HFADataset *)Create(
@@ -5108,9 +5219,10 @@ void GDALRegister_HFA()
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "Erdas Imagine Images (.img)");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/hfa.html");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "img");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int16 UInt16 Int32 UInt32 Float32 Float64 "
-                              "CFloat32 CFloat64");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_CREATIONDATATYPES,
+        "Byte Int8 Int16 UInt16 Int32 UInt32 Float32 Float64 "
+        "CFloat32 CFloat64");
 
     poDriver->SetMetadataItem(
         GDAL_DMD_CREATIONOPTIONLIST,
@@ -5121,9 +5233,9 @@ void GDALRegister_HFA()
         "spill file'/>"
         "   <Option name='COMPRESSED' alias='COMPRESS' type='boolean' "
         "description='compress blocks'/>"
-        "   <Option name='PIXELTYPE' type='string' description='By setting "
-        "this to SIGNEDBYTE, a new Byte file can be forced to be written as "
-        "signed byte'/>"
+        "   <Option name='PIXELTYPE' type='string' description='(deprecated, "
+        "use Int8) By setting this to SIGNEDBYTE, a new Byte file can be "
+        "forced to be written as signed byte'/>"
         "   <Option name='AUX' type='boolean' description='Create an .aux "
         "file'/>"
         "   <Option name='IGNOREUTM' type='boolean' description='Ignore UTM "
@@ -5137,7 +5249,9 @@ void GDALRegister_HFA()
         "dependent file (must not have absolute path)'/>"
         "   <Option name='FORCETOPESTRING' type='boolean' description='Force "
         "use of ArcGIS PE String in file instead of Imagine coordinate system "
-        "format'/>"
+        "format' default='NO'/>"
+        "   <Option name='DISABLEPESTRING' type='boolean' description='Disable "
+        "use of ArcGIS PE String' default='NO'/>"
         "</CreationOptionList>");
 
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");

@@ -182,7 +182,7 @@ VRTDriver::ParseSource(CPLXMLNode *psSrc, const char *pszVRTPath,
 /************************************************************************/
 
 static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
-                                  int /* bStrict */, char ** /* papszOptions */,
+                                  int /* bStrict */, char **papszOptions,
                                   GDALProgressFunc /* pfnProgress */,
                                   void * /* pProgressData */)
 {
@@ -203,9 +203,9 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         /* --------------------------------------------------------------------
          */
         char *pszVRTPath = CPLStrdup(CPLGetPath(pszFilename));
-        static_cast<VRTDataset *>(poSrcDS)->UnsetPreservedRelativeFilenames();
-        CPLXMLNode *psDSTree =
-            static_cast<VRTDataset *>(poSrcDS)->SerializeToXML(pszVRTPath);
+        auto poSrcVRTDS = cpl::down_cast<VRTDataset *>(poSrcDS);
+        poSrcVRTDS->UnsetPreservedRelativeFilenames();
+        CPLXMLNode *psDSTree = poSrcVRTDS->SerializeToXML(pszVRTPath);
 
         char *pszXML = CPLSerializeXMLTree(psDSTree);
 
@@ -276,9 +276,9 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /* -------------------------------------------------------------------- */
     /*      Create the virtual dataset.                                     */
     /* -------------------------------------------------------------------- */
-    VRTDataset *poVRTDS = static_cast<VRTDataset *>(
-        VRTDataset::Create(pszFilename, poSrcDS->GetRasterXSize(),
-                           poSrcDS->GetRasterYSize(), 0, GDT_Byte, nullptr));
+    VRTDataset *poVRTDS = static_cast<VRTDataset *>(VRTDataset::Create(
+        pszFilename, poSrcDS->GetRasterXSize(), poSrcDS->GetRasterYSize(), 0,
+        GDT_Byte, papszOptions));
     if (poVRTDS == nullptr)
         return nullptr;
 
@@ -300,22 +300,78 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /* -------------------------------------------------------------------- */
     /*      Emit dataset level metadata.                                    */
     /* -------------------------------------------------------------------- */
-    poVRTDS->SetMetadata(poSrcDS->GetMetadata());
+    const char *pszCopySrcMDD =
+        CSLFetchNameValueDef(papszOptions, "COPY_SRC_MDD", "AUTO");
+    char **papszSrcMDD = CSLFetchNameValueMultiple(papszOptions, "SRC_MDD");
+    if (EQUAL(pszCopySrcMDD, "AUTO") || CPLTestBool(pszCopySrcMDD) ||
+        papszSrcMDD)
+    {
+        if (!papszSrcMDD || CSLFindString(papszSrcMDD, "") >= 0 ||
+            CSLFindString(papszSrcMDD, "_DEFAULT_") >= 0)
+        {
+            poVRTDS->SetMetadata(poSrcDS->GetMetadata());
+        }
 
-    /* -------------------------------------------------------------------- */
-    /*      Copy any special domains that should be transportable.          */
-    /* -------------------------------------------------------------------- */
-    char **papszMD = poSrcDS->GetMetadata("RPC");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "RPC");
+        /* -------------------------------------------------------------------- */
+        /*      Copy any special domains that should be transportable.          */
+        /* -------------------------------------------------------------------- */
+        constexpr const char *apszDefaultDomains[] = {"RPC", "IMD",
+                                                      "GEOLOCATION"};
+        for (const char *pszDomain : apszDefaultDomains)
+        {
+            if (!papszSrcMDD || CSLFindString(papszSrcMDD, pszDomain) >= 0)
+            {
+                char **papszMD = poSrcDS->GetMetadata(pszDomain);
+                if (papszMD)
+                    poVRTDS->SetMetadata(papszMD, pszDomain);
+            }
+        }
 
-    papszMD = poSrcDS->GetMetadata("IMD");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "IMD");
-
-    papszMD = poSrcDS->GetMetadata("GEOLOCATION");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "GEOLOCATION");
+        if ((!EQUAL(pszCopySrcMDD, "AUTO") && CPLTestBool(pszCopySrcMDD)) ||
+            papszSrcMDD)
+        {
+            char **papszDomainList = poSrcDS->GetMetadataDomainList();
+            constexpr const char *apszReservedDomains[] = {
+                "IMAGE_STRUCTURE", "DERIVED_SUBDATASETS"};
+            for (char **papszIter = papszDomainList; papszIter && *papszIter;
+                 ++papszIter)
+            {
+                const char *pszDomain = *papszIter;
+                if (pszDomain[0] != 0 &&
+                    (!papszSrcMDD ||
+                     CSLFindString(papszSrcMDD, pszDomain) >= 0))
+                {
+                    bool bCanCopy = true;
+                    for (const char *pszOtherDomain : apszDefaultDomains)
+                    {
+                        if (EQUAL(pszDomain, pszOtherDomain))
+                        {
+                            bCanCopy = false;
+                            break;
+                        }
+                    }
+                    if (!papszSrcMDD)
+                    {
+                        for (const char *pszOtherDomain : apszReservedDomains)
+                        {
+                            if (EQUAL(pszDomain, pszOtherDomain))
+                            {
+                                bCanCopy = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (bCanCopy)
+                    {
+                        poVRTDS->SetMetadata(poSrcDS->GetMetadata(pszDomain),
+                                             pszDomain);
+                    }
+                }
+            }
+            CSLDestroy(papszDomainList);
+        }
+    }
+    CSLDestroy(papszSrcMDD);
 
     {
         const char *pszInterleave =
@@ -358,12 +414,16 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         /* --------------------------------------------------------------------
          */
         CPLStringList aosAddBandOptions;
-        int nSrcBlockXSize, nSrcBlockYSize;
-        poSrcBand->GetBlockSize(&nSrcBlockXSize, &nSrcBlockYSize);
+        int nBlockXSize = poVRTDS->GetBlockXSize();
+        int nBlockYSize = poVRTDS->GetBlockYSize();
+        if (!poVRTDS->IsBlockSizeSpecified())
+        {
+            poSrcBand->GetBlockSize(&nBlockXSize, &nBlockYSize);
+        }
         aosAddBandOptions.SetNameValue("BLOCKXSIZE",
-                                       CPLSPrintf("%d", nSrcBlockXSize));
+                                       CPLSPrintf("%d", nBlockXSize));
         aosAddBandOptions.SetNameValue("BLOCKYSIZE",
-                                       CPLSPrintf("%d", nSrcBlockYSize));
+                                       CPLSPrintf("%d", nBlockYSize));
         poVRTDS->AddBand(poSrcBand->GetRasterDataType(), aosAddBandOptions);
 
         VRTSourcedRasterBand *poVRTBand = static_cast<VRTSourcedRasterBand *>(
@@ -457,10 +517,22 @@ void GDALRegister_VRT()
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "Virtual Raster");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "vrt");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/vrt.html");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int16 UInt16 Int32 UInt32 Int64 UInt64 "
-                              "Float32 Float64 "
-                              "CInt16 CInt32 CFloat32 CFloat64");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_CREATIONDATATYPES,
+        "Byte Int8 Int16 UInt16 Int32 UInt32 Int64 UInt64 "
+        "Float32 Float64 "
+        "CInt16 CInt32 CFloat32 CFloat64");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_CREATIONOPTIONLIST,
+        "<CreationOptionList>\n"
+        "   <Option name='SUBCLASS' type='string-select' "
+        "default='VRTDataset'>\n"
+        "       <Value>VRTDataset</Value>\n"
+        "       <Value>VRTWarpedDataset</Value>\n"
+        "   </Option>\n"
+        "   <Option name='BLOCKXSIZE' type='int' description='Block width'/>\n"
+        "   <Option name='BLOCKYSIZE' type='int' description='Block height'/>\n"
+        "</CreationOptionList>\n");
 
     poDriver->pfnOpen = VRTDataset::Open;
     poDriver->pfnCreateCopy = VRTCreateCopy;
@@ -486,6 +558,7 @@ void GDALRegister_VRT()
     poDriver->AddSourceParser("ComplexSource", VRTParseCoreSources);
     poDriver->AddSourceParser("AveragedSource", VRTParseCoreSources);
     poDriver->AddSourceParser("KernelFilteredSource", VRTParseFilterSources);
+    poDriver->AddSourceParser("ArraySource", VRTParseArraySource);
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
 }

@@ -114,15 +114,6 @@
 /*      MinGW stuff                                                     */
 /* ==================================================================== */
 
-/* We need __MSVCRT_VERSION__ >= 0x0700 to have "_aligned_malloc" */
-/* Latest versions of mingw32 define it, but with older ones, */
-/* we need to define it manually */
-#if defined(__MINGW32__)
-#ifndef __MSVCRT_VERSION__
-#define __MSVCRT_VERSION__ 0x0700
-#endif
-#endif
-
 /* Needed for std=c11 on Solaris to have strcasecmp() */
 #if defined(GDAL_COMPILATION) && defined(__sun__) &&                           \
     (__STDC_VERSION__ + 0) >= 201112L && (_XOPEN_SOURCE + 0) < 600
@@ -203,6 +194,8 @@ typedef short GInt16;
 typedef unsigned short GUInt16;
 /** Unsigned byte type */
 typedef unsigned char GByte;
+/** Signed int8 type */
+typedef signed char GInt8;
 /* hack for PDF driver and poppler >= 0.15.0 that defines incompatible "typedef
  * bool GBool" */
 /* in include/poppler/goo/gtypes.h */
@@ -1084,14 +1077,6 @@ int sprintf(char *str, const char *fmt, ...) CPL_PRINT_FUNC_FORMAT(2, 3)
 CPL_C_END
 #endif /* !defined(_MSC_VER) && !defined(__APPLE__) */
 
-#if defined(MAKE_SANITIZE_HAPPY) ||                                            \
-    !(defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) ||          \
-      defined(_M_X64))
-/*! @cond Doxygen_Suppress */
-#define CPL_CPU_REQUIRES_ALIGNED_ACCESS
-/*! @endcond */
-#endif
-
 #if defined(__cplusplus)
 #ifndef CPPCHECK
 /** Returns the size of C style arrays. */
@@ -1127,13 +1112,16 @@ extern "C++"
 #define HAVE_GCC_SYSTEM_HEADER
 #endif
 
-#if ((defined(__clang__) &&                                                    \
-      (__clang_major__ > 3 ||                                                  \
-       (__clang_major__ == 3 && __clang_minor__ >= 7))) ||                     \
-     __GNUC__ >= 7)
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(fallthrough)
+/** Macro for fallthrough in a switch case construct */
+#define CPL_FALLTHROUGH [[fallthrough]];
+#endif
+#elif defined(__clang__) || __GNUC__ >= 7
 /** Macro for fallthrough in a switch case construct */
 #define CPL_FALLTHROUGH [[clang::fallthrough]];
-#else
+#endif
+#ifndef CPL_FALLTHROUGH
 /** Macro for fallthrough in a switch case construct */
 #define CPL_FALLTHROUGH
 #endif

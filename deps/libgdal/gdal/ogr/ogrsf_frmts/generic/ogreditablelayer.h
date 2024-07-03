@@ -91,6 +91,8 @@ class CPL_DLL OGREditableLayer : public OGRLayerDecorator
                                       double dfMaxY) override;
 
     virtual OGRErr SetAttributeFilter(const char *) override;
+    virtual bool GetArrowStream(struct ArrowArrayStream *out_stream,
+                                CSLConstList papszOptions = nullptr) override;
 
     virtual void ResetReading() override;
     virtual OGRFeature *GetNextFeature() override;
@@ -99,6 +101,11 @@ class CPL_DLL OGREditableLayer : public OGRLayerDecorator
     virtual OGRErr ISetFeature(OGRFeature *poFeature) override;
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
     virtual OGRErr IUpsertFeature(OGRFeature *poFeature) override;
+    OGRErr IUpdateFeature(OGRFeature *poFeature, int nUpdatedFieldsCount,
+                          const int *panUpdatedFieldsIdx,
+                          int nUpdatedGeomFieldsCount,
+                          const int *panUpdatedGeomFieldsIdx,
+                          bool bUpdateStyleString) override;
     virtual OGRErr DeleteFeature(GIntBig nFID) override;
 
     virtual OGRwkbGeometryType GetGeomType() override;

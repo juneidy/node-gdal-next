@@ -50,53 +50,6 @@
 #include "sqlite3.h"
 
 /************************************************************************/
-/*                       OGRSQLiteExecuteSQLLayer                       */
-/************************************************************************/
-
-class OGRSQLiteExecuteSQLLayer final : public OGRSQLiteSelectLayer
-{
-    char *pszTmpDBName;
-
-  public:
-    OGRSQLiteExecuteSQLLayer(char *pszTmpDBName, OGRSQLiteDataSource *poDS,
-                             const CPLString &osSQL, sqlite3_stmt *hStmt,
-                             bool bUseStatementForGetNextFeature,
-                             bool bEmptyLayer);
-    virtual ~OGRSQLiteExecuteSQLLayer();
-};
-
-/************************************************************************/
-/*                         OGRSQLiteExecuteSQLLayer()                   */
-/************************************************************************/
-
-OGRSQLiteExecuteSQLLayer::OGRSQLiteExecuteSQLLayer(
-    char *pszTmpDBNameIn, OGRSQLiteDataSource *poDSIn, const CPLString &osSQL,
-    sqlite3_stmt *hStmtIn, bool bUseStatementForGetNextFeature,
-    bool bEmptyLayer)
-    : OGRSQLiteSelectLayer(poDSIn, osSQL, hStmtIn,
-                           bUseStatementForGetNextFeature, bEmptyLayer, true),
-      pszTmpDBName(pszTmpDBNameIn)
-{
-}
-
-/************************************************************************/
-/*                        ~OGRSQLiteExecuteSQLLayer()                   */
-/************************************************************************/
-
-OGRSQLiteExecuteSQLLayer::~OGRSQLiteExecuteSQLLayer()
-{
-    // This is a bit peculiar: we must "finalize" the OGRLayer, since
-    // it has objects that depend on the datasource, that we are just
-    // going to destroy afterwards. The issue here is that we destroy
-    // our own datasource,
-    Finalize();
-
-    delete m_poDS;
-    VSIUnlink(pszTmpDBName);
-    CPLFree(pszTmpDBName);
-}
-
-/************************************************************************/
 /*                       OGR2SQLITEExtractUnquotedString()              */
 /************************************************************************/
 
@@ -104,34 +57,77 @@ static CPLString OGR2SQLITEExtractUnquotedString(const char **ppszSQLCommand)
 {
     CPLString osRet;
     const char *pszSQLCommand = *ppszSQLCommand;
-    char chQuoteChar = 0;
-
     if (*pszSQLCommand == '"' || *pszSQLCommand == '\'')
     {
-        chQuoteChar = *pszSQLCommand;
+        const char chQuoteChar = *pszSQLCommand;
         pszSQLCommand++;
+
+        while (*pszSQLCommand != '\0')
+        {
+            if (*pszSQLCommand == chQuoteChar &&
+                pszSQLCommand[1] == chQuoteChar)
+            {
+                pszSQLCommand++;
+                osRet += chQuoteChar;
+            }
+            else if (*pszSQLCommand == chQuoteChar)
+            {
+                pszSQLCommand++;
+                break;
+            }
+            else
+                osRet += *pszSQLCommand;
+
+            pszSQLCommand++;
+        }
     }
-
-    while (*pszSQLCommand != '\0')
+    else
     {
-        if (*pszSQLCommand == chQuoteChar && pszSQLCommand[1] == chQuoteChar)
+        bool bNotATableName = false;
+        char chQuoteChar = 0;
+        int nParenthesisLevel = 0;
+        while (*pszSQLCommand != '\0')
         {
-            pszSQLCommand++;
-            osRet += chQuoteChar;
-        }
-        else if (*pszSQLCommand == chQuoteChar)
-        {
-            pszSQLCommand++;
-            break;
-        }
-        else if (chQuoteChar == '\0' &&
-                 (isspace((int)*pszSQLCommand) || *pszSQLCommand == '.' ||
-                  *pszSQLCommand == ')' || *pszSQLCommand == ','))
-            break;
-        else
-            osRet += *pszSQLCommand;
+            if (*pszSQLCommand == chQuoteChar &&
+                pszSQLCommand[1] == chQuoteChar)
+            {
+                osRet += *pszSQLCommand;
+                pszSQLCommand++;
+            }
+            else if (*pszSQLCommand == chQuoteChar)
+            {
+                chQuoteChar = 0;
+            }
+            else if (chQuoteChar == 0)
+            {
+                if (*pszSQLCommand == '(')
+                {
+                    bNotATableName = true;
+                    nParenthesisLevel++;
+                }
+                else if (*pszSQLCommand == ')')
+                {
+                    nParenthesisLevel--;
+                    if (nParenthesisLevel < 0)
+                        break;
+                }
+                else if (*pszSQLCommand == '"' || *pszSQLCommand == '\'')
+                {
+                    chQuoteChar = *pszSQLCommand;
+                }
+                else if (nParenthesisLevel == 0 &&
+                         (isspace((int)*pszSQLCommand) ||
+                          *pszSQLCommand == '.' || *pszSQLCommand == ','))
+                {
+                    break;
+                }
+            }
 
-        pszSQLCommand++;
+            osRet += *pszSQLCommand;
+            pszSQLCommand++;
+        }
+        if (bNotATableName)
+            osRet.clear();
     }
 
     *ppszSQLCommand = pszSQLCommand;
@@ -434,12 +430,6 @@ static void OGR2SQLITEGetPotentialLayerNamesInternal(
             OGR2SQLITEAddLayer(pszStart, nNum, pszSQLCommand, oSetLayers,
                                osModifiedSQL);
         }
-        else if (STARTS_WITH_CI(pszSQLCommand, "DROP TABLE "))
-        {
-            pszSQLCommand += strlen("DROP TABLE") + 1;
-            OGR2SQLITEAddLayer(pszStart, nNum, pszSQLCommand, oSetLayers,
-                               osModifiedSQL);
-        }
         else
             pszSQLCommand++;
     }
@@ -458,6 +448,84 @@ static void OGR2SQLITEGetPotentialLayerNames(
     int nNum = 1;
     OGR2SQLITEGetPotentialLayerNamesInternal(
         &pszSQLCommand, oSetLayers, oSetSpatialIndex, osModifiedSQL, nNum);
+}
+
+/************************************************************************/
+/*                   OGRSQLiteGetReferencedLayers()                     */
+/************************************************************************/
+
+std::set<LayerDesc> OGRSQLiteGetReferencedLayers(const char *pszStatement)
+{
+    /* -------------------------------------------------------------------- */
+    /*      Analyze the statement to determine which tables will be used.   */
+    /* -------------------------------------------------------------------- */
+    std::set<LayerDesc> oSetLayers;
+    std::set<CPLString> oSetSpatialIndex;
+    CPLString osModifiedSQL;
+    OGR2SQLITEGetPotentialLayerNames(pszStatement, oSetLayers, oSetSpatialIndex,
+                                     osModifiedSQL);
+
+    return oSetLayers;
+}
+
+#ifndef HAVE_SQLITE3EXT_H
+OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *, const char *, OGRGeometry *,
+                              const char *)
+{
+    CPLError(CE_Failure, CPLE_NotSupported,
+             "SQL SQLite dialect not supported due to GDAL being built "
+             "without sqlite3ext.h header");
+    return nullptr;
+}
+
+#else
+
+/************************************************************************/
+/*                       OGRSQLiteExecuteSQLLayer                       */
+/************************************************************************/
+
+class OGRSQLiteExecuteSQLLayer final : public OGRSQLiteSelectLayer
+{
+    char *pszTmpDBName;
+
+  public:
+    OGRSQLiteExecuteSQLLayer(char *pszTmpDBName, OGRSQLiteDataSource *poDS,
+                             const CPLString &osSQL, sqlite3_stmt *hStmt,
+                             bool bUseStatementForGetNextFeature,
+                             bool bEmptyLayer, bool bCanReopenBaseDS);
+    virtual ~OGRSQLiteExecuteSQLLayer();
+};
+
+/************************************************************************/
+/*                         OGRSQLiteExecuteSQLLayer()                   */
+/************************************************************************/
+
+OGRSQLiteExecuteSQLLayer::OGRSQLiteExecuteSQLLayer(
+    char *pszTmpDBNameIn, OGRSQLiteDataSource *poDSIn, const CPLString &osSQL,
+    sqlite3_stmt *hStmtIn, bool bUseStatementForGetNextFeature,
+    bool bEmptyLayer, bool bCanReopenBaseDS)
+    : OGRSQLiteSelectLayer(poDSIn, osSQL, hStmtIn,
+                           bUseStatementForGetNextFeature, bEmptyLayer, true,
+                           bCanReopenBaseDS),
+      pszTmpDBName(pszTmpDBNameIn)
+{
+}
+
+/************************************************************************/
+/*                        ~OGRSQLiteExecuteSQLLayer()                   */
+/************************************************************************/
+
+OGRSQLiteExecuteSQLLayer::~OGRSQLiteExecuteSQLLayer()
+{
+    // This is a bit peculiar: we must "finalize" the OGRLayer, since
+    // it has objects that depend on the datasource, that we are just
+    // going to destroy afterwards. The issue here is that we destroy
+    // our own datasource,
+    Finalize();
+
+    delete m_poDS;
+    VSIUnlink(pszTmpDBName);
+    CPLFree(pszTmpDBName);
 }
 
 /************************************************************************/
@@ -515,7 +583,7 @@ static int OGR2SQLITEDealWithSpatialColumn(
     CPLString osIdxNameEscaped(SQLEscapeName(osIdxNameRaw));
 
     /* Make sure that the SRS is injected in spatial_ref_sys */
-    OGRSpatialReference *poSRS = poGeomField->GetSpatialRef();
+    const OGRSpatialReference *poSRS = poGeomField->GetSpatialRef();
     if (iGeomCol == 0 && poSRS == nullptr)
         poSRS = poLayer->GetSpatialRef();
     int nSRSId = poSQLiteDS->GetUndefinedSRID();
@@ -716,6 +784,47 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
     while (*pszStatement != '\0' && isspace(*pszStatement))
         pszStatement++;
 
+    if (STARTS_WITH_CI(pszStatement, "ALTER TABLE ") ||
+        STARTS_WITH_CI(pszStatement, "DROP TABLE ") ||
+        STARTS_WITH_CI(pszStatement, "CREATE INDEX ") ||
+        STARTS_WITH_CI(pszStatement, "DROP INDEX "))
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "SQL command not supported with SQLite dialect. "
+                 "Use OGRSQL dialect instead.");
+        return nullptr;
+    }
+    else if (STARTS_WITH_CI(pszStatement, "CREATE VIRTUAL TABLE ") &&
+             CPLTestBool(CPLGetConfigOption(
+                 "OGR_SQLITE_DIALECT_ALLOW_CREATE_VIRTUAL_TABLE", "NO")))
+    {
+        // for ogr_virtualogr.py::ogr_virtualogr_run_sql() only. This is
+        // just a convenient way of testing VirtualOGR() with
+        // CREATE VIRTUAL TABLE ... USING VirtualOGR(...)
+        // but there is no possible use of that given we run that into
+        // an ephemeral database.
+    }
+    else
+    {
+        bool bUnderstoodStatement = false;
+        for (const char *pszKeyword : {"SELECT", "WITH", "EXPLAIN", "INSERT",
+                                       "UPDATE", "DELETE", "REPLACE"})
+        {
+            if (STARTS_WITH_CI(pszStatement, pszKeyword) &&
+                std::isspace(static_cast<unsigned char>(
+                    pszStatement[strlen(pszKeyword)])))
+            {
+                bUnderstoodStatement = true;
+                break;
+            }
+        }
+        if (!bUnderstoodStatement)
+        {
+            CPLError(CE_Failure, CPLE_NotSupported, "Unsupported SQL command.");
+            return nullptr;
+        }
+    }
+
     char *pszTmpDBName = (char *)CPLMalloc(256);
     char szPtr[32];
     snprintf(szPtr, sizeof(szPtr), "%p", pszTmpDBName);
@@ -723,15 +832,6 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
 
     OGRSQLiteDataSource *poSQLiteDS = nullptr;
     bool bSpatialiteDB = false;
-
-    CPLString osOldVal;
-    const char *pszOldVal =
-        CPLGetConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR", nullptr);
-    if (pszOldVal != nullptr)
-    {
-        osOldVal = pszOldVal;
-        pszOldVal = osOldVal.c_str();
-    }
 
     /* -------------------------------------------------------------------- */
     /*      Create in-memory sqlite/spatialite DB                           */
@@ -797,11 +897,10 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
                                         nEmptyDBSize, TRUE));
 
         poSQLiteDS = new OGRSQLiteDataSource();
-        CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO");
         GDALOpenInfo oOpenInfo(pszTmpDBName, GDAL_OF_VECTOR | GDAL_OF_UPDATE);
+        CPLConfigOptionSetter oSetter("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO",
+                                      false);
         const int nRet = poSQLiteDS->Open(&oOpenInfo);
-        CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR",
-                                      pszOldVal);
         if (!nRet)
         {
             /* should not happen really ! */
@@ -816,14 +915,16 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
     /* No caching version */
     poSQLiteDS = new OGRSQLiteDataSource();
     char **papszOptions = CSLAddString(NULL, "SPATIALITE=YES");
-    CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO");
-    const int nRet = poSQLiteDS->Create(pszTmpDBName, papszOptions);
-    CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR", pszOldVal);
-    CSLDestroy(papszOptions);
-    papszOptions = NULL;
-    if (nRet)
     {
-        bSpatialiteDB = true;
+        CPLConfigOptionSetter oSetter("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO",
+                                      false);
+        const int nRet = poSQLiteDS->Create(pszTmpDBName, papszOptions);
+        CSLDestroy(papszOptions);
+        papszOptions = nullptr;
+        if (nRet)
+        {
+            bSpatialiteDB = true;
+        }
     }
 #endif
 
@@ -838,10 +939,9 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
 
         // cppcheck-suppress redundantAssignment
         poSQLiteDS = new OGRSQLiteDataSource();
-        CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO");
+        CPLConfigOptionSetter oSetter("OGR_SQLITE_STATIC_VIRTUAL_OGR", "NO",
+                                      false);
         const int nRet = poSQLiteDS->Create(pszTmpDBName, nullptr);
-        CPLSetThreadLocalConfigOption("OGR_SQLITE_STATIC_VIRTUAL_OGR",
-                                      pszOldVal);
         if (!nRet)
         {
             delete poSQLiteDS;
@@ -855,6 +955,13 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
     /*      Attach the Virtual Table OGR2SQLITE module to it.               */
     /* -------------------------------------------------------------------- */
     OGR2SQLITEModule *poModule = OGR2SQLITE_Setup(poDS, poSQLiteDS);
+    if (!poModule)
+    {
+        delete poSQLiteDS;
+        VSIUnlink(pszTmpDBName);
+        CPLFree(pszTmpDBName);
+        return nullptr;
+    }
     sqlite3 *hDB = poSQLiteDS->GetDB();
 
     /* -------------------------------------------------------------------- */
@@ -1037,9 +1144,13 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
     /* -------------------------------------------------------------------- */
     /*      Create layer.                                                   */
     /* -------------------------------------------------------------------- */
+
+    auto poDrv = poDS->GetDriver();
+    const bool bCanReopenBaseDS =
+        !(poDrv && EQUAL(poDrv->GetDescription(), "Memory"));
     OGRSQLiteSelectLayer *poLayer = new OGRSQLiteExecuteSQLLayer(
         pszTmpDBName, poSQLiteDS, pszStatement, hSQLStmt,
-        bUseStatementForGetNextFeature, bEmptyLayer);
+        bUseStatementForGetNextFeature, bEmptyLayer, bCanReopenBaseDS);
 
     if (poSpatialFilter != nullptr)
         poLayer->SetSpatialFilter(0, poSpatialFilter);
@@ -1051,20 +1162,4 @@ OGRLayer *OGRSQLiteExecuteSQL(GDALDataset *poDS, const char *pszStatement,
     return poLayer;
 }
 
-/************************************************************************/
-/*                   OGRSQLiteGetReferencedLayers()                     */
-/************************************************************************/
-
-std::set<LayerDesc> OGRSQLiteGetReferencedLayers(const char *pszStatement)
-{
-    /* -------------------------------------------------------------------- */
-    /*      Analysze the statement to determine which tables will be used.  */
-    /* -------------------------------------------------------------------- */
-    std::set<LayerDesc> oSetLayers;
-    std::set<CPLString> oSetSpatialIndex;
-    CPLString osModifiedSQL;
-    OGR2SQLITEGetPotentialLayerNames(pszStatement, oSetLayers, oSetSpatialIndex,
-                                     osModifiedSQL);
-
-    return oSetLayers;
-}
+#endif  // HAVE_SQLITE3EXT_H

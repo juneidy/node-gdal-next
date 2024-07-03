@@ -58,6 +58,7 @@
 #include "ogr_core.h"
 #include "ogr_srs_api.h"
 #include "ogr_spatialref.h"
+#include "ogrsf_frmts.h"
 #include "vrtdataset.h"
 
 #define GEOTRSFRM_TOPLEFT_X 0
@@ -85,7 +86,7 @@ struct DatasetProperty
     double adfGeoTransform[6];
     int nBlockXSize = 0;
     int nBlockYSize = 0;
-    GDALDataType firstBandType = GDT_Unknown;
+    std::vector<GDALDataType> aeBandType{};
     std::vector<bool> abHasNoData{};
     std::vector<double> adfNoDataValues{};
     std::vector<bool> abHasOffset{};
@@ -236,6 +237,7 @@ class VRTBuilder
     int nSelectedBands = 0;
     int *panSelectedBandList = nullptr;
     ResolutionStrategy resolutionStrategy = AVERAGE_RESOLUTION;
+    int nCountValid = 0;
     double we_res = 0;
     double ns_res = 0;
     int bTargetAlignedPixels = 0;
@@ -568,24 +570,10 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
     double ds_minY =
         ds_maxY + GDALGetRasterYSize(hDS) * padfGeoTransform[GEOTRSFRM_NS_RES];
 
-    int _nBands = GDALGetRasterCount(hDS);
+    const int _nBands = GDALGetRasterCount(hDS);
     if (_nBands == 0)
     {
         return "Dataset has no bands";
-    }
-    else if (_nBands > 1 && bSeparate)
-    {
-        if (bStrict)
-            return CPLSPrintf("%s has %d bands. Only one expected.", dsFileName,
-                              _nBands);
-        else
-        {
-            CPLError(CE_Warning, CPLE_AppDefined,
-                     "%s has %d bands. Only the first one will "
-                     "be taken into account in the -separate case",
-                     dsFileName, _nBands);
-            _nBands = 1;
-        }
     }
 
     GDALRasterBand *poFirstBand = poDS->GetRasterBand(1);
@@ -593,7 +581,7 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
                               &psDatasetProperties->nBlockYSize);
 
     /* For the -separate case */
-    psDatasetProperties->firstBandType = poFirstBand->GetRasterDataType();
+    psDatasetProperties->aeBandType.resize(_nBands);
 
     psDatasetProperties->adfNoDataValues.resize(_nBands);
     psDatasetProperties->abHasNoData.resize(_nBands);
@@ -645,6 +633,9 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
     for (int j = 0; j < _nBands; j++)
     {
         GDALRasterBand *poBand = poDS->GetRasterBand(j + 1);
+
+        psDatasetProperties->aeBandType[j] = poBand->GetRasterDataType();
+
         if (!bSeparate && nSrcNoDataCount > 0)
         {
             psDatasetProperties->abHasNoData[j] = true;
@@ -678,6 +669,18 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
             poBand->GetColorInterpretation() == GCI_AlphaBand;
     }
 
+    if (bSeparate)
+    {
+        for (int j = 0; j < nSelectedBands; j++)
+        {
+            if (panSelectedBandList[j] > _nBands)
+            {
+                return CPLSPrintf("%s has %d bands, but %d is requested",
+                                  dsFileName, _nBands, panSelectedBandList[j]);
+            }
+        }
+    }
+
     if (bFirst)
     {
         nTotalBands = _nBands;
@@ -697,27 +700,27 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
             maxY = ds_maxY;
         }
 
-        // if not provided an explicit band list, take the one of the first
-        // dataset
-        if (nSelectedBands == 0)
-        {
-            nSelectedBands = nTotalBands;
-            CPLFree(panSelectedBandList);
-            panSelectedBandList =
-                static_cast<int *>(CPLMalloc(nSelectedBands * sizeof(int)));
-            for (int j = 0; j < nSelectedBands; j++)
-            {
-                panSelectedBandList[j] = j + 1;
-            }
-        }
-        for (int j = 0; j < nSelectedBands; j++)
-        {
-            nMaxSelectedBandNo =
-                std::max(nMaxSelectedBandNo, panSelectedBandList[j]);
-        }
-
         if (!bSeparate)
         {
+            // if not provided an explicit band list, take the one of the first
+            // dataset
+            if (nSelectedBands == 0)
+            {
+                nSelectedBands = nTotalBands;
+                CPLFree(panSelectedBandList);
+                panSelectedBandList =
+                    static_cast<int *>(CPLMalloc(nSelectedBands * sizeof(int)));
+                for (int j = 0; j < nSelectedBands; j++)
+                {
+                    panSelectedBandList[j] = j + 1;
+                }
+            }
+            for (int j = 0; j < nSelectedBands; j++)
+            {
+                nMaxSelectedBandNo =
+                    std::max(nMaxSelectedBandNo, panSelectedBandList[j]);
+            }
+
             asBandProperties.resize(nSelectedBands);
             for (int j = 0; j < nSelectedBands; j++)
             {
@@ -937,8 +940,15 @@ std::string VRTBuilder::AnalyseRaster(GDALDatasetH hDS,
 
     if (resolutionStrategy == AVERAGE_RESOLUTION)
     {
-        we_res += padfGeoTransform[GEOTRSFRM_WE_RES];
-        ns_res += padfGeoTransform[GEOTRSFRM_NS_RES];
+        ++nCountValid;
+        {
+            const double dfDelta = padfGeoTransform[GEOTRSFRM_WE_RES] - we_res;
+            we_res += dfDelta / nCountValid;
+        }
+        {
+            const double dfDelta = padfGeoTransform[GEOTRSFRM_NS_RES] - ns_res;
+            ns_res += dfDelta / nCountValid;
+        }
     }
     else if (resolutionStrategy != USER_RESOLUTION)
     {
@@ -1002,8 +1012,6 @@ void VRTBuilder::CreateVRTSeparate(VRTDatasetH hVRTDS)
             dfSrcYSize = dfDstYSize = nRasterYSize;
         }
 
-        GDALAddBand(hVRTDS, psDatasetProperties->firstBandType, nullptr);
-
         GDALDatasetH hSourceDS;
         bool bDropRef = false;
         if (nSrcDSCount == nInputFiles &&
@@ -1025,89 +1033,117 @@ void VRTBuilder::CreateVRTSeparate(VRTDatasetH hVRTDS)
             reinterpret_cast<GDALProxyPoolDataset *>(hProxyDS)->SetOpenOptions(
                 papszOpenOptions);
 
-            GDALProxyPoolDatasetAddSrcBandDescription(
-                hProxyDS, psDatasetProperties->firstBandType,
-                psDatasetProperties->nBlockXSize,
-                psDatasetProperties->nBlockYSize);
+            for (int jBand = 0;
+                 jBand <
+                 static_cast<int>(psDatasetProperties->aeBandType.size());
+                 ++jBand)
+            {
+                GDALProxyPoolDatasetAddSrcBandDescription(
+                    hProxyDS, psDatasetProperties->aeBandType[jBand],
+                    psDatasetProperties->nBlockXSize,
+                    psDatasetProperties->nBlockYSize);
+            }
         }
 
-        VRTSourcedRasterBandH hVRTBand = static_cast<VRTSourcedRasterBandH>(
-            GDALGetRasterBand(hVRTDS, iBand));
-
-        if (bHideNoData)
-            GDALSetMetadataItem(hVRTBand, "HideNoDataValue", "1", nullptr);
-
-        VRTSourcedRasterBand *poVRTBand =
-            static_cast<VRTSourcedRasterBand *>(hVRTBand);
-
-        if (bAllowVRTNoData)
+        const int nBandsToIter =
+            nSelectedBands > 0
+                ? nSelectedBands
+                : static_cast<int>(psDatasetProperties->aeBandType.size());
+        for (int iBandToIter = 0; iBandToIter < nBandsToIter; ++iBandToIter)
         {
-            if (nVRTNoDataCount > 0)
+            // 0-based
+            const int nSrcBandIdx = nSelectedBands > 0
+                                        ? panSelectedBandList[iBandToIter] - 1
+                                        : iBandToIter;
+
+            GDALAddBand(hVRTDS, psDatasetProperties->aeBandType[nSrcBandIdx],
+                        nullptr);
+
+            VRTSourcedRasterBandH hVRTBand = static_cast<VRTSourcedRasterBandH>(
+                GDALGetRasterBand(hVRTDS, iBand));
+
+            if (bHideNoData)
+                GDALSetMetadataItem(hVRTBand, "HideNoDataValue", "1", nullptr);
+
+            VRTSourcedRasterBand *poVRTBand =
+                static_cast<VRTSourcedRasterBand *>(hVRTBand);
+
+            if (bAllowVRTNoData)
             {
-                if (iBand - 1 < nVRTNoDataCount)
-                    GDALSetRasterNoDataValue(hVRTBand,
-                                             padfVRTNoData[iBand - 1]);
-                else
+                if (nVRTNoDataCount > 0)
+                {
+                    if (iBand - 1 < nVRTNoDataCount)
+                        GDALSetRasterNoDataValue(hVRTBand,
+                                                 padfVRTNoData[iBand - 1]);
+                    else
+                        GDALSetRasterNoDataValue(
+                            hVRTBand, padfVRTNoData[nVRTNoDataCount - 1]);
+                }
+                else if (psDatasetProperties->abHasNoData[nSrcBandIdx])
+                {
                     GDALSetRasterNoDataValue(
-                        hVRTBand, padfVRTNoData[nVRTNoDataCount - 1]);
+                        hVRTBand,
+                        psDatasetProperties->adfNoDataValues[nSrcBandIdx]);
+                }
             }
-            else if (psDatasetProperties->abHasNoData[0])
-            {
-                GDALSetRasterNoDataValue(
-                    hVRTBand, psDatasetProperties->adfNoDataValues[0]);
-            }
-        }
 
-        VRTSimpleSource *poSimpleSource;
-        if (bAllowSrcNoData)
-        {
-            auto poComplexSource = new VRTComplexSource();
-            poSimpleSource = poComplexSource;
-            if (nSrcNoDataCount > 0)
+            VRTSimpleSource *poSimpleSource;
+            if (bAllowSrcNoData &&
+                (nSrcNoDataCount > 0 ||
+                 psDatasetProperties->abHasNoData[nSrcBandIdx]))
             {
-                if (iBand - 1 < nSrcNoDataCount)
-                    poComplexSource->SetNoDataValue(padfSrcNoData[iBand - 1]);
-                else
+                auto poComplexSource = new VRTComplexSource();
+                poSimpleSource = poComplexSource;
+                if (nSrcNoDataCount > 0)
+                {
+                    if (iBand - 1 < nSrcNoDataCount)
+                        poComplexSource->SetNoDataValue(
+                            padfSrcNoData[iBand - 1]);
+                    else
+                        poComplexSource->SetNoDataValue(
+                            padfSrcNoData[nSrcNoDataCount - 1]);
+                }
+                else /* if (psDatasetProperties->abHasNoData[nSrcBandIdx]) */
+                {
                     poComplexSource->SetNoDataValue(
-                        padfSrcNoData[nSrcNoDataCount - 1]);
+                        psDatasetProperties->adfNoDataValues[nSrcBandIdx]);
+                }
             }
-            else if (psDatasetProperties->abHasNoData[0])
+            else if (bUseSrcMaskBand &&
+                     psDatasetProperties->abHasMaskBand[nSrcBandIdx])
             {
-                poComplexSource->SetNoDataValue(
-                    psDatasetProperties->adfNoDataValues[0]);
+                auto poSource = new VRTComplexSource();
+                poSource->SetUseMaskBand(true);
+                poSimpleSource = poSource;
             }
+            else
+                poSimpleSource = new VRTSimpleSource();
+
+            if (pszResampling)
+                poSimpleSource->SetResampling(pszResampling);
+            poVRTBand->ConfigureSource(
+                poSimpleSource,
+                static_cast<GDALRasterBand *>(
+                    GDALGetRasterBand(hSourceDS, nSrcBandIdx + 1)),
+                FALSE, dfSrcXOff, dfSrcYOff, dfSrcXSize, dfSrcYSize, dfDstXOff,
+                dfDstYOff, dfDstXSize, dfDstYSize);
+
+            if (psDatasetProperties->abHasOffset[nSrcBandIdx])
+                poVRTBand->SetOffset(
+                    psDatasetProperties->adfOffset[nSrcBandIdx]);
+
+            if (psDatasetProperties->abHasScale[nSrcBandIdx])
+                poVRTBand->SetScale(psDatasetProperties->adfScale[nSrcBandIdx]);
+
+            poVRTBand->AddSource(poSimpleSource);
+
+            iBand++;
         }
-        else if (bUseSrcMaskBand && psDatasetProperties->abHasMaskBand[0])
-        {
-            auto poSource = new VRTComplexSource();
-            poSource->SetUseMaskBand(true);
-            poSimpleSource = poSource;
-        }
-        else
-            poSimpleSource = new VRTSimpleSource();
-
-        if (pszResampling)
-            poSimpleSource->SetResampling(pszResampling);
-        poVRTBand->ConfigureSource(
-            poSimpleSource,
-            static_cast<GDALRasterBand *>(GDALGetRasterBand(hSourceDS, 1)),
-            FALSE, dfSrcXOff, dfSrcYOff, dfSrcXSize, dfSrcYSize, dfDstXOff,
-            dfDstYOff, dfDstXSize, dfDstYSize);
-
-        if (psDatasetProperties->abHasOffset[0])
-            poVRTBand->SetOffset(psDatasetProperties->adfOffset[0]);
-
-        if (psDatasetProperties->abHasScale[0])
-            poVRTBand->SetScale(psDatasetProperties->adfScale[0]);
-
-        poVRTBand->AddSource(poSimpleSource);
 
         if (bDropRef)
         {
             GDALDereferenceDataset(hSourceDS);
         }
-
-        iBand++;
     }
 }
 
@@ -1487,7 +1523,7 @@ GDALDataset *VRTBuilder::Build(GDALProgressFunc pfnProgress,
         }
     }
 
-    int nCountValid = 0;
+    bool bFoundValid = false;
     for (int i = 0; ppszInputFilenames != nullptr && i < nInputFiles; i++)
     {
         const char *dsFileName = ppszInputFilenames[i];
@@ -1509,7 +1545,7 @@ GDALDataset *VRTBuilder::Build(GDALProgressFunc pfnProgress,
             if (osErrorMsg.empty())
             {
                 asDatasetProperties[i].isFileOK = TRUE;
-                nCountValid++;
+                bFoundValid = true;
                 bFirst = FALSE;
             }
             if (pahSrcDS == nullptr)
@@ -1545,17 +1581,11 @@ GDALDataset *VRTBuilder::Build(GDALProgressFunc pfnProgress,
         }
     }
 
-    if (nCountValid == 0)
+    if (!bFoundValid)
         return nullptr;
 
     if (bHasGeoTransform)
     {
-        if (resolutionStrategy == AVERAGE_RESOLUTION)
-        {
-            we_res /= nCountValid;
-            ns_res /= nCountValid;
-        }
-
         if (bTargetAlignedPixels)
         {
             minX = floor(minX / we_res) * we_res;
@@ -1625,39 +1655,27 @@ static bool add_file_to_list(const char *filename, const char *tile_index,
 
     if (EQUAL(CPLGetExtension(filename), "SHP"))
     {
-        OGRRegisterAll();
-
         /* Handle gdaltindex Shapefile as a special case */
-        OGRDataSourceH hDS = OGROpen(filename, FALSE, nullptr);
-        if (hDS == nullptr)
+        auto poDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(filename));
+        if (poDS == nullptr)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Unable to open shapefile `%s'.", filename);
             return false;
         }
 
-        OGRLayerH hLayer = OGR_DS_GetLayer(hDS, 0);
+        auto poLayer = poDS->GetLayer(0);
+        const auto poFDefn = poLayer->GetLayerDefn();
 
-        OGRFeatureDefnH hFDefn = OGR_L_GetLayerDefn(hLayer);
-
-        int ti_field;
-        for (ti_field = 0; ti_field < OGR_FD_GetFieldCount(hFDefn); ti_field++)
+        if (poFDefn->GetFieldIndex("LOCATION") >= 0 &&
+            strcmp("LOCATION", tile_index) != 0)
         {
-            OGRFieldDefnH hFieldDefn = OGR_FD_GetFieldDefn(hFDefn, ti_field);
-            const char *pszName = OGR_Fld_GetNameRef(hFieldDefn);
-
-            if (strcmp(pszName, "LOCATION") == 0 &&
-                strcmp("LOCATION", tile_index) != 0)
-            {
-                CPLError(CE_Failure, CPLE_AppDefined,
-                         "This shapefile seems to be a tile index of "
-                         "OGR features and not GDAL products.");
-            }
-            if (strcmp(pszName, tile_index) == 0)
-                break;
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "This shapefile seems to be a tile index of "
+                     "OGR features and not GDAL products.");
         }
-
-        if (ti_field == OGR_FD_GetFieldCount(hFDefn))
+        const int ti_field = poFDefn->GetFieldIndex(tile_index);
+        if (ti_field < 0)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Unable to find field `%s' in DBF file `%s'.", tile_index,
@@ -1666,28 +1684,30 @@ static bool add_file_to_list(const char *filename, const char *tile_index,
         }
 
         /* Load in memory existing file names in SHP */
-        const int nTileIndexFiles =
-            static_cast<int>(OGR_L_GetFeatureCount(hLayer, TRUE));
+        const auto nTileIndexFiles = poLayer->GetFeatureCount(TRUE);
         if (nTileIndexFiles == 0)
         {
             CPLError(CE_Warning, CPLE_AppDefined,
-                     "Tile index %s is empty. Skipping it.\n", filename);
+                     "Tile index %s is empty. Skipping it.", filename);
             return true;
         }
-
-        ppszInputFilenames = static_cast<char **>(
-            CPLRealloc(ppszInputFilenames,
-                       sizeof(char *) * (nInputFiles + nTileIndexFiles + 1)));
-        for (int j = 0; j < nTileIndexFiles; j++)
+        if (nTileIndexFiles > 100 * 1024 * 1024)
         {
-            OGRFeatureH hFeat = OGR_L_GetNextFeature(hLayer);
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Too large feature count in tile index");
+            return false;
+        }
+
+        ppszInputFilenames = static_cast<char **>(CPLRealloc(
+            ppszInputFilenames,
+            sizeof(char *) *
+                (nInputFiles + static_cast<int>(nTileIndexFiles) + 1)));
+        for (auto &&poFeature : poLayer)
+        {
             ppszInputFilenames[nInputFiles++] =
-                CPLStrdup(OGR_F_GetFieldAsString(hFeat, ti_field));
-            OGR_F_Destroy(hFeat);
+                CPLStrdup(poFeature->GetFieldAsString(ti_field));
         }
         ppszInputFilenames[nInputFiles] = nullptr;
-
-        OGR_DS_Destroy(hDS);
     }
     else
     {
@@ -1953,9 +1973,9 @@ static char *SanitizeSRS(const char *pszUserInput)
  * filename and open options too), or NULL. The accepted options are the ones of
  * the <a href="/programs/gdalbuildvrt.html">gdalbuildvrt</a> utility.
  * @param psOptionsForBinary (output) may be NULL (and should generally be
- * NULL), otherwise (gdal_translate_bin.cpp use case) must be allocated with
- *                           GDALBuildVRTOptionsForBinaryNew() prior to this
- * function. Will be filled with potentially present filename, open options,...
+ * NULL), otherwise (gdalbuildvrt_bin.cpp use case) must be allocated with
+ * GDALBuildVRTOptionsForBinaryNew() prior to this function. Will be filled
+ * with potentially present filename, open options,...
  * @return pointer to the allocated GDALBuildVRTOptions struct. Must be freed
  * with GDALBuildVRTOptionsFree().
  *

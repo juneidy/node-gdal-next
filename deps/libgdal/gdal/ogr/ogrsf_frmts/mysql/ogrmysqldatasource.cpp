@@ -35,6 +35,19 @@
 #include "cpl_string.h"
 
 /************************************************************************/
+/*                       FreeResultAndNullify()                         */
+/************************************************************************/
+
+inline void FreeResultAndNullify(MYSQL_RES *&hResult)
+{
+    if (hResult)
+    {
+        mysql_free_result(hResult);
+        hResult = nullptr;
+    }
+}
+
+/************************************************************************/
 /*                         OGRMySQLDataSource()                         */
 /************************************************************************/
 
@@ -301,7 +314,7 @@ int OGRMySQLDataSource::Open(const char *pszNewName, char **papszOpenOptionsIn,
             papszTableNames = CSLAddString(papszTableNames, papszRow[0]);
         }
 
-        mysql_free_result(hResultSet);
+        FreeResultAndNullify(hResultSet);
     }
 
     /* -------------------------------------------------------------------- */
@@ -362,8 +375,12 @@ int OGRMySQLDataSource::TestCapability(const char *pszCap)
         return TRUE;
     if (EQUAL(pszCap, ODsCRandomLayerWrite))
         return TRUE;
-    else
-        return FALSE;
+    if (EQUAL(pszCap, ODsCMeasuredGeometries))
+        return TRUE;
+    if (EQUAL(pszCap, ODsCZGeometries))
+        return TRUE;
+
+    return FALSE;
 }
 
 /************************************************************************/
@@ -422,11 +439,7 @@ OGRErr OGRMySQLDataSource::InitializeMetadataTables()
 
         // make sure to attempt to free results of successful queries
         hResult = mysql_store_result(GetConn());
-        if (hResult != nullptr)
-        {
-            mysql_free_result(hResult);
-            hResult = nullptr;
-        }
+        FreeResultAndNullify(hResult);
 
         pszCommand = "DESCRIBE spatial_ref_sys";
         if (mysql_query(GetConn(), pszCommand))
@@ -447,11 +460,7 @@ OGRErr OGRMySQLDataSource::InitializeMetadataTables()
 
         // make sure to attempt to free results of successful queries
         hResult = mysql_store_result(GetConn());
-        if (hResult != nullptr)
-        {
-            mysql_free_result(hResult);
-            hResult = nullptr;
-        }
+        FreeResultAndNullify(hResult);
     }
 
     return eErr;
@@ -490,9 +499,7 @@ OGRErr OGRMySQLDataSource::UpdateMetadataTables(const char *pszLayerName,
 
         // make sure to attempt to free results of successful queries
         hResult = mysql_store_result(GetConn());
-        if (hResult != nullptr)
-            mysql_free_result(hResult);
-        hResult = nullptr;
+        FreeResultAndNullify(hResult);
 
         /* --------------------------------------------------------------------
          */
@@ -534,9 +541,7 @@ OGRErr OGRMySQLDataSource::UpdateMetadataTables(const char *pszLayerName,
 
             // make sure to attempt to free results of successful queries
             hResult = mysql_store_result(GetConn());
-            if (hResult != nullptr)
-                mysql_free_result(hResult);
-            hResult = nullptr;
+            FreeResultAndNullify(hResult);
         }
     }
     return OGRERR_NONE;
@@ -570,9 +575,7 @@ OGRSpatialReference *OGRMySQLDataSource::FetchSRS(int nId)
 
     // make sure to attempt to free any old results
     MYSQL_RES *hResult = mysql_store_result(GetConn());
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
     char szCommand[128] = {};
     if (GetMajorVersion() < 8 || IsMariaDB())
@@ -603,9 +606,7 @@ OGRSpatialReference *OGRMySQLDataSource::FetchSRS(int nId)
         pszWKT = CPLStrdup(papszRow[0]);
     }
 
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
     poSRS = new OGRSpatialReference();
     poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
@@ -651,18 +652,18 @@ OGRSpatialReference *OGRMySQLDataSource::FetchSRS(int nId)
 /*      it to the table.                                                */
 /************************************************************************/
 
-int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
+int OGRMySQLDataSource::FetchSRSId(const OGRSpatialReference *poSRSIn)
 
 {
-    if (poSRS == nullptr)
+    if (poSRSIn == nullptr)
         return GetUnknownSRID();
 
-    OGRSpatialReference oSRS(*poSRS);
+    OGRSpatialReference oSRS(*poSRSIn);
     // cppcheck-suppress uselessAssignmentPtrArg
-    poSRS = nullptr;
+    poSRSIn = nullptr;
 
     const char *pszAuthorityName = oSRS.GetAuthorityName(nullptr);
-
+    int nAuthorityCode = 0;
     if (pszAuthorityName == nullptr || strlen(pszAuthorityName) == 0)
     {
         /* --------------------------------------------------------------------
@@ -679,12 +680,20 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
             if (pszAuthorityCode != nullptr && strlen(pszAuthorityCode) > 0)
             {
                 /* Import 'clean' SRS */
-                oSRS.importFromEPSG(atoi(pszAuthorityCode));
+                nAuthorityCode = atoi(pszAuthorityCode);
+                oSRS.importFromEPSG(nAuthorityCode);
 
                 pszAuthorityName = oSRS.GetAuthorityName(nullptr);
             }
         }
     }
+    else
+    {
+        const char *pszAuthorityCode = oSRS.GetAuthorityCode(nullptr);
+        if (pszAuthorityCode)
+            nAuthorityCode = atoi(pszAuthorityCode);
+    }
+
     /* -------------------------------------------------------------------- */
     /*      Check whether the authority name/code is already mapped to a    */
     /*      SRS ID.                                                         */
@@ -693,14 +702,18 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
     if (pszAuthorityName != nullptr)
     {
         /* Check that the authority code is integral */
-        const int nAuthorityCode = atoi(oSRS.GetAuthorityCode(nullptr));
         if (nAuthorityCode > 0)
         {
+            const char *pszTableName =
+                "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS";
             if (GetMajorVersion() < 8 || IsMariaDB())
             {
-                osCommand.Printf("SELECT srid FROM spatial_ref_sys WHERE "
-                                 "auth_name = '%s' AND auth_srid = %d",
-                                 pszAuthorityName, nAuthorityCode);
+                pszTableName = "spatial_ref_sys";
+                osCommand.Printf(
+                    "SELECT srid FROM spatial_ref_sys WHERE "
+                    "auth_name = '%s' AND auth_srid = %d",
+                    OGRMySQLEscapeLiteral(pszAuthorityName).c_str(),
+                    nAuthorityCode);
             }
             else
             {
@@ -709,7 +722,8 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
                     "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS "
                     "WHERE ORGANIZATION = '%s' AND ORGANIZATION_COORDSYS_ID = "
                     "%d",
-                    pszAuthorityName, nAuthorityCode);
+                    OGRMySQLEscapeLiteral(pszAuthorityName).c_str(),
+                    nAuthorityCode);
             }
 
             MYSQL_RES *hResult = nullptr;
@@ -719,9 +733,9 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
             if (hResult != nullptr && !mysql_num_rows(hResult))
             {
                 CPLDebug("MYSQL",
-                         "No rows exist currently exist in spatial_ref_sys");
-                mysql_free_result(hResult);
-                hResult = nullptr;
+                         "No rows exist currently exist in %s for %s:%d",
+                         pszTableName, pszAuthorityName, nAuthorityCode);
+                FreeResultAndNullify(hResult);
             }
             char **papszRow = nullptr;
             if (hResult != nullptr)
@@ -730,16 +744,13 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
             if (papszRow != nullptr && papszRow[0] != nullptr)
             {
                 const int nSRSId = atoi(papszRow[0]);
-                if (hResult != nullptr)
-                    mysql_free_result(hResult);
-                hResult = nullptr;
+                FreeResultAndNullify(hResult);
                 return nSRSId;
             }
 
             // make sure to attempt to free results of successful queries
             hResult = mysql_store_result(GetConn());
-            if (hResult != nullptr)
-                mysql_free_result(hResult);
+            FreeResultAndNullify(hResult);
         }
     }
 
@@ -753,20 +764,50 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
         return GetUnknownSRID();
     }
 
+    // MySQL 8 requires AXIS[] node in PROJCS.GEOGCS
+    if (GetMajorVersion() >= 8 && !IsMariaDB() && oSRS.IsProjected())
+    {
+        OGR_SRSNode oNode;
+        const char *pszWKTTmp = pszWKT;
+        oNode.importFromWkt(&pszWKTTmp);
+
+        OGRSpatialReference oSRSGeog;
+        oSRSGeog.CopyGeogCSFrom(&oSRS);
+        char *pszWKTGeog = nullptr;
+        oSRSGeog.exportToWkt(&pszWKTGeog);
+
+        int iChild = oNode.FindChild("GEOGCS");
+        if (iChild >= 0)
+        {
+            oNode.DestroyChild(iChild);
+            auto poGeogNode = new OGR_SRSNode();
+            pszWKTTmp = pszWKTGeog;
+            poGeogNode->importFromWkt(&pszWKTTmp);
+            oNode.InsertChild(poGeogNode, iChild);
+        }
+        CPLFree(pszWKTGeog);
+
+        CPLFree(pszWKT);
+        oNode.exportToWkt(&pszWKT);
+    }
+
     /* -------------------------------------------------------------------- */
     /*      Try to find in the existing record.                             */
     /* -------------------------------------------------------------------- */
+    const char *pszTableName =
+        "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS";
     if (GetMajorVersion() < 8 || IsMariaDB())
     {
+        pszTableName = "spatial_ref_sys";
         osCommand.Printf("SELECT srid FROM spatial_ref_sys WHERE srtext = '%s'",
-                         pszWKT);
+                         OGRMySQLEscapeLiteral(pszWKT).c_str());
     }
     else
     {
         osCommand.Printf("SELECT SRS_ID FROM "
                          "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS "
                          "WHERE DEFINITION = '%s'",
-                         pszWKT);
+                         OGRMySQLEscapeLiteral(pszWKT).c_str());
     }
 
     MYSQL_RES *hResult = nullptr;
@@ -775,9 +816,9 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
 
     if (hResult != nullptr && !mysql_num_rows(hResult))
     {
-        CPLDebug("MYSQL", "No rows exist currently exist in spatial_ref_sys");
-        mysql_free_result(hResult);
-        hResult = nullptr;
+        CPLDebug("MYSQL", "No rows exist currently exist in %s with WKT = %s",
+                 pszTableName, pszWKT);
+        FreeResultAndNullify(hResult);
     }
     char **papszRow = nullptr;
     if (hResult != nullptr)
@@ -786,24 +827,121 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
     if (papszRow != nullptr && papszRow[0] != nullptr)
     {
         const int nSRSId = atoi(papszRow[0]);
-        if (hResult != nullptr)
-            mysql_free_result(hResult);
-        hResult = nullptr;
+        FreeResultAndNullify(hResult);
         CPLFree(pszWKT);
         return nSRSId;
     }
 
     // make sure to attempt to free results of successful queries
     hResult = mysql_store_result(GetConn());
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
-    // TODO: try to insert in INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS
     if (GetMajorVersion() >= 8 && !IsMariaDB())
     {
+        int nSRSId = -1;
+        if (pszAuthorityName != nullptr && EQUAL(pszAuthorityName, "EPSG") &&
+            nAuthorityCode > 0)
+        {
+            /* ------------------------------------------------------------ */
+            /*      If it is an EPSG code, check if we can use the entry of */
+            /*      SRS_ID equal to the EPSG code.                          */
+            /* ------------------------------------------------------------ */
+            osCommand.Printf("SELECT SRS_ID FROM INFORMATION_SCHEMA."
+                             "ST_SPATIAL_REFERENCE_SYSTEMS "
+                             "WHERE SRS_ID = %d",
+                             nAuthorityCode);
+            if (!mysql_query(GetConn(), osCommand))
+            {
+                hResult = mysql_store_result(GetConn());
+                papszRow = mysql_fetch_row(hResult);
+                if (!(papszRow != nullptr && papszRow[0] != nullptr))
+                {
+                    // No row matching SRS_ID = nAuthorityCode ? Then
+                    // we can use it
+                    nSRSId = nAuthorityCode;
+                }
+                FreeResultAndNullify(hResult);
+            }
+        }
+        if (nSRSId < 0)
+        {
+            nSRSId = 1;
+
+            /* ------------------------------------------------------------- */
+            /*      Get the current maximum srid in the srs table.           */
+            /* ------------------------------------------------------------- */
+            osCommand = "SELECT MAX(SRS_ID) FROM "
+                        "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS";
+            if (!mysql_query(GetConn(), osCommand))
+            {
+                hResult = mysql_store_result(GetConn());
+                papszRow = mysql_fetch_row(hResult);
+                if (papszRow != nullptr && papszRow[0] != nullptr)
+                {
+                    nSRSId = atoi(papszRow[0]) + 1;
+                }
+                FreeResultAndNullify(hResult);
+            }
+        }
+        else
+        {
+            nSRSId = nAuthorityCode;
+        }
+
+        /* ----------------------------------------------------------------- */
+        /*      Check if there's an existing record with same name           */
+        /* ----------------------------------------------------------------- */
+        CPLString osName(oSRS.GetName());
+
+        osCommand.Printf(
+            "SELECT SRS_ID FROM "
+            "INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS WHERE NAME = '%s'",
+            osName.c_str());
+        if (!mysql_query(GetConn(), osCommand))
+        {
+            hResult = mysql_store_result(GetConn());
+            papszRow = mysql_fetch_row(hResult);
+            if (papszRow != nullptr && papszRow[0] != nullptr)
+            {
+                osName += CPLSPrintf("_srid_%d", nSRSId);
+            }
+            FreeResultAndNullify(hResult);
+        }
+
+        /* ----------------------------------------------------------------- */
+        /*      Try adding the SRS to the SRS table.                         */
+        /* ----------------------------------------------------------------- */
+        if (pszAuthorityName != nullptr && nAuthorityCode > 0)
+        {
+            osCommand.Printf(
+                "CREATE SPATIAL REFERENCE SYSTEM %d NAME '%s' "
+                "ORGANIZATION '%s' "
+                "IDENTIFIED BY %d "
+                "DEFINITION '%s'",
+                nSRSId, OGRMySQLEscapeLiteral(osName.c_str()).c_str(),
+                OGRMySQLEscapeLiteral(pszAuthorityName).c_str(), nAuthorityCode,
+                OGRMySQLEscapeLiteral(pszWKT).c_str());
+        }
+        else
+        {
+            osCommand.Printf("CREATE SPATIAL REFERENCE SYSTEM %d NAME '%s' "
+                             "DEFINITION '%s'",
+                             nSRSId,
+                             OGRMySQLEscapeLiteral(osName.c_str()).c_str(),
+                             OGRMySQLEscapeLiteral(pszWKT).c_str());
+        }
+
+        if (mysql_query(GetConn(), osCommand))
+        {
+            ReportError((osCommand + " failed").c_str());
+            nSRSId = GetUnknownSRID();
+        }
+
+        hResult = mysql_store_result(GetConn());
+        FreeResultAndNullify(hResult);
+
         CPLFree(pszWKT);
-        return GetUnknownSRID();
+        return nSRSId;
     }
 
     /* -------------------------------------------------------------------- */
@@ -816,13 +954,11 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
         papszRow = mysql_fetch_row(hResult);
     }
 
-    const int nSRSId = papszRow != nullptr && papszRow[0] != nullptr
-                           ? atoi(papszRow[0]) + 1
-                           : 1;
+    int nSRSId = papszRow != nullptr && papszRow[0] != nullptr
+                     ? atoi(papszRow[0]) + 1
+                     : 1;
 
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
     /* -------------------------------------------------------------------- */
     /*      Try adding the SRS to the SRS table.                            */
@@ -831,14 +967,15 @@ int OGRMySQLDataSource::FetchSRSId(OGRSpatialReference *poSRS)
         "INSERT INTO spatial_ref_sys (srid,srtext) VALUES (%d,'%s')", nSRSId,
         pszWKT);
 
-    if (!mysql_query(GetConn(), osCommand))
-        /*hResult = */ mysql_store_result(GetConn()); /* FIXME ? */
+    if (mysql_query(GetConn(), osCommand))
+    {
+        ReportError((osCommand + " failed").c_str());
+        nSRSId = GetUnknownSRID();
+    }
 
     // make sure to attempt to free results of successful queries
     hResult = mysql_store_result(GetConn());
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
     CPLFree(pszWKT);
 
@@ -1036,7 +1173,7 @@ OGRErr OGRMySQLDataSource::DeleteLayer(int iLayer)
 /************************************************************************/
 
 OGRLayer *OGRMySQLDataSource::ICreateLayer(const char *pszLayerNameIn,
-                                           OGRSpatialReference *poSRS,
+                                           const OGRSpatialReference *poSRS,
                                            OGRwkbGeometryType eType,
                                            char **papszOptions)
 
@@ -1171,9 +1308,7 @@ OGRLayer *OGRMySQLDataSource::ICreateLayer(const char *pszLayerNameIn,
 
     // make sure to attempt to free results of successful queries
     hResult = mysql_store_result(GetConn());
-    if (hResult != nullptr)
-        mysql_free_result(hResult);
-    hResult = nullptr;
+    FreeResultAndNullify(hResult);
 
     if (UpdateMetadataTables(pszLayerName, eType, pszGeomColumnName, nSRSId) !=
         OGRERR_NONE)
@@ -1198,9 +1333,7 @@ OGRLayer *OGRMySQLDataSource::ICreateLayer(const char *pszLayerNameIn,
 
         // make sure to attempt to free results of successful queries
         hResult = mysql_store_result(GetConn());
-        if (hResult != nullptr)
-            mysql_free_result(hResult);
-        hResult = nullptr;
+        FreeResultAndNullify(hResult);
     }
 
     /* -------------------------------------------------------------------- */
@@ -1230,4 +1363,20 @@ OGRLayer *OGRMySQLDataSource::ICreateLayer(const char *pszLayerNameIn,
     CPLFree(pszLayerName);
 
     return poLayer;
+}
+
+/************************************************************************/
+/*                     OGRMySQLEscapeLiteral()                          */
+/************************************************************************/
+
+std::string OGRMySQLEscapeLiteral(const char *pszLiteral)
+{
+    std::string osVal;
+    for (int i = 0; pszLiteral[i] != '\0'; i++)
+    {
+        if (pszLiteral[i] == '\'')
+            osVal += '\'';
+        osVal += pszLiteral[i];
+    }
+    return osVal;
 }
